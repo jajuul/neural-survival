@@ -15,7 +15,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 08:00Z) Read `docs/SPECS.md`, `AGENTS.md`, and `.agent/PLANS.md`; established implementation scope and constraints.
 - [x] (2026-03-04 08:00Z) Authored a decision-complete ExecPlan in `PLAN.md`.
 - [x] (2026-03-04 08:29Z) Reconciled plan/spec ambiguities for seed ownership, output directory semantics, snapshot restart behavior, and metrics schema.
-- [ ] Implement workspace/module scaffolding, dependency setup, and config loading.
+- [x] (2026-03-04 08:53Z) Implemented workspace/module scaffolding, dependency setup, and config loading; verified with `cargo test` and `cargo run -- --help`.
 - [ ] Implement deterministic simulation core (world, agents, food, energy rules).
 - [ ] Implement neural controller framework and MLP controller.
 - [ ] Implement LTC controller with deterministic step behavior.
@@ -32,6 +32,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: `AGENTS.md` references `docs/SPECS.md`, and that file now exists and is the authoritative product specification.
   Evidence: `docs/SPECS.md` contains full v1 spec and `.agent/SPECS.md` is not the canonical source.
+
+- Observation: Sandbox-restricted runs could not resolve crates.io, but escalated execution successfully downloaded dependencies and completed verification.
+  Evidence: Initial failures reported `Could not resolve host: index.crates.io`; subsequent escalated `cargo test` passed with 6 tests and `cargo run -- --help` displayed expected subcommands.
 
 ## Decision Log
 
@@ -67,9 +70,13 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: This makes `view --snapshot` self-contained and keeps "restart from seed/config" behavior unambiguous.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: Add `bevy` as an optional dependency behind a `gui` Cargo feature during early milestones.
+  Rationale: Keeps baseline dependency declared while allowing headless milestone work to compile without pulling full GUI dependency graph by default.
+  Date/Author: 2026-03-04 / Codex
+
 ## Outcomes & Retrospective
 
-Implementation has not started yet. Expected v1 outcome is a reproducible experimentation tool with both automated and visual validation paths. This section must be updated at the end of each major milestone with actual results, gaps, and follow-up items.
+Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
 
 ## Context and Orientation
 
@@ -383,3 +390,5 @@ Dependencies to add in `Cargo.toml`:
 
 2026-03-04: Initial creation of this ExecPlan based on `docs/SPECS.md` at user request. No implementation changes have started yet.
 2026-03-04: Plan revised to remove seed ambiguity (`--seed` is authoritative), define non-empty output directory failure semantics, add explicit creation of `configs/default.toml`, define snapshot-backed restart behavior in viewer mode, and expand metrics schema to include survival stats. This change was made to align implementation guidance with `docs/SPECS.md` and reduce integration risk.
+2026-03-04: Plan updated after Milestone 1 implementation to reflect completed scaffolding work, document crates.io DNS limitations blocking acceptance command execution, and record the temporary `bevy` optional-feature dependency choice for staged delivery.
+2026-03-04: Plan updated after successful escalated verification to mark Milestone 1 complete and replace temporary acceptance blockers with actual passing command evidence.
