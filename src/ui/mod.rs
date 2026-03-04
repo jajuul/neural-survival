@@ -568,8 +568,11 @@ mod bevy_viewer {
             ),
             With<Button>,
         >,
-        mut value_text_query: Query<(&mut Text, &NumericFieldValueText)>,
-        mut status_text_query: Query<&mut Text, With<EvolveStatusText>>,
+        mut text_query: Query<(
+            &mut Text,
+            Option<&NumericFieldValueText>,
+            Option<&EvolveStatusText>,
+        )>,
     ) {
         let is_evolving = runtime.evolution_job.is_some();
         for (interaction, mut color, maybe_field, maybe_evolve) in &mut button_query {
@@ -585,10 +588,6 @@ mod bevy_viewer {
             }
         }
 
-        for (mut text, marker) in &mut value_text_query {
-            **text = runtime.field_buffers.get(marker.kind).to_string();
-        }
-
         let status = if let Some(job) = &runtime.evolution_job {
             format!(
                 "Status: evolving {}/{} generations",
@@ -600,8 +599,13 @@ mod bevy_viewer {
                 runtime.evolve_generations
             )
         };
-        for mut text in &mut status_text_query {
-            **text = status.clone();
+
+        for (mut text, value_marker, status_marker) in &mut text_query {
+            if let Some(marker) = value_marker {
+                **text = runtime.field_buffers.get(marker.kind).to_string();
+            } else if status_marker.is_some() {
+                **text = status.clone();
+            }
         }
     }
 
