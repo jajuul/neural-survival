@@ -9,6 +9,7 @@ This module orchestrates deterministic multi-generation evolution runs.
 - Evolves generations using genetics operators.
 - Produces per-generation best/mean fitness metrics and final population genomes.
 - Provides `run_batch_to_dir` to persist metrics, summary, and snapshot artifacts.
+- Provides continuation helpers for evolving additional generations from an existing population (`continue_generations_from_population`) and rebuilding deterministic world state for that population (`world_state_for_population`).
 
 ## Inputs
 - `SimulationConfig`
@@ -18,4 +19,5 @@ This module orchestrates deterministic multi-generation evolution runs.
 - `EvolutionRun` with generation metrics and final population.
 
 ## Side Effects
-- No external side effects in Milestone 5.
+- Runner APIs are pure in-memory.
+- `run_batch_to_dir` writes metrics/summary/snapshot artifacts to disk.

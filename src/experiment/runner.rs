@@ -42,67 +42,62 @@ pub struct EvolutionRun {
 pub fn run_generations(config: &SimulationConfig, seed: u64, generations: u32) -> EvolutionRun {
     let factory = default_mixed_factory(config);
     let mut init_rng = StdRng::seed_from_u64(seed);
-    let mut evolution_rng = StdRng::seed_from_u64(seed ^ 0x9E37_79B9_7F4A_7C15);
 
     let mut population = initialize_population(config, &mut init_rng, &factory);
     let mut metrics = Vec::with_capacity(generations as usize);
 
     for generation_index in 0..generations {
         let evaluated = evaluate_population(config, seed, generation_index, &population, &factory);
-
-        let scored = evaluated
-            .iter()
-            .map(|entry| ScoredGenome {
-                genome: entry.genome.clone(),
-                fitness: entry.fitness,
-            })
-            .collect::<Vec<_>>();
-
-        let best_fitness = scored
-            .iter()
-            .map(|entry| entry.fitness)
-            .fold(f32::NEG_INFINITY, f32::max);
-        let mean_fitness =
-            scored.iter().map(|entry| entry.fitness).sum::<f32>() / scored.len() as f32;
-        let survival_min = evaluated
-            .iter()
-            .map(|entry| entry.components.survival_steps)
-            .min()
-            .unwrap_or(0);
-        let survival_max = evaluated
-            .iter()
-            .map(|entry| entry.components.survival_steps)
-            .max()
-            .unwrap_or(0);
-        let survival_mean = evaluated
-            .iter()
-            .map(|entry| entry.components.survival_steps as f32)
-            .sum::<f32>()
-            / evaluated.len() as f32;
-        let controller_mlp = evaluated
-            .iter()
-            .filter(|entry| entry.genome.controller_kind == ControllerKind::Mlp)
-            .count();
-        let controller_ltc = evaluated
-            .iter()
-            .filter(|entry| entry.genome.controller_kind == ControllerKind::Ltc)
-            .count();
-
-        metrics.push(GenerationMetrics {
+        let scored = to_scored_genomes(&evaluated);
+        metrics.push(build_generation_metrics(
             generation_index,
-            best_fitness,
-            mean_fitness,
-            survival_min,
-            survival_mean,
-            survival_max,
-            population_size: population.len(),
-            controller_mlp,
-            controller_ltc,
-        });
+            &population,
+            &evaluated,
+            &scored,
+        ));
 
         if generation_index + 1 < generations {
+            let mut evolution_rng = evolution_rng_for_generation(seed, generation_index);
             population = evolve_population(&scored, config, &mut evolution_rng);
         }
+    }
+
+    EvolutionRun {
+        generations: metrics,
+        final_population: population,
+    }
+}
+
+/// Continue evolving from an existing generation for additional generation steps.
+///
+/// Inputs: config, run seed, generation index represented by `population`, initial population,
+/// and number of additional generations to advance.
+/// Output: metrics for each evolved generation and the newly evolved final population.
+/// Side effects: none.
+pub fn continue_generations_from_population(
+    config: &SimulationConfig,
+    seed: u64,
+    start_generation_index: u32,
+    population: &[AgentGenome],
+    generations_to_advance: u32,
+) -> EvolutionRun {
+    let factory = default_mixed_factory(config);
+    let mut population = population.to_vec();
+    let mut metrics = Vec::with_capacity(generations_to_advance as usize);
+
+    for offset in 0..generations_to_advance {
+        let generation_index = start_generation_index + offset;
+        let evaluated = evaluate_population(config, seed, generation_index, &population, &factory);
+        let scored = to_scored_genomes(&evaluated);
+        metrics.push(build_generation_metrics(
+            generation_index,
+            &population,
+            &evaluated,
+            &scored,
+        ));
+
+        let mut evolution_rng = evolution_rng_for_generation(seed, generation_index);
+        population = evolve_population(&scored, config, &mut evolution_rng);
     }
 
     EvolutionRun {
@@ -147,7 +142,7 @@ pub fn run_batch_to_dir(
         seed,
         resolved_config: config.clone(),
         population: run.final_population.clone(),
-        world_state: snapshot_world_state(config, seed, generations, &run.final_population),
+        world_state: world_state_for_population(config, seed, generations, &run.final_population),
     };
     write_snapshot(out_dir, generations, &snapshot)?;
 
@@ -227,7 +222,12 @@ fn per_agent_eval_seed(run_seed: u64, generation_index: u32, agent_index: usize)
         ^ ((agent_index as u64 + 1).wrapping_mul(0x517C_C1B7_2722_0A95))
 }
 
-fn snapshot_world_state(
+/// Build deterministic world state for a specific generation/population pair.
+///
+/// Inputs: config, run seed, generation index, and population genomes.
+/// Output: initialized world with trait-projected agent parameters.
+/// Side effects: none.
+pub fn world_state_for_population(
     config: &SimulationConfig,
     seed: u64,
     generation_index: u32,
@@ -246,6 +246,72 @@ fn snapshot_world_state(
     world
 }
 
+fn to_scored_genomes(evaluated: &[EvaluatedGenome]) -> Vec<ScoredGenome> {
+    evaluated
+        .iter()
+        .map(|entry| ScoredGenome {
+            genome: entry.genome.clone(),
+            fitness: entry.fitness,
+        })
+        .collect::<Vec<_>>()
+}
+
+fn build_generation_metrics(
+    generation_index: u32,
+    population: &[AgentGenome],
+    evaluated: &[EvaluatedGenome],
+    scored: &[ScoredGenome],
+) -> GenerationMetrics {
+    let best_fitness = scored
+        .iter()
+        .map(|entry| entry.fitness)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let mean_fitness = scored.iter().map(|entry| entry.fitness).sum::<f32>() / scored.len() as f32;
+    let survival_min = evaluated
+        .iter()
+        .map(|entry| entry.components.survival_steps)
+        .min()
+        .unwrap_or(0);
+    let survival_max = evaluated
+        .iter()
+        .map(|entry| entry.components.survival_steps)
+        .max()
+        .unwrap_or(0);
+    let survival_mean = evaluated
+        .iter()
+        .map(|entry| entry.components.survival_steps as f32)
+        .sum::<f32>()
+        / evaluated.len() as f32;
+    let controller_mlp = evaluated
+        .iter()
+        .filter(|entry| entry.genome.controller_kind == ControllerKind::Mlp)
+        .count();
+    let controller_ltc = evaluated
+        .iter()
+        .filter(|entry| entry.genome.controller_kind == ControllerKind::Ltc)
+        .count();
+
+    GenerationMetrics {
+        generation_index,
+        best_fitness,
+        mean_fitness,
+        survival_min,
+        survival_mean,
+        survival_max,
+        population_size: population.len(),
+        controller_mlp,
+        controller_ltc,
+    }
+}
+
+fn evolution_rng_for_generation(run_seed: u64, generation_index: u32) -> StdRng {
+    StdRng::seed_from_u64(
+        run_seed
+            ^ 0x9E37_79B9_7F4A_7C15
+            ^ ((generation_index as u64 + 1).wrapping_mul(0xD6E8_FEB8_6659_FD93)),
+    )
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct EvaluatedGenome {
     genome: AgentGenome,
@@ -257,7 +323,7 @@ struct EvaluatedGenome {
 mod tests {
     use crate::config::SimulationConfig;
 
-    use super::run_generations;
+    use super::{continue_generations_from_population, run_generations};
 
     #[test]
     fn run_generations_is_deterministic_for_same_seed() {
@@ -292,5 +358,29 @@ mod tests {
                 .all(|entry| entry.population_size == config.population_size)
         );
         assert_eq!(run.final_population.len(), config.population_size);
+    }
+
+    #[test]
+    fn continue_generations_from_population_matches_single_full_run() {
+        let config = SimulationConfig {
+            population_size: 10,
+            food_count: 24,
+            episode_steps: 30,
+            ..SimulationConfig::default()
+        };
+
+        let seed = 77;
+        let full_run = run_generations(&config, seed, 5);
+        let split_prefix = run_generations(&config, seed, 2);
+        let continued = continue_generations_from_population(
+            &config,
+            seed,
+            1,
+            &split_prefix.final_population,
+            3,
+        );
+
+        assert_eq!(continued.final_population, full_run.final_population);
+        assert_eq!(continued.generations.len(), 3);
     }
 }

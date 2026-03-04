@@ -24,6 +24,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 09:37Z) Implemented Bevy viewer path behind `gui` feature with MLP/LTC shape encoding (circle/triangle), food rendering, keyboard controls (pause/speed/rule toggles/restart), and live stats in window title.
 - [x] (2026-03-04 09:26Z) Implemented CLI execution flows (`run`, `batch`, `view`) backed by config loading, batch artifact writing, snapshot loading, and integration tests across both headless and GUI-capable builds.
 - [x] (2026-03-04 09:39Z) Validated acceptance-style CLI scenarios (`batch`, `run`, `view`) with real artifact outputs and recorded final retrospective; remaining gap is manual interactive GUI behavior verification on a desktop session.
+- [x] (2026-03-04 10:45Z) Added GUI generation-continuation controls (variable generation count + evolve action), plus experiment APIs to continue evolution from snapshot populations and rebuild viewer state/visuals deterministically; verified with `cargo check --features gui` and full `cargo test`.
 
 ## Surprises & Discoveries
 
@@ -53,6 +54,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: Default Bevy feature set pulled in audio system dependencies (`alsa`) unavailable in this environment, causing GUI build failures.
   Evidence: `cargo check --features gui` failed in `alsa-sys` until Bevy features were reduced to a render/window subset.
+
+- Observation: Snapshot `generation` values represent CLI run-count semantics while persisted population genomes correspond to the pre-next-evolution population, so GUI continuation needs an internal population-generation index to avoid skipping/repeating evolution steps.
+  Evidence: continuity test coverage in `experiment::runner` passes only when continuation uses explicit generation-index tracking tied to the starting population.
 
 ## Decision Log
 
@@ -124,6 +128,10 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: Enables deterministic GUI-path compile checks in environments without system `alsa` packages while preserving 2D rendering capabilities.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: For GUI "continue evolution", track two counters: user-facing snapshot generation (`generation`) and internal population generation index (`population_generation_index`) used for deterministic GA continuation seeding.
+  Rationale: This preserves existing snapshot compatibility and avoids semantic churn in CLI artifact naming while enabling correct in-GUI continuation behavior from loaded populations.
+  Date/Author: 2026-03-04 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -143,6 +151,8 @@ Milestone 8 is complete for command-line workflows. CLI command handlers now run
 Milestone 7 is complete at the implementation level. The GUI path now launches a Bevy app (when compiled with `--features gui`), renders MLP and LTC agents with distinct geometry (circle and triangle), renders food points, supports pause/resume and simulation speed control, allows runtime rule toggling and restart from snapshot seed/config state, and exposes live run statistics in the window title for continuous inspection.
 
 Final retrospective: the core v1 pipeline is now implemented end-to-end for deterministic headless evolution, artifact persistence, snapshot reload, mixed-family controller execution, and CLI orchestration. Automated verification covers deterministic behavior, GA mechanics, artifact generation, snapshot roundtrip, and command workflows. The outstanding verification gap is manual desktop interaction testing of the Bevy window controls and visual behavior on a machine with active graphics display support.
+
+Post-plan enhancement: GUI now supports continuing evolution by a variable number of generations directly in the viewer, with deterministic continuation APIs in `experiment::runner` and viewer-side visual rebuilds when controller families change after evolution. This closes a key interactive workflow gap that previously required returning to CLI runs.
 
 ## Context and Orientation
 
@@ -466,3 +476,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after CLI orchestration implementation to mark Milestone 8 headless workflows complete, record command-execution layering decisions, and capture passing CLI integration tests while deferring full Bevy viewer behavior to Milestone 7.
 2026-03-04: Plan updated after Bevy viewer implementation to mark Milestone 7 complete, record GUI feature-scoping decisions, and capture passing default-test + `--features gui` compile evidence.
 2026-03-04: Plan updated after acceptance-style command validation to mark final plan step complete and document the remaining manual GUI-interaction verification gap.
+2026-03-04: Plan updated after GUI generation-continuation implementation to record the new viewer controls, note population-generation indexing semantics discovered during continuation work, and capture passing `cargo check --features gui` + `cargo test` verification evidence.
