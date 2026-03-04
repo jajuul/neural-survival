@@ -1,16 +1,22 @@
 # genetics
 
 ## Purpose
-This module will implement selection, crossover, and mutation logic.
+This module provides genome types and genetic operators for population evolution.
 
 ## Behavior
-Milestone 1 introduces a scaffold module with no genetic operations yet.
+- Defines `TraitGenome` and `AgentGenome` structures.
+- Initializes mixed-family populations from deterministic RNG.
+- Evolves populations using elitism, tournament selection, crossover, and mutation.
+- Enforces trait mutation bounds and stable brain parameter mutation paths.
 
 ## Inputs
-- Future: population genomes and RNG streams.
+- `SimulationConfig` GA parameters.
+- Deterministic RNG streams.
+- Scored genomes from episode evaluations.
 
 ## Outputs
-- Future: next-generation genomes.
+- Initial populations.
+- Next-generation populations with preserved size.
 
 ## Side Effects
-- None in Milestone 1.
+- No external side effects.

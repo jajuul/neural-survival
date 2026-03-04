@@ -45,6 +45,10 @@ pub struct SimulationConfig {
     pub default_perception_channels: u16,
     pub default_network_size: usize,
     pub default_metabolic_efficiency: f32,
+    pub controller_ltc_probability: f32,
+    pub fitness_weight_survival: f32,
+    pub fitness_weight_food: f32,
+    pub fitness_weight_energy: f32,
     pub rule_toggles: RuleToggles,
 }
 
@@ -73,6 +77,10 @@ impl Default for SimulationConfig {
             default_perception_channels: 6,
             default_network_size: 64,
             default_metabolic_efficiency: 1.0,
+            controller_ltc_probability: 0.5,
+            fitness_weight_survival: 1.0,
+            fitness_weight_food: 2.0,
+            fitness_weight_energy: 0.5,
             rule_toggles: RuleToggles::default(),
         }
     }

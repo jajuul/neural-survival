@@ -1,16 +1,20 @@
 # experiment
 
 ## Purpose
-This module will orchestrate multi-generation experiments.
+This module orchestrates deterministic multi-generation evolution runs.
 
 ## Behavior
-Milestone 1 sets up the module boundary for later `run` and `batch` orchestration.
+- Initializes a mixed-family population from config and seed.
+- Scores each genome through deterministic episode evaluation.
+- Evolves generations using genetics operators.
+- Produces per-generation best/mean fitness metrics and final population genomes.
 
 ## Inputs
-- Future: config, seed, and generation limits.
+- `SimulationConfig`
+- Run seed and generation count.
 
 ## Outputs
-- Future: per-generation metrics and snapshots.
+- `EvolutionRun` with generation metrics and final population.
 
 ## Side Effects
-- Future: writes artifacts to disk.
+- No external side effects in Milestone 5.

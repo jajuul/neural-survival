@@ -1,5 +1,10 @@
-//! Genetic algorithm placeholder for Milestone 1.
+//! Genetic operators and population evolution utilities.
 
-/// Marker type used to keep the module non-empty during scaffolding.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct GeneticsScaffold;
+pub mod genome;
+pub mod operators;
+pub mod population;
+
+pub use genome::{AgentGenome, TraitGenome};
+pub use population::{
+    ScoredGenome, default_mixed_factory, evolve_population, initialize_population,
+};

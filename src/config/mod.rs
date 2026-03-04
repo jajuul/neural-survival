@@ -204,6 +204,43 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if !(0.0..=1.0).contains(&config.controller_ltc_probability) {
+        return Err(ConfigError::Invalid {
+            field: "controller_ltc_probability",
+            message: "must be in [0, 1]".into(),
+        });
+    }
+
+    if config.fitness_weight_survival < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "fitness_weight_survival",
+            message: "must be >= 0".into(),
+        });
+    }
+
+    if config.fitness_weight_food < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "fitness_weight_food",
+            message: "must be >= 0".into(),
+        });
+    }
+
+    if config.fitness_weight_energy < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "fitness_weight_energy",
+            message: "must be >= 0".into(),
+        });
+    }
+
+    if (config.fitness_weight_survival + config.fitness_weight_food + config.fitness_weight_energy)
+        <= 0.0
+    {
+        return Err(ConfigError::Invalid {
+            field: "fitness_weight_*",
+            message: "at least one fitness weight must be > 0".into(),
+        });
+    }
+
     Ok(())
 }
 

@@ -20,6 +20,10 @@ default_perception_radius = 15.0
 default_perception_channels = 6
 default_network_size = 64
 default_metabolic_efficiency = 1.0
+controller_ltc_probability = 0.5
+fitness_weight_survival = 1.0
+fitness_weight_food = 2.0
+fitness_weight_energy = 0.5
 
 [rule_toggles]
 energy_by_speed = true

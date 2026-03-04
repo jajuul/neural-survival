@@ -1,16 +1,18 @@
 # fitness
 
 ## Purpose
-This module will compute per-agent and aggregate fitness metrics.
+This module computes weighted scalar fitness values for evolutionary selection.
 
 ## Behavior
-Milestone 1 includes placeholders only; scoring is added in later milestones.
+- Accepts episode outcome components (survival, food consumed, final energy).
+- Applies config-provided weights to produce one deterministic fitness score.
 
 ## Inputs
-- Future: episode outcomes and fitness weights.
+- `FitnessComponents` per evaluated genome.
+- `SimulationConfig` fitness weights.
 
 ## Outputs
-- Future: scalar fitness values and generation summaries.
+- Scalar `f32` fitness value.
 
 ## Side Effects
-- None in Milestone 1.
+- No side effects.

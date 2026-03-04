@@ -1,0 +1,21 @@
+use serde::{Deserialize, Serialize};
+
+use crate::brain::{BrainGenome, ControllerKind};
+
+/// Evolvable scalar trait genes for one agent.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TraitGenome {
+    pub max_speed: f32,
+    pub perception_radius: f32,
+    pub perception_channels: u16,
+    pub metabolic_efficiency: f32,
+    pub food_preference_mask: u32,
+}
+
+/// Full evolvable genome for one agent.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AgentGenome {
+    pub controller_kind: ControllerKind,
+    pub brain: BrainGenome,
+    pub traits: TraitGenome,
+}

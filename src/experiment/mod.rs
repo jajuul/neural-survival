@@ -1,5 +1,5 @@
-//! Experiment orchestration placeholder for Milestone 1.
+//! Experiment orchestration for deterministic headless evolution runs.
 
-/// Marker type used to keep the module non-empty during scaffolding.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct ExperimentScaffold;
+mod runner;
+
+pub use runner::{EvolutionRun, GenerationMetrics, run_generations};

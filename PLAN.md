@@ -19,7 +19,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 08:58Z) Implemented deterministic simulation core with seeded world initialization, fixed-step movement/wrapping, food collisions, and toggle-driven energy model; verified with unit and integration tests.
 - [x] (2026-03-04 09:10Z) Implemented neural controller framework and deterministic MLP controller (genome encode/decode + factory + golden tests) and validated MLP-driven simulation determinism.
 - [x] (2026-03-04 09:14Z) Implemented LTC controller with deterministic recurrent stepping, stable parameter clamping, mixed-family factory integration, and mixed MLP/LTC deterministic episode tests.
-- [ ] Implement GA generation loop, mutation/crossover/selection, and fitness scoring.
+- [x] (2026-03-04 09:19Z) Implemented fitness scoring, genome types, mutation/crossover/tournament selection, and deterministic multi-generation GA runner with population-size and determinism tests.
 - [ ] Implement artifact export and snapshot reload.
 - [ ] Implement Bevy viewer, HUD, and runtime controls.
 - [ ] Implement CLI flows (`run`, `batch`, `view`) and complete unit/integration tests.
@@ -41,6 +41,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: LTC golden outputs initially missed a second tanh nonlinearity in the output path and required corrected expected constants.
   Evidence: `brain::ltc::tests::deterministic_state_evolution_matches_known_sequence` failed once, then passed after recomputing expected values using the exact controller equations.
+
+- Observation: End-to-end GA determinism required deriving per-agent evaluation seeds from run seed + generation + agent index instead of reusing one seed per generation.
+  Evidence: deterministic-run tests are stable only after adding a fixed seed derivation function in `experiment::runner`.
 
 ## Decision Log
 
@@ -96,6 +99,10 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: Enables mixed-family population initialization and controller-kind metadata extraction for later UI/distribution reporting.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: Evaluate genomes in single-agent deterministic episodes during Milestone 5 instead of full-population shared-world episodes.
+  Rationale: This keeps fitness attribution and reproducibility straightforward while still exercising controller + world integration for selection pressure.
+  Date/Author: 2026-03-04 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -105,6 +112,8 @@ Milestone 2 is complete. The simulation core now includes `WorldState`, `AgentSt
 Milestone 3 is complete. The `brain` module now defines `NeuralController`, `ControllerFactory`, `ControllerKind`, and serializable `BrainGenome` with an MLP variant. The MLP implementation includes deterministic feed-forward inference, flattened parameter encode/decode routines, random genome generation, and golden-value unit tests. End-to-end tests now run complete MLP-driven simulation episodes and verify repeatable episode summaries for fixed seeds.
 
 Milestone 4 is complete. The `brain` module now includes an LTC controller prototype with deterministic recurrent stepping, serialized LTC genomes, bounded parameter clamping for stable integration, and a mixed-family factory that produces both MLP and LTC genomes. Verification includes LTC unit tests for deterministic step outputs and clamping behavior, plus an integration test proving mixed MLP/LTC episodes produce repeatable metrics and a non-zero count of both controller kinds in one population.
+
+Milestone 5 is complete. The repository now includes a fitness module, genetics genome/types/operators (`elitism`, `tournament selection`, `crossover`, `mutation`), and an experiment runner that executes deterministic multi-generation evolution and emits in-memory generation metrics. Verification includes unit tests for fitness weighting, mutation bounds, crossover behavior, population sizing, runner determinism, and integration tests that confirm non-empty fitness progression and stable same-seed outputs.
 
 ## Context and Orientation
 
@@ -423,3 +432,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after Milestone 2 implementation to mark deterministic simulation core complete, record deterministic stub-action design choice, and capture passing unit/integration test evidence for fixed-step world behavior.
 2026-03-04: Plan updated after Milestone 3 implementation to mark controller framework + MLP complete, record simulation hooks for controller-driven stepping, and capture passing MLP unit/integration determinism evidence.
 2026-03-04: Plan updated after Milestone 4 implementation to mark LTC prototype/integration complete, record stable-parameter and mixed-factory design decisions, and capture passing LTC + mixed-family determinism evidence.
+2026-03-04: Plan updated after Milestone 5 implementation to mark GA/fitness loop complete, record deterministic per-agent evaluation seeding and single-agent evaluation design decisions, and capture passing population/determinism progression tests.
