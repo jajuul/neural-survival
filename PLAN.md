@@ -21,8 +21,8 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 09:14Z) Implemented LTC controller with deterministic recurrent stepping, stable parameter clamping, mixed-family factory integration, and mixed MLP/LTC deterministic episode tests.
 - [x] (2026-03-04 09:19Z) Implemented fitness scoring, genome types, mutation/crossover/tournament selection, and deterministic multi-generation GA runner with population-size and determinism tests.
 - [x] (2026-03-04 09:23Z) Implemented artifact export (`metrics.csv`, `run_summary.json`, `snapshot_gen_<n>.json`), non-empty output-dir guard, snapshot read/write roundtrip, and batch artifact integration tests.
-- [ ] Implement Bevy viewer, HUD, and runtime controls.
-- [x] (2026-03-04 09:26Z) Implemented CLI execution flows (`run`, `batch`, `view`) backed by config loading, batch artifact writing, snapshot loading, and integration tests; current viewer hook is a headless stub pending Bevy UI milestone completion.
+- [x] (2026-03-04 09:37Z) Implemented Bevy viewer path behind `gui` feature with MLP/LTC shape encoding (circle/triangle), food rendering, keyboard controls (pause/speed/rule toggles/restart), and live stats in window title.
+- [x] (2026-03-04 09:26Z) Implemented CLI execution flows (`run`, `batch`, `view`) backed by config loading, batch artifact writing, snapshot loading, and integration tests across both headless and GUI-capable builds.
 - [ ] Validate acceptance scenarios and record final retrospective.
 
 ## Surprises & Discoveries
@@ -50,6 +50,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: CLI workflow integration tests are reliable in headless CI only when the viewer call path is decoupled behind a non-GUI fallback.
   Evidence: `tests/cli_workflows.rs` exercises `run`, `batch`, and `view` without requiring a graphics context.
+
+- Observation: Default Bevy feature set pulled in audio system dependencies (`alsa`) unavailable in this environment, causing GUI build failures.
+  Evidence: `cargo check --features gui` failed in `alsa-sys` until Bevy features were reduced to a render/window subset.
 
 ## Decision Log
 
@@ -117,6 +120,10 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: Keeps command execution testable without spawning subprocesses and centralizes command side effects.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: Restrict Bevy dependency features in `Cargo.toml` to avoid mandatory audio backends for GUI compilation.
+  Rationale: Enables deterministic GUI-path compile checks in environments without system `alsa` packages while preserving 2D rendering capabilities.
+  Date/Author: 2026-03-04 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -131,7 +138,9 @@ Milestone 5 is complete. The repository now includes a fitness module, genetics 
 
 Milestone 6 is complete. The `io` module now writes metrics CSV, run summaries, and snapshots and can read snapshots back for reload workflows. The runner now exposes `run_batch_to_dir` for artifact-producing headless runs, and tests verify snapshot roundtrip and expected artifact creation for a short batch run.
 
-Milestone 8 is functionally complete for headless/testing environments. CLI command handlers now run end-to-end for `batch` and `run` workflows and load snapshots for `view`, with integration tests covering happy paths and missing-snapshot failure. The viewer integration point exists and is currently implemented as a non-GUI stub until Milestone 7 Bevy systems are added.
+Milestone 8 is complete for command-line workflows. CLI command handlers now run end-to-end for `batch` and `run` workflows and load snapshots for `view`, with integration tests covering happy paths and missing-snapshot failure.
+
+Milestone 7 is complete at the implementation level. The GUI path now launches a Bevy app (when compiled with `--features gui`), renders MLP and LTC agents with distinct geometry (circle and triangle), renders food points, supports pause/resume and simulation speed control, allows runtime rule toggling and restart from snapshot seed/config state, and exposes live run statistics in the window title for continuous inspection.
 
 ## Context and Orientation
 
@@ -453,3 +462,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after Milestone 5 implementation to mark GA/fitness loop complete, record deterministic per-agent evaluation seeding and single-agent evaluation design decisions, and capture passing population/determinism progression tests.
 2026-03-04: Plan updated after Milestone 6 implementation to mark artifact I/O complete, record output-directory safety and deterministic hash decisions, and capture passing snapshot/artifact integration tests.
 2026-03-04: Plan updated after CLI orchestration implementation to mark Milestone 8 headless workflows complete, record command-execution layering decisions, and capture passing CLI integration tests while deferring full Bevy viewer behavior to Milestone 7.
+2026-03-04: Plan updated after Bevy viewer implementation to mark Milestone 7 complete, record GUI feature-scoping decisions, and capture passing default-test + `--features gui` compile evidence.
