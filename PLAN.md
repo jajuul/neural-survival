@@ -25,6 +25,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 09:26Z) Implemented CLI execution flows (`run`, `batch`, `view`) backed by config loading, batch artifact writing, snapshot loading, and integration tests across both headless and GUI-capable builds.
 - [x] (2026-03-04 09:39Z) Validated acceptance-style CLI scenarios (`batch`, `run`, `view`) with real artifact outputs and recorded final retrospective; remaining gap is manual interactive GUI behavior verification on a desktop session.
 - [x] (2026-03-04 10:45Z) Added GUI generation-continuation controls (variable generation count + evolve action), plus experiment APIs to continue evolution from snapshot populations and rebuild viewer state/visuals deterministically; verified with `cargo check --features gui` and full `cargo test`.
+- [x] (2026-03-04 14:10Z) Reworked GUI continuation controls to typed numeric inputs and added editable continuation parameters (`world size`, `food count`, `episode steps`, `mutation rate`) that feed directly into in-GUI evolution runs; expanded default world size to 300x300 with unchanged population defaults.
 
 ## Surprises & Discoveries
 
@@ -57,6 +58,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: Snapshot `generation` values represent CLI run-count semantics while persisted population genomes correspond to the pre-next-evolution population, so GUI continuation needs an internal population-generation index to avoid skipping/repeating evolution steps.
   Evidence: continuity test coverage in `experiment::runner` passes only when continuation uses explicit generation-index tracking tied to the starting population.
+
+- Observation: Keyboard shortcuts for simulation controls conflict with typed UI input unless input focus is explicitly tracked and shortcuts are gated while fields are active.
+  Evidence: numeric entry produced rule-toggle side effects until `keyboard_controls` was conditioned on `active_input.is_none()`.
 
 ## Decision Log
 
@@ -132,6 +136,10 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: This preserves existing snapshot compatibility and avoids semantic churn in CLI artifact naming while enabling correct in-GUI continuation behavior from loaded populations.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: Use typed numeric fields for continuation controls instead of increment/decrement buttons, and apply a bounded subset of config parameters (`world_width`, `world_height`, `food_count`, `episode_steps`, `mutation_rate`) to continuation runs.
+  Rationale: Typed entry is faster for large values (e.g., 1000 generations) and the selected parameters materially affect evolution behavior while keeping the UI manageable.
+  Date/Author: 2026-03-04 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -153,6 +161,8 @@ Milestone 7 is complete at the implementation level. The GUI path now launches a
 Final retrospective: the core v1 pipeline is now implemented end-to-end for deterministic headless evolution, artifact persistence, snapshot reload, mixed-family controller execution, and CLI orchestration. Automated verification covers deterministic behavior, GA mechanics, artifact generation, snapshot roundtrip, and command workflows. The outstanding verification gap is manual desktop interaction testing of the Bevy window controls and visual behavior on a machine with active graphics display support.
 
 Post-plan enhancement: GUI now supports continuing evolution by a variable number of generations directly in the viewer, with deterministic continuation APIs in `experiment::runner` and viewer-side visual rebuilds when controller families change after evolution. This closes a key interactive workflow gap that previously required returning to CLI runs.
+
+Post-plan enhancement (v2): GUI continuation now supports typed numeric input and in-panel parameter editing for continuation runs, and project defaults now use a larger 300x300 world without increasing the default population size.
 
 ## Context and Orientation
 
@@ -477,3 +487,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after Bevy viewer implementation to mark Milestone 7 complete, record GUI feature-scoping decisions, and capture passing default-test + `--features gui` compile evidence.
 2026-03-04: Plan updated after acceptance-style command validation to mark final plan step complete and document the remaining manual GUI-interaction verification gap.
 2026-03-04: Plan updated after GUI generation-continuation implementation to record the new viewer controls, note population-generation indexing semantics discovered during continuation work, and capture passing `cargo check --features gui` + `cargo test` verification evidence.
+2026-03-04: Plan updated after typed GUI-input and continuation-parameter editing work to document focus/shortcut interactions, configurable continuation fields, and larger world-size defaults.

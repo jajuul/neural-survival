@@ -55,8 +55,8 @@ pub struct SimulationConfig {
 impl Default for SimulationConfig {
     fn default() -> Self {
         Self {
-            world_width: 200.0,
-            world_height: 200.0,
+            world_width: 300.0,
+            world_height: 300.0,
             timestep_seconds: 0.1,
             episode_steps: 300,
             population_size: 128,

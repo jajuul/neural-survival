@@ -253,8 +253,8 @@ mod tests {
         let parsed = parse_config_toml("").expect("empty TOML should fall back to defaults");
 
         assert_eq!(parsed, SimulationConfig::default());
-        assert_eq!(parsed.world_width, 200.0);
-        assert_eq!(parsed.world_height, 200.0);
+        assert_eq!(parsed.world_width, 300.0);
+        assert_eq!(parsed.world_height, 300.0);
         assert_eq!(parsed.timestep_seconds, 0.1);
         assert_eq!(parsed.episode_steps, 300);
         assert_eq!(parsed.population_size, 128);

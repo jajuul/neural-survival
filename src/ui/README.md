@@ -7,7 +7,8 @@ This module provides viewer entrypoints for loading and inspecting simulation sn
 - Exposes `launch_snapshot_viewer` as the `run`/`view` integration point.
 - In `--features gui` builds, renders a Bevy viewer with:
   - start/stop simulation control
-  - generation-step controls to continue evolution by a variable generation count
+  - typed numeric fields for evolution continuation (`generations`, `world size`, `food count`, `episode steps`, `mutation rate`)
+  - continue-evolution action that applies edited parameters to in-GUI evolution
   - speed/rule toggles and restart from loaded snapshot state
 - In non-GUI builds, keeps a viewer stub so CLI workflows remain testable in headless environments.
 

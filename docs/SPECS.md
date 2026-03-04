@@ -234,7 +234,7 @@ Weights are config-driven and exported in run metadata.
 ## Defaults and Assumptions
 - Population size: 128.
 - Food count: 400.
-- World size: 200 x 200.
+- World size: 300 x 300.
 - Fixed timestep: 0.1 s.
 - Episode steps: 300.
 - Elitism: top 10%.
