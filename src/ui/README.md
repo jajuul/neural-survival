@@ -1,16 +1,17 @@
 # ui
 
 ## Purpose
-This module will provide the Bevy-based visualization layer.
+This module provides viewer entrypoints for loading and inspecting simulation snapshots.
 
 ## Behavior
-Milestone 1 includes only scaffolding for future GUI systems.
+- Exposes `launch_snapshot_viewer` as the `run`/`view` integration point.
+- Current build profile uses a non-GUI viewer stub so CLI workflows remain testable in headless environments.
 
 ## Inputs
-- Future: world snapshots and runtime control events.
+- `SnapshotFile` payloads.
 
 ## Outputs
-- Future: rendered simulation state and HUD updates.
+- Viewer lifecycle completion (`Ok(())`) or an error.
 
 ## Side Effects
-- Future: opens a native window and processes input events.
+- Prints viewer summary in the current stub implementation.

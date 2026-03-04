@@ -22,7 +22,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 09:19Z) Implemented fitness scoring, genome types, mutation/crossover/tournament selection, and deterministic multi-generation GA runner with population-size and determinism tests.
 - [x] (2026-03-04 09:23Z) Implemented artifact export (`metrics.csv`, `run_summary.json`, `snapshot_gen_<n>.json`), non-empty output-dir guard, snapshot read/write roundtrip, and batch artifact integration tests.
 - [ ] Implement Bevy viewer, HUD, and runtime controls.
-- [ ] Implement CLI flows (`run`, `batch`, `view`) and complete unit/integration tests.
+- [x] (2026-03-04 09:26Z) Implemented CLI execution flows (`run`, `batch`, `view`) backed by config loading, batch artifact writing, snapshot loading, and integration tests; current viewer hook is a headless stub pending Bevy UI milestone completion.
 - [ ] Validate acceptance scenarios and record final retrospective.
 
 ## Surprises & Discoveries
@@ -47,6 +47,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: Metrics export and summary hashing remain deterministic only when run metadata excludes wall-clock timestamps.
   Evidence: repeated same-seed batch runs produce identical generation metrics and stable config hashes in tests.
+
+- Observation: CLI workflow integration tests are reliable in headless CI only when the viewer call path is decoupled behind a non-GUI fallback.
+  Evidence: `tests/cli_workflows.rs` exercises `run`, `batch`, and `view` without requiring a graphics context.
 
 ## Decision Log
 
@@ -110,6 +113,10 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: Prevents accidental artifact mixing while preserving the existing CLI contract without extra overwrite flags.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: Introduce an explicit `app::execute_command` orchestration layer that main, tests, and future UIs can share.
+  Rationale: Keeps command execution testable without spawning subprocesses and centralizes command side effects.
+  Date/Author: 2026-03-04 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -123,6 +130,8 @@ Milestone 4 is complete. The `brain` module now includes an LTC controller proto
 Milestone 5 is complete. The repository now includes a fitness module, genetics genome/types/operators (`elitism`, `tournament selection`, `crossover`, `mutation`), and an experiment runner that executes deterministic multi-generation evolution and emits in-memory generation metrics. Verification includes unit tests for fitness weighting, mutation bounds, crossover behavior, population sizing, runner determinism, and integration tests that confirm non-empty fitness progression and stable same-seed outputs.
 
 Milestone 6 is complete. The `io` module now writes metrics CSV, run summaries, and snapshots and can read snapshots back for reload workflows. The runner now exposes `run_batch_to_dir` for artifact-producing headless runs, and tests verify snapshot roundtrip and expected artifact creation for a short batch run.
+
+Milestone 8 is functionally complete for headless/testing environments. CLI command handlers now run end-to-end for `batch` and `run` workflows and load snapshots for `view`, with integration tests covering happy paths and missing-snapshot failure. The viewer integration point exists and is currently implemented as a non-GUI stub until Milestone 7 Bevy systems are added.
 
 ## Context and Orientation
 
@@ -443,3 +452,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after Milestone 4 implementation to mark LTC prototype/integration complete, record stable-parameter and mixed-factory design decisions, and capture passing LTC + mixed-family determinism evidence.
 2026-03-04: Plan updated after Milestone 5 implementation to mark GA/fitness loop complete, record deterministic per-agent evaluation seeding and single-agent evaluation design decisions, and capture passing population/determinism progression tests.
 2026-03-04: Plan updated after Milestone 6 implementation to mark artifact I/O complete, record output-directory safety and deterministic hash decisions, and capture passing snapshot/artifact integration tests.
+2026-03-04: Plan updated after CLI orchestration implementation to mark Milestone 8 headless workflows complete, record command-execution layering decisions, and capture passing CLI integration tests while deferring full Bevy viewer behavior to Milestone 7.

@@ -1,5 +1,19 @@
-//! GUI module placeholder for Milestone 1.
+//! Viewer entrypoints.
 
-/// Marker type used to keep the module non-empty during scaffolding.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct UiScaffold;
+use crate::io::snapshot::SnapshotFile;
+
+/// Launch viewer from a snapshot payload.
+///
+/// Inputs: snapshot state loaded from disk.
+/// Output: `Ok(())` after viewer exits.
+/// Side effects: in this build profile, prints summary and returns.
+pub fn launch_snapshot_viewer(snapshot: &SnapshotFile) -> anyhow::Result<()> {
+    println!(
+        "viewer stub: generation={}, population={}, world={}x{}",
+        snapshot.generation,
+        snapshot.population.len(),
+        snapshot.world_state.width,
+        snapshot.world_state.height
+    );
+    Ok(())
+}
