@@ -24,6 +24,12 @@ mod bevy_viewer {
         id: u32,
     }
 
+    #[derive(Component)]
+    struct StartStopButton;
+
+    #[derive(Component)]
+    struct StartStopButtonLabel;
+
     #[derive(Resource, Clone)]
     struct ViewerRuntime {
         initial_snapshot: SnapshotFile,
@@ -48,7 +54,7 @@ mod bevy_viewer {
                 world: snapshot.world_state.clone(),
                 config: snapshot.resolved_config.clone(),
                 generation: snapshot.generation,
-                paused: false,
+                paused: true,
                 speed_multiplier: 1.0,
                 controller_kinds,
             })
@@ -65,6 +71,8 @@ mod bevy_viewer {
                 Update,
                 (
                     keyboard_controls,
+                    start_stop_button_interaction,
+                    sync_start_stop_button_state,
                     advance_simulation,
                     sync_agent_visuals,
                     sync_food_visuals,
@@ -119,6 +127,37 @@ mod bevy_viewer {
             runtime.world.width,
             runtime.world.height,
         );
+
+        commands
+            .spawn(Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(12.0),
+                top: Val::Px(12.0),
+                ..default()
+            })
+            .with_children(|parent| {
+                parent
+                    .spawn((
+                        Button,
+                        Node {
+                            width: Val::Px(150.0),
+                            height: Val::Px(42.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.2, 0.7, 0.3)),
+                        StartStopButton,
+                    ))
+                    .with_children(|button| {
+                        button.spawn((
+                            Text::new("Start"),
+                            TextFont::from_font_size(18.0),
+                            TextColor(Color::srgb(0.06, 0.06, 0.06)),
+                            StartStopButtonLabel,
+                        ));
+                    });
+            });
     }
 
     fn keyboard_controls(keys: Res<ButtonInput<KeyCode>>, mut runtime: ResMut<ViewerRuntime>) {
@@ -153,8 +192,55 @@ mod bevy_viewer {
             runtime.world = runtime.initial_snapshot.world_state.clone();
             runtime.config = runtime.initial_snapshot.resolved_config.clone();
             runtime.generation = runtime.initial_snapshot.generation;
-            runtime.paused = false;
+            runtime.paused = true;
             runtime.speed_multiplier = 1.0;
+        }
+    }
+
+    fn start_stop_button_interaction(
+        interactions: Query<
+            &Interaction,
+            (Changed<Interaction>, With<Button>, With<StartStopButton>),
+        >,
+        mut runtime: ResMut<ViewerRuntime>,
+    ) {
+        for interaction in &interactions {
+            if matches!(*interaction, Interaction::Pressed) {
+                runtime.paused = !runtime.paused;
+            }
+        }
+    }
+
+    fn sync_start_stop_button_state(
+        runtime: Res<ViewerRuntime>,
+        mut button_query: Query<
+            (&Interaction, &mut BackgroundColor),
+            (With<Button>, With<StartStopButton>),
+        >,
+        mut label_query: Query<&mut Text, With<StartStopButtonLabel>>,
+    ) {
+        for (interaction, mut color) in &mut button_query {
+            *color = button_color(runtime.paused, *interaction);
+        }
+
+        for mut label in &mut label_query {
+            **label = if runtime.paused {
+                "Start".to_string()
+            } else {
+                "Stop".to_string()
+            };
+        }
+    }
+
+    fn button_color(paused: bool, interaction: Interaction) -> BackgroundColor {
+        if matches!(interaction, Interaction::Hovered) {
+            return BackgroundColor(Color::srgb(0.35, 0.55, 0.85));
+        }
+
+        if paused {
+            BackgroundColor(Color::srgb(0.2, 0.7, 0.3))
+        } else {
+            BackgroundColor(Color::srgb(0.8, 0.35, 0.3))
         }
     }
 

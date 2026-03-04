@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
-bevy = { version = "0.15", optional = true, default-features = false, features = ["bevy_asset", "bevy_core_pipeline", "bevy_render", "bevy_sprite", "bevy_winit", "png", "x11"] }
+bevy = { version = "0.15", optional = true, default-features = false, features = ["bevy_asset", "bevy_core_pipeline", "bevy_render", "bevy_sprite", "bevy_text", "bevy_ui", "bevy_winit", "default_font", "png", "x11"] }
 clap = { version = "4", features = ["derive"] }
 csv = "1"
 rand = "0.8"
