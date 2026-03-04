@@ -133,9 +133,9 @@ pub struct RuleToggles {
 
 ### Sensors and Actions
 - Sensor vector includes:
-  - Direction and distance cues for nearby edible food.
-  - Direction and distance cue for nearest other agent.
-  - Internal state cue (normalized energy).
+  - Core normalized scalar cues (`x`, `y`, `energy`, `speed`).
+  - Shorelark-inspired "eye" bins: angular food intensity cells within a configurable field-of-view and perception range.
+  - Per-agent channel count trait controls active eye bin count (bounded by fixed controller input width).
 - Action vector controls:
   - Steering direction change.
   - Throttle/drive magnitude.

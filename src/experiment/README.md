@@ -6,6 +6,7 @@ This module orchestrates deterministic multi-generation evolution runs.
 ## Behavior
 - Initializes a mixed-family population from config and seed.
 - Scores each genome through deterministic episode evaluation.
+- Feeds controllers deterministic sensor vectors (core scalar cues plus eye-bin food vision).
 - Evolves generations using genetics operators.
 - Produces per-generation best/mean fitness metrics and final population genomes.
 - Provides `run_batch_to_dir` to persist metrics, summary, and snapshot artifacts.

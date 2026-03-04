@@ -4,7 +4,7 @@ use thiserror::Error;
 
 pub mod types;
 
-pub use types::{RuleToggles, SimulationConfig};
+pub use types::{MAX_PERCEPTION_CHANNELS, RuleToggles, SimulationConfig};
 
 /// Errors returned while loading or validating configuration.
 #[derive(Debug, Error)]
@@ -162,6 +162,13 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if config.eye_fov_angle_radians <= 0.0 || config.eye_fov_angle_radians > std::f32::consts::TAU {
+        return Err(ConfigError::Invalid {
+            field: "eye_fov_angle_radians",
+            message: "must be in (0, 2π]".into(),
+        });
+    }
+
     if config.default_agent_max_speed <= 0.0 {
         return Err(ConfigError::Invalid {
             field: "default_agent_max_speed",
@@ -187,6 +194,16 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         return Err(ConfigError::Invalid {
             field: "default_perception_channels",
             message: "must be >= 1".into(),
+        });
+    }
+
+    if config.default_perception_channels > MAX_PERCEPTION_CHANNELS {
+        return Err(ConfigError::Invalid {
+            field: "default_perception_channels",
+            message: format!(
+                "must be <= MAX_PERCEPTION_CHANNELS ({})",
+                MAX_PERCEPTION_CHANNELS
+            ),
         });
     }
 
@@ -246,7 +263,7 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConfigError, SimulationConfig, parse_config_toml};
+    use super::{ConfigError, MAX_PERCEPTION_CHANNELS, SimulationConfig, parse_config_toml};
 
     #[test]
     fn empty_toml_uses_spec_defaults() {
@@ -262,6 +279,10 @@ mod tests {
         assert_eq!(parsed.elitism_fraction, 0.10);
         assert_eq!(parsed.tournament_size, 5);
         assert_eq!(parsed.mutation_rate, 0.15);
+        assert_eq!(
+            parsed.eye_fov_angle_radians,
+            std::f32::consts::PI + std::f32::consts::FRAC_PI_4
+        );
     }
 
     #[test]
@@ -289,6 +310,23 @@ mod tests {
 
         match err {
             ConfigError::Invalid { field, .. } => assert_eq!(field, "tournament_size"),
+            _ => panic!("expected ConfigError::Invalid"),
+        }
+    }
+
+    #[test]
+    fn invalid_default_perception_channels_above_max_is_rejected() {
+        let raw = format!(
+            "
+            default_perception_channels = {}
+        ",
+            MAX_PERCEPTION_CHANNELS + 1
+        );
+
+        let err = parse_config_toml(&raw).expect_err("too many perception channels should fail");
+
+        match err {
+            ConfigError::Invalid { field, .. } => assert_eq!(field, "default_perception_channels"),
             _ => panic!("expected ConfigError::Invalid"),
         }
     }

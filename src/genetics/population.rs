@@ -5,6 +5,7 @@ use crate::brain::{
     MixedControllerFactory, MlpControllerFactory, MlpShape,
 };
 use crate::config::SimulationConfig;
+use crate::sim::CONTROLLER_SENSOR_INPUT_SIZE;
 
 use super::genome::AgentGenome;
 use super::operators::{crossover, default_traits, mutate};
@@ -20,12 +21,12 @@ pub struct ScoredGenome {
 pub fn default_mixed_factory(config: &SimulationConfig) -> MixedControllerFactory {
     MixedControllerFactory::new(
         MlpControllerFactory::new(MlpShape {
-            input_size: 4,
+            input_size: CONTROLLER_SENSOR_INPUT_SIZE,
             hidden_size: 8,
             output_size: 2,
         }),
         LtcControllerFactory::new(LtcShape {
-            input_size: 4,
+            input_size: CONTROLLER_SENSOR_INPUT_SIZE,
             state_size: 8,
             output_size: 2,
         }),
@@ -77,12 +78,50 @@ pub fn evolve_population(
         "evolve_population requires non-empty scored set"
     );
 
+    let mlp_scored = scored
+        .iter()
+        .filter(|entry| entry.genome.controller_kind == ControllerKind::Mlp)
+        .cloned()
+        .collect::<Vec<_>>();
+    let ltc_scored = scored
+        .iter()
+        .filter(|entry| entry.genome.controller_kind == ControllerKind::Ltc)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let mut next = Vec::with_capacity(config.population_size);
+    next.extend(evolve_species_group(
+        &mlp_scored,
+        mlp_scored.len(),
+        config,
+        rng,
+    ));
+    next.extend(evolve_species_group(
+        &ltc_scored,
+        ltc_scored.len(),
+        config,
+        rng,
+    ));
+
+    debug_assert_eq!(next.len(), config.population_size);
+    next
+}
+
+fn evolve_species_group(
+    scored: &[ScoredGenome],
+    target_count: usize,
+    config: &SimulationConfig,
+    rng: &mut StdRng,
+) -> Vec<AgentGenome> {
+    if target_count == 0 {
+        return Vec::new();
+    }
+
     let mut ranked = scored.to_vec();
     ranked.sort_by(|a, b| b.fitness.total_cmp(&a.fitness));
 
-    let mut elite_count = ((config.population_size as f32 * config.elitism_fraction).round()
-        as usize)
-        .clamp(1, config.population_size);
+    let mut elite_count =
+        ((target_count as f32 * config.elitism_fraction).round() as usize).clamp(1, target_count);
     elite_count = elite_count.min(ranked.len());
 
     let mut next = ranked
@@ -91,9 +130,10 @@ pub fn evolve_population(
         .map(|entry| entry.genome.clone())
         .collect::<Vec<_>>();
 
-    while next.len() < config.population_size {
-        let parent_a = tournament_select(&ranked, config.tournament_size, rng);
-        let parent_b = tournament_select(&ranked, config.tournament_size, rng);
+    let tournament_size = config.tournament_size.min(ranked.len()).max(1);
+    while next.len() < target_count {
+        let parent_a = tournament_select(&ranked, tournament_size, rng);
+        let parent_b = tournament_select(&ranked, tournament_size, rng);
 
         let mut child = crossover(parent_a, parent_b, rng);
         mutate(&mut child, rng, config);
@@ -165,5 +205,50 @@ mod tests {
         let next = evolve_population(&scored, &config, &mut evo_rng);
 
         assert_eq!(next.len(), config.population_size);
+    }
+
+    #[test]
+    fn evolve_population_preserves_species_counts() {
+        let config = SimulationConfig {
+            population_size: 24,
+            tournament_size: 4,
+            ..SimulationConfig::default()
+        };
+        let factory = default_mixed_factory(&config);
+        let mut init_rng = StdRng::seed_from_u64(44);
+        let population = initialize_population(&config, &mut init_rng, &factory);
+
+        let mlp_before = population
+            .iter()
+            .filter(|entry| entry.controller_kind == crate::brain::ControllerKind::Mlp)
+            .count();
+        let ltc_before = population
+            .iter()
+            .filter(|entry| entry.controller_kind == crate::brain::ControllerKind::Ltc)
+            .count();
+
+        let scored = population
+            .into_iter()
+            .enumerate()
+            .map(|(idx, genome)| ScoredGenome {
+                genome,
+                fitness: idx as f32,
+            })
+            .collect::<Vec<_>>();
+
+        let mut evo_rng = StdRng::seed_from_u64(81);
+        let next = evolve_population(&scored, &config, &mut evo_rng);
+
+        let mlp_after = next
+            .iter()
+            .filter(|entry| entry.controller_kind == crate::brain::ControllerKind::Mlp)
+            .count();
+        let ltc_after = next
+            .iter()
+            .filter(|entry| entry.controller_kind == crate::brain::ControllerKind::Ltc)
+            .count();
+
+        assert_eq!(mlp_after, mlp_before);
+        assert_eq!(ltc_after, ltc_before);
     }
 }

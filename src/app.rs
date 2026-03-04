@@ -30,8 +30,10 @@ fn run_command(args: RunArgs) -> Result<()> {
         args.headless_generations,
         &args.out,
         |completed, total| {
-            print!("\rheadless evolution progress: {completed}/{total} generations");
-            let _ = io::stdout().flush();
+            if completed % 10 == 0 || completed == total {
+                print!("\rheadless evolution progress: {completed}/{total} generations");
+                let _ = io::stdout().flush();
+            }
         },
     )
     .with_context(|| {
@@ -64,8 +66,10 @@ fn batch_command(args: BatchArgs) -> Result<()> {
         args.generations,
         &args.out,
         |completed, total| {
-            print!("\rbatch evolution progress: {completed}/{total} generations");
-            let _ = io::stdout().flush();
+            if completed % 10 == 0 || completed == total {
+                print!("\rbatch evolution progress: {completed}/{total} generations");
+                let _ = io::stdout().flush();
+            }
         },
     )
     .with_context(|| {

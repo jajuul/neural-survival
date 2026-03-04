@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+/// Hard upper bound for evolvable `perception_channels`.
+pub const MAX_PERCEPTION_CHANNELS: u16 = 24;
+
 /// Runtime switches for optional energy model terms.
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(default, deny_unknown_fields)]
@@ -39,6 +42,7 @@ pub struct SimulationConfig {
     pub perception_energy_cost_factor: f32,
     pub food_energy_gain: f32,
     pub food_collision_radius: f32,
+    pub eye_fov_angle_radians: f32,
     pub default_agent_max_speed: f32,
     pub max_turn_rate_radians: f32,
     pub default_perception_radius: f32,
@@ -71,6 +75,7 @@ impl Default for SimulationConfig {
             perception_energy_cost_factor: 0.0005,
             food_energy_gain: 20.0,
             food_collision_radius: 1.2,
+            eye_fov_angle_radians: std::f32::consts::PI + std::f32::consts::FRAC_PI_4,
             default_agent_max_speed: 6.0,
             max_turn_rate_radians: std::f32::consts::PI,
             default_perception_radius: 15.0,

@@ -7,6 +7,7 @@ This module implements the deterministic fixed-step simulation core for the 2D t
 - Initializes agent and food state deterministically from a seed.
 - Advances the world one fixed step at a time using stub controller actions.
 - Applies toroidal wrapping, food collision handling, and energy loss/gain updates.
+- Builds controller sensor vectors with Shorelark-inspired food "eyes": food intensity is binned by relative angle inside a configurable field-of-view and bounded by perception range/channel traits.
 - Produces aggregate episode summaries for reproducibility checks.
 
 ## Inputs

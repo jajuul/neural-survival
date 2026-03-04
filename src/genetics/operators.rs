@@ -1,13 +1,13 @@
 use rand::{Rng, rngs::StdRng};
 
 use crate::brain::{BrainGenome, ControllerKind, LtcGenome, MlpGenome};
-use crate::config::SimulationConfig;
+use crate::config::{MAX_PERCEPTION_CHANNELS, SimulationConfig};
 
 use super::genome::{AgentGenome, TraitGenome};
 
 const MAX_SPEED_BOUNDS: (f32, f32) = (1.0, 12.0);
 const PERCEPTION_RADIUS_BOUNDS: (f32, f32) = (2.0, 40.0);
-const PERCEPTION_CHANNELS_BOUNDS: (u16, u16) = (1, 24);
+const PERCEPTION_CHANNELS_BOUNDS: (u16, u16) = (1, MAX_PERCEPTION_CHANNELS);
 const METABOLIC_EFFICIENCY_BOUNDS: (f32, f32) = (0.5, 2.0);
 
 /// Build trait defaults from the simulation config.
@@ -27,6 +27,11 @@ pub fn default_traits(config: &SimulationConfig) -> TraitGenome {
 /// Output: child genome with mixed brain/trait genes.
 /// Side effects: none.
 pub fn crossover(parent_a: &AgentGenome, parent_b: &AgentGenome, rng: &mut StdRng) -> AgentGenome {
+    assert_eq!(
+        parent_a.controller_kind, parent_b.controller_kind,
+        "crossover requires matching controller kinds"
+    );
+
     let traits = TraitGenome {
         max_speed: if rng.gen_bool(0.5) {
             parent_a.traits.max_speed
@@ -126,13 +131,7 @@ fn crossover_brain(
         (BrainGenome::Ltc(a), BrainGenome::Ltc(b)) => {
             BrainGenome::Ltc(crossover_flat_ltc(a, b, rng))
         }
-        _ => {
-            if rng.gen_bool(0.5) {
-                parent_a.clone()
-            } else {
-                parent_b.clone()
-            }
-        }
+        _ => panic!("crossover_brain requires matching controller families"),
     }
 }
 
@@ -284,5 +283,37 @@ mod tests {
 
         let child = crossover(&parent_a, &parent_b, &mut rng);
         assert_eq!(child.controller_kind, ControllerKind::Mlp);
+    }
+
+    #[test]
+    #[should_panic(expected = "crossover requires matching controller kinds")]
+    fn crossover_panics_for_mixed_controller_kinds() {
+        let mut rng = StdRng::seed_from_u64(11);
+        let config = SimulationConfig::default();
+
+        let parent_mlp = AgentGenome {
+            controller_kind: ControllerKind::Mlp,
+            brain: test_mlp_genome(0.2),
+            traits: default_traits(&config),
+        };
+
+        let ltc_shape = crate::brain::LtcShape {
+            input_size: 4,
+            state_size: 3,
+            output_size: 2,
+        };
+        let parent_ltc = AgentGenome {
+            controller_kind: ControllerKind::Ltc,
+            brain: BrainGenome::Ltc(
+                crate::brain::LtcGenome::from_flat_parameters(
+                    ltc_shape,
+                    &vec![0.0; ltc_shape.parameter_count()],
+                )
+                .expect("valid LTC test genome"),
+            ),
+            traits: default_traits(&config),
+        };
+
+        let _ = crossover(&parent_mlp, &parent_ltc, &mut rng);
     }
 }

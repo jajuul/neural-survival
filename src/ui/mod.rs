@@ -591,7 +591,8 @@ mod bevy_viewer {
         let status = if let Some(job) = &runtime.evolution_job {
             format!(
                 "Status: evolving {}/{} generations",
-                job.completed_generations, job.total_generations
+                visible_progress_completed(job),
+                job.total_generations
             )
         } else {
             format!(
@@ -778,7 +779,8 @@ mod bevy_viewer {
         let evolution_progress = if let Some(job) = &runtime.evolution_job {
             format!(
                 " evolving={}/{}",
-                job.completed_generations, job.total_generations
+                visible_progress_completed(job),
+                job.total_generations
             )
         } else {
             String::new()
@@ -870,6 +872,14 @@ mod bevy_viewer {
             NumericFieldKind::EpisodeSteps => "Episode Steps",
             NumericFieldKind::MutationRate => "Mutation Rate",
         }
+    }
+
+    fn visible_progress_completed(job: &EvolutionJob) -> u32 {
+        if job.total_generations < 10 || job.completed_generations >= job.total_generations {
+            return job.completed_generations.min(job.total_generations);
+        }
+
+        (job.completed_generations / 10) * 10
     }
 
     fn accepts_numeric_char(kind: NumericFieldKind, ch: char, current: &str) -> bool {

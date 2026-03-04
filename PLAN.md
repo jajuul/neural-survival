@@ -27,6 +27,8 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 10:45Z) Added GUI generation-continuation controls (variable generation count + evolve action), plus experiment APIs to continue evolution from snapshot populations and rebuild viewer state/visuals deterministically; verified with `cargo check --features gui` and full `cargo test`.
 - [x] (2026-03-04 14:10Z) Reworked GUI continuation controls to typed numeric inputs and added editable continuation parameters (`world size`, `food count`, `episode steps`, `mutation rate`) that feed directly into in-GUI evolution runs; expanded default world size to 300x300 with unchanged population defaults.
 - [x] (2026-03-04 14:45Z) Added live generation-progress visibility during evolution in both CLI (`run`/`batch` progress counters) and GUI (status text + title progress while continuation jobs run incrementally per generation).
+- [x] (2026-03-04 18:15Z) Enforced species-isolated GA evolution (MLP and LTC evolve in separate pools with no interbreeding) and throttled progress feedback display cadence to every 10 generations (plus completion) for CLI and GUI progress indicators.
+- [x] (2026-03-04 19:05Z) Implemented Shorelark-inspired food vision ("eyes"): angular food-intensity bins with configurable FOV, trait-driven active channel count/range, fixed-width controller sensor vectors, updated controller input shapes, and passing sensor/config validation tests.
 
 ## Surprises & Discoveries
 
@@ -65,6 +67,12 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: GUI progress is not observable when continuation runs in one blocking call on the main thread; per-frame single-generation stepping is required to surface live progress.
   Evidence: status/title updates only become visible when evolution is processed incrementally via a persistent job state in `ViewerRuntime`.
+
+- Observation: Simply preventing mixed-brain crossover is insufficient to guarantee species separation; parent sampling must be partitioned by controller family to avoid mixed pools at selection time.
+  Evidence: species isolation is robust only after splitting `evolve_population` into independent MLP/LTC sub-evolution groups.
+
+- Observation: Evolving trait-level `perception_channels` conflicts with static MLP/LTC input shapes unless sensor width is fixed; a compatibility layer is needed.
+  Evidence: Existing snapshots/genomes carry fixed input dimensions, so the new eye model had to keep a constant input width while activating only the first `perception_channels` bins.
 
 ## Decision Log
 
@@ -148,6 +156,14 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: The user requirement is explicit live generation progress visibility in both terminal and GUI, which needs callback-based reporting in CLI and frame-by-frame progression in viewer mode.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: Partition evolution by `ControllerKind` and preserve per-species counts generation-to-generation.
+  Rationale: This fully enforces "no interbreeding" semantics while retaining mixed-species experiments under one shared simulation run.
+  Date/Author: 2026-03-04 / Codex
+
+- Decision: Implement Shorelark-inspired food eyes as angular intensity bins over a configurable FOV (`eye_fov_angle_radians`) with fixed maximum bin capacity and per-agent active channel count.
+  Rationale: This preserves deterministic, evolvable vision behavior while keeping controller genome shapes stable and backward-compatible with existing snapshots.
+  Date/Author: 2026-03-04 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -173,6 +189,10 @@ Post-plan enhancement: GUI now supports continuing evolution by a variable numbe
 Post-plan enhancement (v2): GUI continuation now supports typed numeric input and in-panel parameter editing for continuation runs, and project defaults now use a larger 300x300 world without increasing the default population size.
 
 Post-plan enhancement (v3): generation-progress reporting is now visible during evolution in both command-line and GUI workflows, improving observability for long runs.
+
+Post-plan enhancement (v4): MLP and LTC species now evolve independently without cross-species mating, and user-facing generation feedback is throttled to every 10 generations to reduce progress noise on long runs.
+
+Post-plan enhancement (v5): controllers now receive Shorelark-inspired eye inputs (food intensity binned by relative angle and perception range), with fixed-width sensor vectors, new FOV configuration, and trait-driven active eye channel counts.
 
 ## Context and Orientation
 
@@ -499,3 +519,5 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after GUI generation-continuation implementation to record the new viewer controls, note population-generation indexing semantics discovered during continuation work, and capture passing `cargo check --features gui` + `cargo test` verification evidence.
 2026-03-04: Plan updated after typed GUI-input and continuation-parameter editing work to document focus/shortcut interactions, configurable continuation fields, and larger world-size defaults.
 2026-03-04: Plan updated after progress-visibility work to document incremental GUI continuation jobs and CLI generation-progress reporting callbacks.
+2026-03-04: Plan updated after species-isolated evolution and feedback-throttling changes to document the no-interbreeding evolution partitioning and 10-generation progress cadence.
+2026-03-04: Plan updated after Shorelark-inspired eye-sensor implementation to document fixed-width vision-bin sensing, FOV configuration, and compatibility constraints between evolvable perception traits and static controller genome shapes.

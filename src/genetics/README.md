@@ -7,6 +7,7 @@ This module provides genome types and genetic operators for population evolution
 - Defines `TraitGenome` and `AgentGenome` structures.
 - Initializes mixed-family populations from deterministic RNG.
 - Evolves populations using elitism, tournament selection, crossover, and mutation.
+- Runs separate evolution pools per controller family (MLP and LTC), preserving per-family counts and preventing cross-family interbreeding.
 - Enforces trait mutation bounds and stable brain parameter mutation paths.
 
 ## Inputs
