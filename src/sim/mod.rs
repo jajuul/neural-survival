@@ -8,6 +8,6 @@ pub use types::{
     WorldState,
 };
 pub use world::{
-    initialize_world, run_headless_episode, run_steps, step_world, summarize_world,
-    toroidal_distance, wrap_position,
+    basic_sensor_vector, initialize_world, run_headless_episode, run_steps, step_world,
+    step_world_with_actions, summarize_world, toroidal_distance, wrap_position,
 };

@@ -4,7 +4,8 @@ use rand_chacha::ChaCha8Rng;
 use crate::config::SimulationConfig;
 
 use super::types::{
-    ActionVector, AgentState, EpisodeSummary, FoodState, StepOutcome, Vec2, WorldState,
+    ActionVector, AgentState, EpisodeSummary, FoodState, SensorVector, StepOutcome, Vec2,
+    WorldState,
 };
 
 /// Build a deterministic world state from config defaults and a seed.
@@ -62,6 +63,25 @@ pub fn initialize_world(config: &SimulationConfig, seed: u64) -> WorldState {
 /// Output: aggregate changes (`consumed_food`, `deaths`) for this step.
 /// Side effects: mutates world state in-place.
 pub fn step_world(world: &mut WorldState, config: &SimulationConfig) -> StepOutcome {
+    let actions = world
+        .agents
+        .iter()
+        .map(|agent| stub_action(agent.id, world.step_count))
+        .collect::<Vec<_>>();
+
+    step_world_with_actions(world, config, &actions)
+}
+
+/// Advance the simulation by one fixed step using caller-provided actions.
+///
+/// Inputs: mutable world state, validated simulation config, and one action per agent.
+/// Output: aggregate changes (`consumed_food`, `deaths`) for this step.
+/// Side effects: mutates world state in-place.
+pub fn step_world_with_actions(
+    world: &mut WorldState,
+    config: &SimulationConfig,
+    actions: &[ActionVector],
+) -> StepOutcome {
     let mut outcome = StepOutcome::default();
     let dt = config.timestep_seconds;
 
@@ -70,7 +90,10 @@ pub fn step_world(world: &mut WorldState, config: &SimulationConfig) -> StepOutc
             continue;
         }
 
-        let action = stub_action(world.agents[agent_idx].id, world.step_count);
+        let action = actions
+            .get(agent_idx)
+            .copied()
+            .unwrap_or_else(|| stub_action(world.agents[agent_idx].id, world.step_count));
         let speed = apply_kinematics(
             &mut world.agents[agent_idx],
             action,
@@ -127,6 +150,26 @@ pub fn run_headless_episode(config: &SimulationConfig, seed: u64) -> EpisodeSumm
 pub fn run_steps(world: &mut WorldState, config: &SimulationConfig, steps: u32) {
     for _ in 0..steps {
         step_world(world, config);
+    }
+}
+
+/// Build a compact baseline sensor vector for one agent.
+///
+/// Inputs: the current agent state, world dimensions, and config normalization constants.
+/// Output: a 4-element vector `[x_norm, y_norm, energy_norm, speed_norm]`.
+/// Side effects: none.
+pub fn basic_sensor_vector(
+    agent: &AgentState,
+    world: &WorldState,
+    config: &SimulationConfig,
+) -> SensorVector {
+    let x_norm = (agent.position.x / world.width).clamp(0.0, 1.0);
+    let y_norm = (agent.position.y / world.height).clamp(0.0, 1.0);
+    let energy_norm = (agent.energy / config.initial_agent_energy).clamp(0.0, 2.0);
+    let speed_norm = (agent.velocity.length() / agent.max_speed.max(0.001)).clamp(0.0, 1.0);
+
+    SensorVector {
+        values: vec![x_norm, y_norm, energy_norm, speed_norm],
     }
 }
 

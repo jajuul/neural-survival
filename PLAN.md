@@ -17,7 +17,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 08:29Z) Reconciled plan/spec ambiguities for seed ownership, output directory semantics, snapshot restart behavior, and metrics schema.
 - [x] (2026-03-04 08:53Z) Implemented workspace/module scaffolding, dependency setup, and config loading; verified with `cargo test` and `cargo run -- --help`.
 - [x] (2026-03-04 08:58Z) Implemented deterministic simulation core with seeded world initialization, fixed-step movement/wrapping, food collisions, and toggle-driven energy model; verified with unit and integration tests.
-- [ ] Implement neural controller framework and MLP controller.
+- [x] (2026-03-04 09:10Z) Implemented neural controller framework and deterministic MLP controller (genome encode/decode + factory + golden tests) and validated MLP-driven simulation determinism.
 - [ ] Implement LTC controller with deterministic step behavior.
 - [ ] Implement GA generation loop, mutation/crossover/selection, and fitness scoring.
 - [ ] Implement artifact export and snapshot reload.
@@ -35,6 +35,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: Sandbox-restricted runs could not resolve crates.io, but escalated execution successfully downloaded dependencies and completed verification.
   Evidence: Initial failures reported `Could not resolve host: index.crates.io`; subsequent escalated `cargo test` passed with 6 tests and `cargo run -- --help` displayed expected subcommands.
+
+- Observation: The MLP golden test constants were initially incorrect at the fifth decimal place and required recomputation to align with exact tanh math.
+  Evidence: `brain::mlp::tests::deterministic_forward_matches_known_values` failed once, then passed after updating expected steering/throttle constants.
 
 ## Decision Log
 
@@ -78,11 +81,17 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: This isolates world stepping behavior from controller implementation while still exercising movement and energy dynamics in a repeatable way.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: Add `step_world_with_actions` and `basic_sensor_vector` hooks in `sim` so controller-driven episodes can be tested without coupling simulation core to any specific controller implementation.
+  Rationale: Maintains separation of concerns while enabling Milestone 3 end-to-end MLP validation.
+  Date/Author: 2026-03-04 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
 
 Milestone 2 is complete. The simulation core now includes `WorldState`, `AgentState`, and `FoodState` with deterministic initialization from `ChaCha8Rng`, a fixed-step update loop, toroidal wrapping, collision-driven food consumption, and energy updates gated by runtime rule toggles. Verification includes unit tests for wrapping/collision/energy toggles and integration tests proving deterministic world progression and identical episode summaries for identical seed/config pairs.
+
+Milestone 3 is complete. The `brain` module now defines `NeuralController`, `ControllerFactory`, `ControllerKind`, and serializable `BrainGenome` with an MLP variant. The MLP implementation includes deterministic feed-forward inference, flattened parameter encode/decode routines, random genome generation, and golden-value unit tests. End-to-end tests now run complete MLP-driven simulation episodes and verify repeatable episode summaries for fixed seeds.
 
 ## Context and Orientation
 
@@ -399,3 +408,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after Milestone 1 implementation to reflect completed scaffolding work, document crates.io DNS limitations blocking acceptance command execution, and record the temporary `bevy` optional-feature dependency choice for staged delivery.
 2026-03-04: Plan updated after successful escalated verification to mark Milestone 1 complete and replace temporary acceptance blockers with actual passing command evidence.
 2026-03-04: Plan updated after Milestone 2 implementation to mark deterministic simulation core complete, record deterministic stub-action design choice, and capture passing unit/integration test evidence for fixed-step world behavior.
+2026-03-04: Plan updated after Milestone 3 implementation to mark controller framework + MLP complete, record simulation hooks for controller-driven stepping, and capture passing MLP unit/integration determinism evidence.
