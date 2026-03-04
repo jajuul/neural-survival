@@ -8,6 +8,7 @@ This module orchestrates deterministic multi-generation evolution runs.
 - Scores each genome through deterministic episode evaluation.
 - Evolves generations using genetics operators.
 - Produces per-generation best/mean fitness metrics and final population genomes.
+- Provides `run_batch_to_dir` to persist metrics, summary, and snapshot artifacts.
 
 ## Inputs
 - `SimulationConfig`

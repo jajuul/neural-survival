@@ -20,7 +20,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 09:10Z) Implemented neural controller framework and deterministic MLP controller (genome encode/decode + factory + golden tests) and validated MLP-driven simulation determinism.
 - [x] (2026-03-04 09:14Z) Implemented LTC controller with deterministic recurrent stepping, stable parameter clamping, mixed-family factory integration, and mixed MLP/LTC deterministic episode tests.
 - [x] (2026-03-04 09:19Z) Implemented fitness scoring, genome types, mutation/crossover/tournament selection, and deterministic multi-generation GA runner with population-size and determinism tests.
-- [ ] Implement artifact export and snapshot reload.
+- [x] (2026-03-04 09:23Z) Implemented artifact export (`metrics.csv`, `run_summary.json`, `snapshot_gen_<n>.json`), non-empty output-dir guard, snapshot read/write roundtrip, and batch artifact integration tests.
 - [ ] Implement Bevy viewer, HUD, and runtime controls.
 - [ ] Implement CLI flows (`run`, `batch`, `view`) and complete unit/integration tests.
 - [ ] Validate acceptance scenarios and record final retrospective.
@@ -44,6 +44,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: End-to-end GA determinism required deriving per-agent evaluation seeds from run seed + generation + agent index instead of reusing one seed per generation.
   Evidence: deterministic-run tests are stable only after adding a fixed seed derivation function in `experiment::runner`.
+
+- Observation: Metrics export and summary hashing remain deterministic only when run metadata excludes wall-clock timestamps.
+  Evidence: repeated same-seed batch runs produce identical generation metrics and stable config hashes in tests.
 
 ## Decision Log
 
@@ -103,6 +106,10 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: This keeps fitness attribution and reproducibility straightforward while still exercising controller + world integration for selection pressure.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: Enforce output-directory safety by rejecting existing non-empty `--out` directories at I/O layer entry.
+  Rationale: Prevents accidental artifact mixing while preserving the existing CLI contract without extra overwrite flags.
+  Date/Author: 2026-03-04 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -114,6 +121,8 @@ Milestone 3 is complete. The `brain` module now defines `NeuralController`, `Con
 Milestone 4 is complete. The `brain` module now includes an LTC controller prototype with deterministic recurrent stepping, serialized LTC genomes, bounded parameter clamping for stable integration, and a mixed-family factory that produces both MLP and LTC genomes. Verification includes LTC unit tests for deterministic step outputs and clamping behavior, plus an integration test proving mixed MLP/LTC episodes produce repeatable metrics and a non-zero count of both controller kinds in one population.
 
 Milestone 5 is complete. The repository now includes a fitness module, genetics genome/types/operators (`elitism`, `tournament selection`, `crossover`, `mutation`), and an experiment runner that executes deterministic multi-generation evolution and emits in-memory generation metrics. Verification includes unit tests for fitness weighting, mutation bounds, crossover behavior, population sizing, runner determinism, and integration tests that confirm non-empty fitness progression and stable same-seed outputs.
+
+Milestone 6 is complete. The `io` module now writes metrics CSV, run summaries, and snapshots and can read snapshots back for reload workflows. The runner now exposes `run_batch_to_dir` for artifact-producing headless runs, and tests verify snapshot roundtrip and expected artifact creation for a short batch run.
 
 ## Context and Orientation
 
@@ -433,3 +442,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after Milestone 3 implementation to mark controller framework + MLP complete, record simulation hooks for controller-driven stepping, and capture passing MLP unit/integration determinism evidence.
 2026-03-04: Plan updated after Milestone 4 implementation to mark LTC prototype/integration complete, record stable-parameter and mixed-factory design decisions, and capture passing LTC + mixed-family determinism evidence.
 2026-03-04: Plan updated after Milestone 5 implementation to mark GA/fitness loop complete, record deterministic per-agent evaluation seeding and single-agent evaluation design decisions, and capture passing population/determinism progression tests.
+2026-03-04: Plan updated after Milestone 6 implementation to mark artifact I/O complete, record output-directory safety and deterministic hash decisions, and capture passing snapshot/artifact integration tests.

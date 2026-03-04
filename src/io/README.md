@@ -1,16 +1,21 @@
 # io
 
 ## Purpose
-This module will manage CSV/JSON artifact persistence.
+This module persists experiment artifacts (`metrics.csv`, `run_summary.json`, snapshots).
 
 ## Behavior
-Milestone 1 defines only a placeholder module.
+- Validates output directory safety (must be absent or empty).
+- Writes generation metrics CSV rows.
+- Writes run summary JSON with config hash and resolved config.
+- Writes and reads snapshot JSON payloads.
 
 ## Inputs
-- Future: metrics, summaries, snapshots, and output paths.
+- Generation metrics, run metadata, snapshot payloads, and output paths.
 
 ## Outputs
-- Future: persisted files on disk.
+- `metrics.csv`
+- `run_summary.json`
+- `snapshot_gen_<n>.json`
 
 ## Side Effects
-- Future: filesystem writes.
+- Filesystem reads/writes in target output directory.

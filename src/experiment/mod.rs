@@ -2,4 +2,4 @@
 
 mod runner;
 
-pub use runner::{EvolutionRun, GenerationMetrics, run_generations};
+pub use runner::{EvolutionRun, GenerationMetrics, run_batch_to_dir, run_generations};
