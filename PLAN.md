@@ -18,7 +18,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 08:53Z) Implemented workspace/module scaffolding, dependency setup, and config loading; verified with `cargo test` and `cargo run -- --help`.
 - [x] (2026-03-04 08:58Z) Implemented deterministic simulation core with seeded world initialization, fixed-step movement/wrapping, food collisions, and toggle-driven energy model; verified with unit and integration tests.
 - [x] (2026-03-04 09:10Z) Implemented neural controller framework and deterministic MLP controller (genome encode/decode + factory + golden tests) and validated MLP-driven simulation determinism.
-- [ ] Implement LTC controller with deterministic step behavior.
+- [x] (2026-03-04 09:14Z) Implemented LTC controller with deterministic recurrent stepping, stable parameter clamping, mixed-family factory integration, and mixed MLP/LTC deterministic episode tests.
 - [ ] Implement GA generation loop, mutation/crossover/selection, and fitness scoring.
 - [ ] Implement artifact export and snapshot reload.
 - [ ] Implement Bevy viewer, HUD, and runtime controls.
@@ -38,6 +38,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: The MLP golden test constants were initially incorrect at the fifth decimal place and required recomputation to align with exact tanh math.
   Evidence: `brain::mlp::tests::deterministic_forward_matches_known_values` failed once, then passed after updating expected steering/throttle constants.
+
+- Observation: LTC golden outputs initially missed a second tanh nonlinearity in the output path and required corrected expected constants.
+  Evidence: `brain::ltc::tests::deterministic_state_evolution_matches_known_sequence` failed once, then passed after recomputing expected values using the exact controller equations.
 
 ## Decision Log
 
@@ -85,6 +88,14 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: Maintains separation of concerns while enabling Milestone 3 end-to-end MLP validation.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: Implement LTC as a stable Euler-stepped recurrent state model with per-neuron time constants and bounded parameter clamping.
+  Rationale: Provides deterministic temporal dynamics with explicit numerical stability constraints suitable for mutation-based evolution.
+  Date/Author: 2026-03-04 / Codex
+
+- Decision: Add `MixedControllerFactory` to generate and build both MLP and LTC genomes through one shared factory interface.
+  Rationale: Enables mixed-family population initialization and controller-kind metadata extraction for later UI/distribution reporting.
+  Date/Author: 2026-03-04 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -92,6 +103,8 @@ Milestone 1 is complete. The repository now has module scaffolding across planne
 Milestone 2 is complete. The simulation core now includes `WorldState`, `AgentState`, and `FoodState` with deterministic initialization from `ChaCha8Rng`, a fixed-step update loop, toroidal wrapping, collision-driven food consumption, and energy updates gated by runtime rule toggles. Verification includes unit tests for wrapping/collision/energy toggles and integration tests proving deterministic world progression and identical episode summaries for identical seed/config pairs.
 
 Milestone 3 is complete. The `brain` module now defines `NeuralController`, `ControllerFactory`, `ControllerKind`, and serializable `BrainGenome` with an MLP variant. The MLP implementation includes deterministic feed-forward inference, flattened parameter encode/decode routines, random genome generation, and golden-value unit tests. End-to-end tests now run complete MLP-driven simulation episodes and verify repeatable episode summaries for fixed seeds.
+
+Milestone 4 is complete. The `brain` module now includes an LTC controller prototype with deterministic recurrent stepping, serialized LTC genomes, bounded parameter clamping for stable integration, and a mixed-family factory that produces both MLP and LTC genomes. Verification includes LTC unit tests for deterministic step outputs and clamping behavior, plus an integration test proving mixed MLP/LTC episodes produce repeatable metrics and a non-zero count of both controller kinds in one population.
 
 ## Context and Orientation
 
@@ -409,3 +422,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after successful escalated verification to mark Milestone 1 complete and replace temporary acceptance blockers with actual passing command evidence.
 2026-03-04: Plan updated after Milestone 2 implementation to mark deterministic simulation core complete, record deterministic stub-action design choice, and capture passing unit/integration test evidence for fixed-step world behavior.
 2026-03-04: Plan updated after Milestone 3 implementation to mark controller framework + MLP complete, record simulation hooks for controller-driven stepping, and capture passing MLP unit/integration determinism evidence.
+2026-03-04: Plan updated after Milestone 4 implementation to mark LTC prototype/integration complete, record stable-parameter and mixed-factory design decisions, and capture passing LTC + mixed-family determinism evidence.

@@ -6,8 +6,9 @@ This module defines the shared controller interface and the deterministic feed-f
 ## Behavior
 - Exposes `NeuralController`, `ControllerFactory`, and `ControllerKind` as the common brain abstraction.
 - Defines serializable `BrainGenome` payloads for controller parameters.
-- Implements MLP genome encode/decode routines and deterministic matrix-vector inference.
-- Maps MLP outputs into simulation actions (`steering`, `throttle`).
+- Implements MLP and LTC genome encode/decode routines and deterministic stepping/inference.
+- Includes a mixed-family controller factory that can generate and build both controller kinds.
+- Maps controller outputs into simulation actions (`steering`, `throttle`).
 
 ## Inputs
 - `SensorVector` values from the simulation.

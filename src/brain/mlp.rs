@@ -295,6 +295,9 @@ impl ControllerFactory for MlpControllerFactory {
                 MlpController::new(mlp.clone())
                     .expect("MLP factory received invalid MLP genome shape/parameter sizes"),
             ),
+            BrainGenome::Ltc(_) => {
+                panic!("MLP factory cannot build LTC genomes");
+            }
         }
     }
 }
