@@ -23,7 +23,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 09:23Z) Implemented artifact export (`metrics.csv`, `run_summary.json`, `snapshot_gen_<n>.json`), non-empty output-dir guard, snapshot read/write roundtrip, and batch artifact integration tests.
 - [x] (2026-03-04 09:37Z) Implemented Bevy viewer path behind `gui` feature with MLP/LTC shape encoding (circle/triangle), food rendering, keyboard controls (pause/speed/rule toggles/restart), and live stats in window title.
 - [x] (2026-03-04 09:26Z) Implemented CLI execution flows (`run`, `batch`, `view`) backed by config loading, batch artifact writing, snapshot loading, and integration tests across both headless and GUI-capable builds.
-- [ ] Validate acceptance scenarios and record final retrospective.
+- [x] (2026-03-04 09:39Z) Validated acceptance-style CLI scenarios (`batch`, `run`, `view`) with real artifact outputs and recorded final retrospective; remaining gap is manual interactive GUI behavior verification on a desktop session.
 
 ## Surprises & Discoveries
 
@@ -141,6 +141,8 @@ Milestone 6 is complete. The `io` module now writes metrics CSV, run summaries, 
 Milestone 8 is complete for command-line workflows. CLI command handlers now run end-to-end for `batch` and `run` workflows and load snapshots for `view`, with integration tests covering happy paths and missing-snapshot failure.
 
 Milestone 7 is complete at the implementation level. The GUI path now launches a Bevy app (when compiled with `--features gui`), renders MLP and LTC agents with distinct geometry (circle and triangle), renders food points, supports pause/resume and simulation speed control, allows runtime rule toggling and restart from snapshot seed/config state, and exposes live run statistics in the window title for continuous inspection.
+
+Final retrospective: the core v1 pipeline is now implemented end-to-end for deterministic headless evolution, artifact persistence, snapshot reload, mixed-family controller execution, and CLI orchestration. Automated verification covers deterministic behavior, GA mechanics, artifact generation, snapshot roundtrip, and command workflows. The outstanding verification gap is manual desktop interaction testing of the Bevy window controls and visual behavior on a machine with active graphics display support.
 
 ## Context and Orientation
 
@@ -463,3 +465,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after Milestone 6 implementation to mark artifact I/O complete, record output-directory safety and deterministic hash decisions, and capture passing snapshot/artifact integration tests.
 2026-03-04: Plan updated after CLI orchestration implementation to mark Milestone 8 headless workflows complete, record command-execution layering decisions, and capture passing CLI integration tests while deferring full Bevy viewer behavior to Milestone 7.
 2026-03-04: Plan updated after Bevy viewer implementation to mark Milestone 7 complete, record GUI feature-scoping decisions, and capture passing default-test + `--features gui` compile evidence.
+2026-03-04: Plan updated after acceptance-style command validation to mark final plan step complete and document the remaining manual GUI-interaction verification gap.
