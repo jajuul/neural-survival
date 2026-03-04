@@ -45,6 +45,9 @@ mod bevy_viewer {
     #[derive(Component)]
     struct EvolveRunButton;
 
+    #[derive(Component)]
+    struct EvolveStatusText;
+
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum NumericFieldKind {
         EvolveGenerations,
@@ -134,6 +137,13 @@ mod bevy_viewer {
         controller_kinds: Vec<ControllerKind>,
         active_input: Option<NumericFieldKind>,
         field_buffers: NumericFieldBuffers,
+        evolution_job: Option<EvolutionJob>,
+    }
+
+    #[derive(Clone, Debug)]
+    struct EvolutionJob {
+        total_generations: u32,
+        completed_generations: u32,
     }
 
     pub fn launch_snapshot_viewer(snapshot: &SnapshotFile) -> anyhow::Result<()> {
@@ -160,6 +170,7 @@ mod bevy_viewer {
                 controller_kinds,
                 active_input: None,
                 field_buffers,
+                evolution_job: None,
             })
             .add_plugins(DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
@@ -178,6 +189,7 @@ mod bevy_viewer {
                     numeric_field_focus_interaction,
                     numeric_field_keyboard_input,
                     evolve_run_button_interaction,
+                    advance_evolution_job,
                     sync_start_stop_button_state,
                     sync_control_panel_state,
                     rebuild_world_visuals_if_requested,
@@ -316,11 +328,18 @@ mod bevy_viewer {
                             TextColor(Color::srgb(0.95, 0.95, 0.95)),
                         ));
                     });
+
+                parent.spawn((
+                    Text::new("Status: idle"),
+                    TextFont::from_font_size(14.0),
+                    TextColor(Color::srgb(0.86, 0.86, 0.86)),
+                    EvolveStatusText,
+                ));
             });
     }
 
     fn keyboard_controls(keys: Res<ButtonInput<KeyCode>>, mut runtime: ResMut<ViewerRuntime>) {
-        if runtime.active_input.is_some() {
+        if runtime.active_input.is_some() || runtime.evolution_job.is_some() {
             return;
         }
 
@@ -363,6 +382,10 @@ mod bevy_viewer {
         >,
         mut runtime: ResMut<ViewerRuntime>,
     ) {
+        if runtime.evolution_job.is_some() {
+            return;
+        }
+
         for interaction in &interactions {
             if matches!(*interaction, Interaction::Pressed) {
                 runtime.active_input = None;
@@ -378,6 +401,10 @@ mod bevy_viewer {
         >,
         mut runtime: ResMut<ViewerRuntime>,
     ) {
+        if runtime.evolution_job.is_some() {
+            return;
+        }
+
         for (interaction, field) in &interactions {
             if matches!(*interaction, Interaction::Pressed) {
                 runtime.active_input = Some(field.kind);
@@ -443,6 +470,10 @@ mod bevy_viewer {
         >,
         mut runtime: ResMut<ViewerRuntime>,
     ) {
+        if runtime.evolution_job.is_some() {
+            return;
+        }
+
         let run_pressed = interactions
             .iter()
             .any(|interaction| matches!(*interaction, Interaction::Pressed));
@@ -461,32 +492,48 @@ mod bevy_viewer {
             return;
         }
 
+        runtime.paused = true;
+        runtime.evolution_job = Some(EvolutionJob {
+            total_generations: generations_to_advance,
+            completed_generations: 0,
+        });
+    }
+
+    fn advance_evolution_job(mut runtime: ResMut<ViewerRuntime>) {
+        let Some(mut job) = runtime.evolution_job.take() else {
+            return;
+        };
+
         let run = continue_generations_from_population(
             &runtime.config,
             runtime.initial_snapshot.seed,
             runtime.population_generation_index,
             &runtime.population,
-            generations_to_advance,
+            1,
         );
 
         runtime.population = run.final_population;
-        runtime.population_generation_index = runtime
-            .population_generation_index
-            .saturating_add(generations_to_advance);
-        runtime.generation = runtime.generation.saturating_add(generations_to_advance);
-        runtime.controller_kinds = runtime
-            .population
-            .iter()
-            .map(|genome| genome.controller_kind)
-            .collect::<Vec<_>>();
-        runtime.world = world_state_for_population(
-            &runtime.config,
-            runtime.initial_snapshot.seed,
-            runtime.generation,
-            &runtime.population,
-        );
-        runtime.paused = true;
-        runtime.rebuild_visuals = true;
+        runtime.population_generation_index = runtime.population_generation_index.saturating_add(1);
+        runtime.generation = runtime.generation.saturating_add(1);
+        job.completed_generations = job.completed_generations.saturating_add(1);
+
+        if job.completed_generations >= job.total_generations {
+            runtime.controller_kinds = runtime
+                .population
+                .iter()
+                .map(|genome| genome.controller_kind)
+                .collect::<Vec<_>>();
+            runtime.world = world_state_for_population(
+                &runtime.config,
+                runtime.initial_snapshot.seed,
+                runtime.generation,
+                &runtime.population,
+            );
+            runtime.rebuild_visuals = true;
+            runtime.paused = true;
+        } else {
+            runtime.evolution_job = Some(job);
+        }
     }
 
     fn sync_start_stop_button_state(
@@ -522,7 +569,9 @@ mod bevy_viewer {
             With<Button>,
         >,
         mut value_text_query: Query<(&mut Text, &NumericFieldValueText)>,
+        mut status_text_query: Query<&mut Text, With<EvolveStatusText>>,
     ) {
+        let is_evolving = runtime.evolution_job.is_some();
         for (interaction, mut color, maybe_field, maybe_evolve) in &mut button_query {
             if let Some(field) = maybe_field {
                 *color = numeric_field_color(
@@ -532,12 +581,27 @@ mod bevy_viewer {
                         .is_some_and(|active| active == field.kind),
                 );
             } else if maybe_evolve.is_some() {
-                *color = evolve_run_button_color(*interaction);
+                *color = evolve_run_button_color(*interaction, is_evolving);
             }
         }
 
         for (mut text, marker) in &mut value_text_query {
             **text = runtime.field_buffers.get(marker.kind).to_string();
+        }
+
+        let status = if let Some(job) = &runtime.evolution_job {
+            format!(
+                "Status: evolving {}/{} generations",
+                job.completed_generations, job.total_generations
+            )
+        } else {
+            format!(
+                "Status: ready (next evolve: {} generations)",
+                runtime.evolve_generations
+            )
+        };
+        for mut text in &mut status_text_query {
+            **text = status.clone();
         }
     }
 
@@ -565,7 +629,11 @@ mod bevy_viewer {
         }
     }
 
-    fn evolve_run_button_color(interaction: Interaction) -> BackgroundColor {
+    fn evolve_run_button_color(interaction: Interaction, is_evolving: bool) -> BackgroundColor {
+        if is_evolving {
+            return BackgroundColor(Color::srgb(0.55, 0.45, 0.25));
+        }
+
         match interaction {
             Interaction::Pressed => BackgroundColor(Color::srgb(0.2, 0.65, 0.45)),
             Interaction::Hovered => BackgroundColor(Color::srgb(0.4, 0.5, 0.85)),
@@ -608,7 +676,7 @@ mod bevy_viewer {
     }
 
     fn advance_simulation(mut runtime: ResMut<ViewerRuntime>) {
-        if runtime.paused {
+        if runtime.paused || runtime.evolution_job.is_some() {
             return;
         }
 
@@ -703,9 +771,17 @@ mod bevy_viewer {
             .iter()
             .filter(|kind| **kind == ControllerKind::Ltc)
             .count();
+        let evolution_progress = if let Some(job) = &runtime.evolution_job {
+            format!(
+                " evolving={}/{}",
+                job.completed_generations, job.total_generations
+            )
+        } else {
+            String::new()
+        };
 
         window.title = format!(
-            "neural-survival | gen={} alive={} food={} bestE={:.1} meanE={:.1} MLP={} LTC={} speed={}x world={:.0}x{:.0} rules[s:{} n:{} p:{}]",
+            "neural-survival | gen={} alive={} food={} bestE={:.1} meanE={:.1} MLP={} LTC={} speed={}x world={:.0}x{:.0} rules[s:{} n:{} p:{}]{}",
             runtime.generation,
             alive,
             food,
@@ -718,7 +794,8 @@ mod bevy_viewer {
             runtime.config.world_height,
             runtime.config.rule_toggles.energy_by_speed,
             runtime.config.rule_toggles.energy_by_network_size,
-            runtime.config.rule_toggles.energy_by_perception_size
+            runtime.config.rule_toggles.energy_by_perception_size,
+            evolution_progress
         );
     }
 
@@ -894,6 +971,7 @@ mod bevy_viewer {
         runtime.active_input = None;
         runtime.field_buffers =
             NumericFieldBuffers::from_state(runtime.evolve_generations, &runtime.config);
+        runtime.evolution_job = None;
         runtime.rebuild_visuals = true;
     }
 }

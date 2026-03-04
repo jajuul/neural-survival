@@ -34,12 +34,15 @@ pub struct EvolutionRun {
     pub final_population: Vec<AgentGenome>,
 }
 
-/// Run deterministic headless evolution for `generations` rounds.
-///
-/// Inputs: validated simulation config, deterministic seed, and generation count.
-/// Output: per-generation metrics and final generation genomes.
-/// Side effects: none.
-pub fn run_generations(config: &SimulationConfig, seed: u64, generations: u32) -> EvolutionRun {
+fn run_generations_internal<F>(
+    config: &SimulationConfig,
+    seed: u64,
+    generations: u32,
+    mut on_generation_complete: F,
+) -> EvolutionRun
+where
+    F: FnMut(u32, u32),
+{
     let factory = default_mixed_factory(config);
     let mut init_rng = StdRng::seed_from_u64(seed);
 
@@ -55,6 +58,7 @@ pub fn run_generations(config: &SimulationConfig, seed: u64, generations: u32) -
             &evaluated,
             &scored,
         ));
+        on_generation_complete(generation_index + 1, generations);
 
         if generation_index + 1 < generations {
             let mut evolution_rng = evolution_rng_for_generation(seed, generation_index);
@@ -66,6 +70,32 @@ pub fn run_generations(config: &SimulationConfig, seed: u64, generations: u32) -
         generations: metrics,
         final_population: population,
     }
+}
+
+/// Run deterministic headless evolution for `generations` rounds.
+///
+/// Inputs: validated simulation config, deterministic seed, and generation count.
+/// Output: per-generation metrics and final generation genomes.
+/// Side effects: none.
+pub fn run_generations(config: &SimulationConfig, seed: u64, generations: u32) -> EvolutionRun {
+    run_generations_internal(config, seed, generations, |_completed, _total| {})
+}
+
+/// Run deterministic headless evolution and report per-generation progress.
+///
+/// Inputs: config, seed, generation count, and progress callback.
+/// Output: per-generation metrics and final generation genomes.
+/// Side effects: invokes progress callback once per generation.
+pub fn run_generations_with_progress<F>(
+    config: &SimulationConfig,
+    seed: u64,
+    generations: u32,
+    on_generation_complete: F,
+) -> EvolutionRun
+where
+    F: FnMut(u32, u32),
+{
+    run_generations_internal(config, seed, generations, on_generation_complete)
 }
 
 /// Continue evolving from an existing generation for additional generation steps.
@@ -117,9 +147,27 @@ pub fn run_batch_to_dir(
     generations: u32,
     out_dir: &Path,
 ) -> anyhow::Result<EvolutionRun> {
+    run_batch_to_dir_with_progress(config, seed, generations, out_dir, |_completed, _total| {})
+}
+
+/// Run a deterministic batch evolution, persist artifacts, and report per-generation progress.
+///
+/// Inputs: config, seed, generation count, output directory, and progress callback.
+/// Output: in-memory run result matching persisted artifacts.
+/// Side effects: writes metrics/summary/snapshot files and invokes progress callback.
+pub fn run_batch_to_dir_with_progress<F>(
+    config: &SimulationConfig,
+    seed: u64,
+    generations: u32,
+    out_dir: &Path,
+    on_generation_complete: F,
+) -> anyhow::Result<EvolutionRun>
+where
+    F: FnMut(u32, u32),
+{
     ensure_output_dir(out_dir)?;
 
-    let run = run_generations(config, seed, generations);
+    let run = run_generations_with_progress(config, seed, generations, on_generation_complete);
     let cfg_hash = config_hash(config)?;
 
     write_metrics_csv(out_dir, &run.generations, &cfg_hash)?;

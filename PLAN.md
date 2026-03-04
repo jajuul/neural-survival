@@ -26,6 +26,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 09:39Z) Validated acceptance-style CLI scenarios (`batch`, `run`, `view`) with real artifact outputs and recorded final retrospective; remaining gap is manual interactive GUI behavior verification on a desktop session.
 - [x] (2026-03-04 10:45Z) Added GUI generation-continuation controls (variable generation count + evolve action), plus experiment APIs to continue evolution from snapshot populations and rebuild viewer state/visuals deterministically; verified with `cargo check --features gui` and full `cargo test`.
 - [x] (2026-03-04 14:10Z) Reworked GUI continuation controls to typed numeric inputs and added editable continuation parameters (`world size`, `food count`, `episode steps`, `mutation rate`) that feed directly into in-GUI evolution runs; expanded default world size to 300x300 with unchanged population defaults.
+- [x] (2026-03-04 14:45Z) Added live generation-progress visibility during evolution in both CLI (`run`/`batch` progress counters) and GUI (status text + title progress while continuation jobs run incrementally per generation).
 
 ## Surprises & Discoveries
 
@@ -61,6 +62,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: Keyboard shortcuts for simulation controls conflict with typed UI input unless input focus is explicitly tracked and shortcuts are gated while fields are active.
   Evidence: numeric entry produced rule-toggle side effects until `keyboard_controls` was conditioned on `active_input.is_none()`.
+
+- Observation: GUI progress is not observable when continuation runs in one blocking call on the main thread; per-frame single-generation stepping is required to surface live progress.
+  Evidence: status/title updates only become visible when evolution is processed incrementally via a persistent job state in `ViewerRuntime`.
 
 ## Decision Log
 
@@ -140,6 +144,10 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: Typed entry is faster for large values (e.g., 1000 generations) and the selected parameters materially affect evolution behavior while keeping the UI manageable.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: Introduce progress-capable runner entrypoints and an incremental GUI evolution job loop instead of blocking continuation calls.
+  Rationale: The user requirement is explicit live generation progress visibility in both terminal and GUI, which needs callback-based reporting in CLI and frame-by-frame progression in viewer mode.
+  Date/Author: 2026-03-04 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -163,6 +171,8 @@ Final retrospective: the core v1 pipeline is now implemented end-to-end for dete
 Post-plan enhancement: GUI now supports continuing evolution by a variable number of generations directly in the viewer, with deterministic continuation APIs in `experiment::runner` and viewer-side visual rebuilds when controller families change after evolution. This closes a key interactive workflow gap that previously required returning to CLI runs.
 
 Post-plan enhancement (v2): GUI continuation now supports typed numeric input and in-panel parameter editing for continuation runs, and project defaults now use a larger 300x300 world without increasing the default population size.
+
+Post-plan enhancement (v3): generation-progress reporting is now visible during evolution in both command-line and GUI workflows, improving observability for long runs.
 
 ## Context and Orientation
 
@@ -488,3 +498,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after acceptance-style command validation to mark final plan step complete and document the remaining manual GUI-interaction verification gap.
 2026-03-04: Plan updated after GUI generation-continuation implementation to record the new viewer controls, note population-generation indexing semantics discovered during continuation work, and capture passing `cargo check --features gui` + `cargo test` verification evidence.
 2026-03-04: Plan updated after typed GUI-input and continuation-parameter editing work to document focus/shortcut interactions, configurable continuation fields, and larger world-size defaults.
+2026-03-04: Plan updated after progress-visibility work to document incremental GUI continuation jobs and CLI generation-progress reporting callbacks.

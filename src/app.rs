@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
+use std::io::{self, Write};
 
 use crate::cli::{BatchArgs, Commands, RunArgs, ViewArgs};
 use crate::config::load_config;
-use crate::experiment::run_batch_to_dir;
+use crate::experiment::run_batch_to_dir_with_progress;
 use crate::io::snapshot::read_snapshot;
 use crate::ui::launch_snapshot_viewer;
 
@@ -23,14 +24,25 @@ fn run_command(args: RunArgs) -> Result<()> {
     let config = load_config(&args.config)
         .with_context(|| format!("failed to load config at {}", args.config.display()))?;
 
-    run_batch_to_dir(&config, args.seed, args.headless_generations, &args.out).with_context(
-        || {
-            format!(
-                "failed to execute headless run for {} generations",
-                args.headless_generations
-            )
+    run_batch_to_dir_with_progress(
+        &config,
+        args.seed,
+        args.headless_generations,
+        &args.out,
+        |completed, total| {
+            print!("\rheadless evolution progress: {completed}/{total} generations");
+            let _ = io::stdout().flush();
         },
-    )?;
+    )
+    .with_context(|| {
+        format!(
+            "failed to execute headless run for {} generations",
+            args.headless_generations
+        )
+    })?;
+    if args.headless_generations > 0 {
+        println!();
+    }
 
     let snapshot_path = args.out.join(format!(
         "snapshot_gen_{:04}.json",
@@ -46,12 +58,25 @@ fn batch_command(args: BatchArgs) -> Result<()> {
     let config = load_config(&args.config)
         .with_context(|| format!("failed to load config at {}", args.config.display()))?;
 
-    run_batch_to_dir(&config, args.seed, args.generations, &args.out).with_context(|| {
+    run_batch_to_dir_with_progress(
+        &config,
+        args.seed,
+        args.generations,
+        &args.out,
+        |completed, total| {
+            print!("\rbatch evolution progress: {completed}/{total} generations");
+            let _ = io::stdout().flush();
+        },
+    )
+    .with_context(|| {
         format!(
             "failed to execute batch run for {} generations",
             args.generations
         )
     })?;
+    if args.generations > 0 {
+        println!();
+    }
 
     Ok(())
 }
