@@ -113,6 +113,97 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if config.initial_agent_energy <= 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "initial_agent_energy",
+            message: "must be > 0".into(),
+        });
+    }
+
+    if config.base_energy_cost_per_second < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "base_energy_cost_per_second",
+            message: "must be >= 0".into(),
+        });
+    }
+
+    if config.speed_energy_cost_factor < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "speed_energy_cost_factor",
+            message: "must be >= 0".into(),
+        });
+    }
+
+    if config.network_energy_cost_factor < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "network_energy_cost_factor",
+            message: "must be >= 0".into(),
+        });
+    }
+
+    if config.perception_energy_cost_factor < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "perception_energy_cost_factor",
+            message: "must be >= 0".into(),
+        });
+    }
+
+    if config.food_energy_gain <= 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "food_energy_gain",
+            message: "must be > 0".into(),
+        });
+    }
+
+    if config.food_collision_radius <= 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "food_collision_radius",
+            message: "must be > 0".into(),
+        });
+    }
+
+    if config.default_agent_max_speed <= 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "default_agent_max_speed",
+            message: "must be > 0".into(),
+        });
+    }
+
+    if config.max_turn_rate_radians <= 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "max_turn_rate_radians",
+            message: "must be > 0".into(),
+        });
+    }
+
+    if config.default_perception_radius <= 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "default_perception_radius",
+            message: "must be > 0".into(),
+        });
+    }
+
+    if config.default_perception_channels == 0 {
+        return Err(ConfigError::Invalid {
+            field: "default_perception_channels",
+            message: "must be >= 1".into(),
+        });
+    }
+
+    if config.default_network_size == 0 {
+        return Err(ConfigError::Invalid {
+            field: "default_network_size",
+            message: "must be >= 1".into(),
+        });
+    }
+
+    if config.default_metabolic_efficiency <= 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "default_metabolic_efficiency",
+            message: "must be > 0".into(),
+        });
+    }
+
     Ok(())
 }
 

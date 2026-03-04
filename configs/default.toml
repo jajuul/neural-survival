@@ -7,6 +7,19 @@ food_count = 400
 elitism_fraction = 0.10
 tournament_size = 5
 mutation_rate = 0.15
+initial_agent_energy = 100.0
+base_energy_cost_per_second = 0.5
+speed_energy_cost_factor = 0.03
+network_energy_cost_factor = 0.0008
+perception_energy_cost_factor = 0.0005
+food_energy_gain = 20.0
+food_collision_radius = 1.2
+default_agent_max_speed = 6.0
+max_turn_rate_radians = 3.1415927
+default_perception_radius = 15.0
+default_perception_channels = 6
+default_network_size = 64
+default_metabolic_efficiency = 1.0
 
 [rule_toggles]
 energy_by_speed = true

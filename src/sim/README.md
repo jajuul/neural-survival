@@ -1,16 +1,22 @@
 # sim
 
 ## Purpose
-This module will contain world state and fixed-step simulation logic.
+This module implements the deterministic fixed-step simulation core for the 2D toroidal world.
 
 ## Behavior
-Milestone 1 provides only scaffold types so later milestones can add deterministic stepping.
+- Initializes agent and food state deterministically from a seed.
+- Advances the world one fixed step at a time using stub controller actions.
+- Applies toroidal wrapping, food collision handling, and energy loss/gain updates.
+- Produces aggregate episode summaries for reproducibility checks.
 
 ## Inputs
-- Future: agent state, food state, and timestep values.
+- `SimulationConfig` with world geometry, timing, and energy parameters.
+- Deterministic `seed` for world initialization.
 
 ## Outputs
-- Future: updated world state per simulation step.
+- Updated `WorldState` per step.
+- `StepOutcome` (food consumed and deaths) per step.
+- `EpisodeSummary` for headless episode comparisons.
 
 ## Side Effects
-- None in Milestone 1.
+- No external side effects; functions mutate in-memory world state only.
