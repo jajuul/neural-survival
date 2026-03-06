@@ -214,6 +214,20 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if config.mlp_hidden_size == 0 {
+        return Err(ConfigError::Invalid {
+            field: "mlp_hidden_size",
+            message: "must be >= 1".into(),
+        });
+    }
+
+    if config.ltc_state_size == 0 {
+        return Err(ConfigError::Invalid {
+            field: "ltc_state_size",
+            message: "must be >= 1".into(),
+        });
+    }
+
     if config.default_metabolic_efficiency <= 0.0 {
         return Err(ConfigError::Invalid {
             field: "default_metabolic_efficiency",
@@ -279,6 +293,8 @@ mod tests {
         assert_eq!(parsed.elitism_fraction, 0.10);
         assert_eq!(parsed.tournament_size, 5);
         assert_eq!(parsed.mutation_rate, 0.15);
+        assert_eq!(parsed.mlp_hidden_size, 8);
+        assert_eq!(parsed.ltc_state_size, 8);
         assert_eq!(
             parsed.eye_fov_angle_radians,
             std::f32::consts::PI + std::f32::consts::FRAC_PI_4
@@ -327,6 +343,34 @@ mod tests {
 
         match err {
             ConfigError::Invalid { field, .. } => assert_eq!(field, "default_perception_channels"),
+            _ => panic!("expected ConfigError::Invalid"),
+        }
+    }
+
+    #[test]
+    fn invalid_hidden_layer_size_is_rejected() {
+        let raw = r#"
+            mlp_hidden_size = 0
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("zero hidden size should fail");
+
+        match err {
+            ConfigError::Invalid { field, .. } => assert_eq!(field, "mlp_hidden_size"),
+            _ => panic!("expected ConfigError::Invalid"),
+        }
+    }
+
+    #[test]
+    fn invalid_ltc_state_size_is_rejected() {
+        let raw = r#"
+            ltc_state_size = 0
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("zero ltc state size should fail");
+
+        match err {
+            ConfigError::Invalid { field, .. } => assert_eq!(field, "ltc_state_size"),
             _ => panic!("expected ConfigError::Invalid"),
         }
     }

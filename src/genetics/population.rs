@@ -22,12 +22,12 @@ pub fn default_mixed_factory(config: &SimulationConfig) -> MixedControllerFactor
     MixedControllerFactory::new(
         MlpControllerFactory::new(MlpShape {
             input_size: CONTROLLER_SENSOR_INPUT_SIZE,
-            hidden_size: 8,
+            hidden_size: config.mlp_hidden_size,
             output_size: 2,
         }),
         LtcControllerFactory::new(LtcShape {
             input_size: CONTROLLER_SENSOR_INPUT_SIZE,
-            state_size: 8,
+            state_size: config.ltc_state_size,
             output_size: 2,
         }),
         config.controller_ltc_probability,
@@ -250,5 +250,18 @@ mod tests {
 
         assert_eq!(mlp_after, mlp_before);
         assert_eq!(ltc_after, ltc_before);
+    }
+
+    #[test]
+    fn default_mixed_factory_uses_configured_layer_sizes() {
+        let config = SimulationConfig {
+            mlp_hidden_size: 13,
+            ltc_state_size: 11,
+            ..SimulationConfig::default()
+        };
+        let factory = default_mixed_factory(&config);
+
+        assert_eq!(factory.mlp_factory.shape.hidden_size, 13);
+        assert_eq!(factory.ltc_factory.shape.state_size, 11);
     }
 }
