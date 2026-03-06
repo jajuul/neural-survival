@@ -11,7 +11,7 @@ const MARGIN_RIGHT: f32 = 24.0;
 const MARGIN_TOP: f32 = 24.0;
 const MARGIN_BOTTOM: f32 = 56.0;
 
-/// Write an SVG chart plotting best and mean fitness over generations.
+/// Write an SVG chart plotting species-split best and mean fitness over generations.
 ///
 /// Inputs: output directory and per-generation metrics.
 /// Output: written file path.
@@ -22,10 +22,10 @@ pub fn write_fitness_svg(out_dir: &Path, metrics: &[GenerationMetrics]) -> anyho
 
     write!(
         &mut svg,
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{SVG_WIDTH}" height="{SVG_HEIGHT}" viewBox="0 0 {SVG_WIDTH} {SVG_HEIGHT}" role="img" aria-label="Fitness over generations">"##
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{SVG_WIDTH}" height="{SVG_HEIGHT}" viewBox="0 0 {SVG_WIDTH} {SVG_HEIGHT}" role="img" aria-label="Species fitness over generations">"##
     )?;
     svg.push_str(
-        r##"<rect x="0" y="0" width="100%" height="100%" fill="#12161d"/><text x="70" y="20" fill="#dce6f2" font-size="16" font-family="sans-serif">Fitness Over Generations</text>"##,
+        r##"<rect x="0" y="0" width="100%" height="100%" fill="#12161d"/><text x="70" y="20" fill="#dce6f2" font-size="16" font-family="sans-serif">Fitness Over Generations By Species</text>"##,
     );
 
     let plot_left = MARGIN_LEFT;
@@ -57,7 +57,17 @@ pub fn write_fitness_svg(out_dir: &Path, metrics: &[GenerationMetrics]) -> anyho
 
     let max_fitness = metrics
         .iter()
-        .flat_map(|m| [m.best_fitness, m.mean_fitness])
+        .flat_map(|m| {
+            [
+                Some(m.best_fitness),
+                Some(m.mean_fitness),
+                m.mlp_best_fitness,
+                m.mlp_mean_fitness,
+                m.ltc_best_fitness,
+                m.ltc_mean_fitness,
+            ]
+        })
+        .flatten()
         .fold(0.0_f32, f32::max)
         .max(1.0);
 
@@ -72,15 +82,30 @@ pub fn write_fitness_svg(out_dir: &Path, metrics: &[GenerationMetrics]) -> anyho
         plot_bottom - ratio * plot_height
     };
 
-    let mut best_points = String::new();
-    let mut mean_points = String::new();
-    for (idx, metric) in metrics.iter().enumerate() {
-        let x = x_for_index(idx, metrics.len());
-        let best_y = y_for_value(metric.best_fitness);
-        let mean_y = y_for_value(metric.mean_fitness);
-        write!(&mut best_points, "{x:.2},{best_y:.2} ")?;
-        write!(&mut mean_points, "{x:.2},{mean_y:.2} ")?;
-    }
+    let mlp_best_points = build_species_points(
+        metrics,
+        |metric| metric.mlp_best_fitness,
+        &x_for_index,
+        &y_for_value,
+    );
+    let mlp_mean_points = build_species_points(
+        metrics,
+        |metric| metric.mlp_mean_fitness,
+        &x_for_index,
+        &y_for_value,
+    );
+    let ltc_best_points = build_species_points(
+        metrics,
+        |metric| metric.ltc_best_fitness,
+        &x_for_index,
+        &y_for_value,
+    );
+    let ltc_mean_points = build_species_points(
+        metrics,
+        |metric| metric.ltc_mean_fitness,
+        &x_for_index,
+        &y_for_value,
+    );
 
     let y_axis_label_x = plot_left - 54.0;
     let x_axis_label_y = plot_bottom + 42.0;
@@ -96,10 +121,10 @@ pub fn write_fitness_svg(out_dir: &Path, metrics: &[GenerationMetrics]) -> anyho
         r##"<line x1="{plot_left}" y1="{mid_y}" x2="{plot_right}" y2="{mid_y}" stroke="#2d3c52" stroke-width="1" stroke-dasharray="4 4"/>"##
     )?;
 
-    write!(
-        &mut svg,
-        r##"<polyline fill="none" stroke="#f39c12" stroke-width="2.5" points="{best_points}"/><polyline fill="none" stroke="#4ea8de" stroke-width="2.5" points="{mean_points}"/>"##
-    )?;
+    append_polyline(&mut svg, &mlp_best_points, "#2d6cdf", false)?;
+    append_polyline(&mut svg, &mlp_mean_points, "#76a9ff", true)?;
+    append_polyline(&mut svg, &ltc_best_points, "#f08a24", false)?;
+    append_polyline(&mut svg, &ltc_mean_points, "#ffbe73", true)?;
 
     write!(
         &mut svg,
@@ -110,28 +135,115 @@ pub fn write_fitness_svg(out_dir: &Path, metrics: &[GenerationMetrics]) -> anyho
         r##"<text x="{plot_left}" y="{x_axis_label_y}" fill="#c4cfdd" font-size="12" font-family="sans-serif">gen {min_generation}</text><text x="{plot_right}" y="{x_axis_label_y}" text-anchor="end" fill="#c4cfdd" font-size="12" font-family="sans-serif">gen {max_generation}</text>"##
     )?;
 
-    let legend_x = plot_right - 170.0;
+    let legend_x = plot_right - 200.0;
     let legend_y = plot_top + 16.0;
-    write!(
+    append_legend_entry(&mut svg, legend_x, legend_y, "#2d6cdf", false, "MLP best")?;
+    append_legend_entry(
         &mut svg,
-        r##"<line x1="{legend_x}" y1="{legend_y}" x2="{}" y2="{legend_y}" stroke="#f39c12" stroke-width="3"/><text x="{}" y="{}" fill="#dce6f2" font-size="12" font-family="sans-serif">best fitness</text>"##,
-        legend_x + 18.0,
-        legend_x + 24.0,
-        legend_y + 4.0
+        legend_x,
+        legend_y + 18.0,
+        "#76a9ff",
+        true,
+        "MLP mean",
     )?;
-    write!(
+    append_legend_entry(
         &mut svg,
-        r##"<line x1="{legend_x}" y1="{}" x2="{}" y2="{}" stroke="#4ea8de" stroke-width="3"/><text x="{}" y="{}" fill="#dce6f2" font-size="12" font-family="sans-serif">mean fitness</text>"##,
-        legend_y + 18.0,
-        legend_x + 18.0,
-        legend_y + 18.0,
-        legend_x + 24.0,
-        legend_y + 22.0
+        legend_x,
+        legend_y + 36.0,
+        "#f08a24",
+        false,
+        "LTC best",
+    )?;
+    append_legend_entry(
+        &mut svg,
+        legend_x,
+        legend_y + 54.0,
+        "#ffbe73",
+        true,
+        "LTC mean",
     )?;
 
     svg.push_str("</svg>");
     fs::write(&path, svg)?;
     Ok(path)
+}
+
+fn build_species_points<Fx, Fy, Fv>(
+    metrics: &[GenerationMetrics],
+    value_for_metric: Fv,
+    x_for_index: &Fx,
+    y_for_value: &Fy,
+) -> Vec<(f32, f32)>
+where
+    Fx: Fn(usize, usize) -> f32,
+    Fy: Fn(f32) -> f32,
+    Fv: Fn(&GenerationMetrics) -> Option<f32>,
+{
+    metrics
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, metric)| {
+            value_for_metric(metric)
+                .map(|value| ((x_for_index)(idx, metrics.len()), (y_for_value)(value)))
+        })
+        .collect()
+}
+
+fn append_polyline(
+    svg: &mut String,
+    points: &[(f32, f32)],
+    color: &str,
+    dashed: bool,
+) -> anyhow::Result<()> {
+    if points.len() < 2 {
+        return Ok(());
+    }
+
+    let mut serialized_points = String::new();
+    for (x, y) in points {
+        write!(&mut serialized_points, "{x:.2},{y:.2} ")?;
+    }
+
+    if dashed {
+        write!(
+            svg,
+            r##"<polyline fill="none" stroke="{color}" stroke-width="2.5" stroke-dasharray="8 6" points="{serialized_points}"/>"##
+        )?;
+    } else {
+        write!(
+            svg,
+            r##"<polyline fill="none" stroke="{color}" stroke-width="2.5" points="{serialized_points}"/>"##
+        )?;
+    }
+    Ok(())
+}
+
+fn append_legend_entry(
+    svg: &mut String,
+    x: f32,
+    y: f32,
+    color: &str,
+    dashed: bool,
+    label: &str,
+) -> anyhow::Result<()> {
+    if dashed {
+        write!(
+            svg,
+            r##"<line x1="{x}" y1="{y}" x2="{}" y2="{y}" stroke="{color}" stroke-width="3" stroke-dasharray="8 6"/><text x="{}" y="{}" fill="#dce6f2" font-size="12" font-family="sans-serif">{label}</text>"##,
+            x + 18.0,
+            x + 24.0,
+            y + 4.0
+        )?;
+    } else {
+        write!(
+            svg,
+            r##"<line x1="{x}" y1="{y}" x2="{}" y2="{y}" stroke="{color}" stroke-width="3"/><text x="{}" y="{}" fill="#dce6f2" font-size="12" font-family="sans-serif">{label}</text>"##,
+            x + 18.0,
+            x + 24.0,
+            y + 4.0
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -161,6 +273,10 @@ mod tests {
                 generation_index: 0,
                 best_fitness: 1.2,
                 mean_fitness: 0.6,
+                mlp_best_fitness: Some(1.2),
+                mlp_mean_fitness: Some(0.6),
+                ltc_best_fitness: Some(0.8),
+                ltc_mean_fitness: Some(0.4),
                 survival_min: 1,
                 survival_mean: 2.0,
                 survival_max: 3,
@@ -172,6 +288,10 @@ mod tests {
                 generation_index: 1,
                 best_fitness: 2.4,
                 mean_fitness: 1.1,
+                mlp_best_fitness: Some(2.4),
+                mlp_mean_fitness: Some(1.1),
+                ltc_best_fitness: Some(1.7),
+                ltc_mean_fitness: Some(0.9),
                 survival_min: 1,
                 survival_mean: 2.4,
                 survival_max: 4,
@@ -184,8 +304,10 @@ mod tests {
         let path = write_fitness_svg(&out_dir, &metrics).expect("plot writing should succeed");
         let content = fs::read_to_string(path).expect("plot should be readable");
 
-        assert!(content.contains("best fitness"));
-        assert!(content.contains("mean fitness"));
+        assert!(content.contains("MLP best"));
+        assert!(content.contains("MLP mean"));
+        assert!(content.contains("LTC best"));
+        assert!(content.contains("LTC mean"));
         assert!(content.contains("<polyline"));
     }
 }

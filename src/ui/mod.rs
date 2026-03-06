@@ -784,13 +784,15 @@ mod bevy_viewer {
     ) {
         let summary = if let Some(metric) = runtime.metrics_history.last() {
             format!(
-                "gens: {}\nlatest best: {:.2}\nlatest mean: {:.2}\nlegend: orange=best, blue=mean",
+                "gens: {}\nMLP best/mean: {} / {}\nLTC best/mean: {} / {}\nlegend: blue=MLP, orange=LTC, solid=best, dashed=mean",
                 runtime.metrics_history.len(),
-                metric.best_fitness,
-                metric.mean_fitness
+                format_optional(metric.mlp_best_fitness),
+                format_optional(metric.mlp_mean_fitness),
+                format_optional(metric.ltc_best_fitness),
+                format_optional(metric.ltc_mean_fitness),
             )
         } else {
-            "No embedded history in this snapshot yet.\nLegend: orange=best, blue=mean".to_string()
+            "No embedded history in this snapshot yet.\nLegend: blue=MLP, orange=LTC, solid=best, dashed=mean".to_string()
         };
 
         for mut text in &mut query {
@@ -1137,7 +1139,15 @@ mod bevy_viewer {
             .unwrap_or(min_generation);
         let max_fitness = sampled
             .iter()
-            .flat_map(|metric| [metric.best_fitness, metric.mean_fitness])
+            .flat_map(|metric| {
+                [
+                    metric.mlp_best_fitness,
+                    metric.mlp_mean_fitness,
+                    metric.ltc_best_fitness,
+                    metric.ltc_mean_fitness,
+                ]
+            })
+            .flatten()
             .fold(0.0_f32, f32::max)
             .max(1.0);
         let generation_span = (max_generation.saturating_sub(min_generation)).max(1) as f32;
@@ -1151,28 +1161,46 @@ mod bevy_viewer {
             plot_bottom - progress * (plot_bottom - plot_top)
         };
 
-        for pair in sampled.windows(2) {
-            let previous = pair[0];
-            let current = pair[1];
-            draw_screen_line(
-                &mut gizmos,
-                window,
-                x_for_generation(previous.generation_index),
-                y_for_fitness(previous.best_fitness),
-                x_for_generation(current.generation_index),
-                y_for_fitness(current.best_fitness),
-                Color::srgb(0.95, 0.64, 0.08),
-            );
-            draw_screen_line(
-                &mut gizmos,
-                window,
-                x_for_generation(previous.generation_index),
-                y_for_fitness(previous.mean_fitness),
-                x_for_generation(current.generation_index),
-                y_for_fitness(current.mean_fitness),
-                Color::srgb(0.31, 0.66, 0.87),
-            );
-        }
+        draw_species_series(
+            &mut gizmos,
+            window,
+            &sampled,
+            |metric| metric.mlp_best_fitness,
+            &x_for_generation,
+            &y_for_fitness,
+            Color::srgb(0.19, 0.45, 0.92),
+            false,
+        );
+        draw_species_series(
+            &mut gizmos,
+            window,
+            &sampled,
+            |metric| metric.mlp_mean_fitness,
+            &x_for_generation,
+            &y_for_fitness,
+            Color::srgb(0.50, 0.72, 1.0),
+            true,
+        );
+        draw_species_series(
+            &mut gizmos,
+            window,
+            &sampled,
+            |metric| metric.ltc_best_fitness,
+            &x_for_generation,
+            &y_for_fitness,
+            Color::srgb(0.93, 0.53, 0.10),
+            false,
+        );
+        draw_species_series(
+            &mut gizmos,
+            window,
+            &sampled,
+            |metric| metric.ltc_mean_fitness,
+            &x_for_generation,
+            &y_for_fitness,
+            Color::srgb(1.0, 0.75, 0.45),
+            true,
+        );
     }
 
     fn draw_selected_agent_eye_bins(
@@ -1626,6 +1654,96 @@ mod bevy_viewer {
             screen_to_world(window, x1, y1),
             color,
         );
+    }
+
+    fn draw_species_series<Fv, Fx, Fy>(
+        gizmos: &mut Gizmos,
+        window: &Window,
+        metrics: &[&GenerationMetrics],
+        value_for_metric: Fv,
+        x_for_generation: &Fx,
+        y_for_fitness: &Fy,
+        color: Color,
+        dashed: bool,
+    ) where
+        Fv: Fn(&GenerationMetrics) -> Option<f32>,
+        Fx: Fn(u32) -> f32,
+        Fy: Fn(f32) -> f32,
+    {
+        for pair in metrics.windows(2) {
+            let previous = pair[0];
+            let current = pair[1];
+            let (Some(previous_value), Some(current_value)) =
+                (value_for_metric(previous), value_for_metric(current))
+            else {
+                continue;
+            };
+
+            if dashed {
+                draw_dashed_screen_line(
+                    gizmos,
+                    window,
+                    x_for_generation(previous.generation_index),
+                    y_for_fitness(previous_value),
+                    x_for_generation(current.generation_index),
+                    y_for_fitness(current_value),
+                    color,
+                );
+            } else {
+                draw_screen_line(
+                    gizmos,
+                    window,
+                    x_for_generation(previous.generation_index),
+                    y_for_fitness(previous_value),
+                    x_for_generation(current.generation_index),
+                    y_for_fitness(current_value),
+                    color,
+                );
+            }
+        }
+    }
+
+    fn draw_dashed_screen_line(
+        gizmos: &mut Gizmos,
+        window: &Window,
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        color: Color,
+    ) {
+        let dx = x1 - x0;
+        let dy = y1 - y0;
+        let distance = (dx * dx + dy * dy).sqrt();
+        if distance <= f32::EPSILON {
+            return;
+        }
+
+        let dash = 8.0;
+        let gap = 6.0;
+        let step = dash + gap;
+        let ux = dx / distance;
+        let uy = dy / distance;
+        let mut cursor = 0.0;
+        while cursor < distance {
+            let segment_end = (cursor + dash).min(distance);
+            draw_screen_line(
+                gizmos,
+                window,
+                x0 + ux * cursor,
+                y0 + uy * cursor,
+                x0 + ux * segment_end,
+                y0 + uy * segment_end,
+                color,
+            );
+            cursor += step;
+        }
+    }
+
+    fn format_optional(value: Option<f32>) -> String {
+        value
+            .map(|value| format!("{value:.2}"))
+            .unwrap_or_else(|| "-".to_string())
     }
 
     fn screen_to_world(window: &Window, x: f32, y: f32) -> bevy::math::Vec2 {

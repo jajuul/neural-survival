@@ -41,10 +41,16 @@ fn batch_run_writes_metrics_summary_and_snapshot() {
     assert!(snapshot_path.exists());
 
     let metrics_content = fs::read_to_string(&metrics_path).expect("metrics file must be readable");
-    assert!(metrics_content.contains("generation,best_fitness,mean_fitness,survival_min"));
+    assert!(
+        metrics_content.contains(
+            "generation,best_fitness,mean_fitness,mlp_best_fitness,mlp_mean_fitness,ltc_best_fitness,ltc_mean_fitness,survival_min"
+        )
+    );
     let plot_content = fs::read_to_string(&plot_path).expect("plot file must be readable");
-    assert!(plot_content.contains("best fitness"));
-    assert!(plot_content.contains("mean fitness"));
+    assert!(plot_content.contains("MLP best"));
+    assert!(plot_content.contains("MLP mean"));
+    assert!(plot_content.contains("LTC best"));
+    assert!(plot_content.contains("LTC mean"));
 
     let snapshot = read_snapshot(&snapshot_path).expect("snapshot should deserialize");
     assert_eq!(snapshot.generation, 3);
@@ -72,6 +78,10 @@ fn snapshot_round_trip_preserves_payload() {
             generation_index: 1,
             best_fitness: 2.0,
             mean_fitness: 1.5,
+            mlp_best_fitness: Some(2.0),
+            mlp_mean_fitness: Some(1.5),
+            ltc_best_fitness: Some(1.2),
+            ltc_mean_fitness: Some(1.0),
             survival_min: 5,
             survival_mean: 6.0,
             survival_max: 7,

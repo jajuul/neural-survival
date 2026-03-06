@@ -22,6 +22,10 @@ pub struct GenerationMetrics {
     pub generation_index: u32,
     pub best_fitness: f32,
     pub mean_fitness: f32,
+    pub mlp_best_fitness: Option<f32>,
+    pub mlp_mean_fitness: Option<f32>,
+    pub ltc_best_fitness: Option<f32>,
+    pub ltc_mean_fitness: Option<f32>,
     pub survival_min: u32,
     pub survival_mean: f32,
     pub survival_max: u32,
@@ -315,6 +319,16 @@ fn build_generation_metrics(
     evaluated: &[EvaluatedGenome],
     scored: &[ScoredGenome],
 ) -> GenerationMetrics {
+    let mlp_scores = scored
+        .iter()
+        .filter(|entry| entry.genome.controller_kind == ControllerKind::Mlp)
+        .map(|entry| entry.fitness)
+        .collect::<Vec<_>>();
+    let ltc_scores = scored
+        .iter()
+        .filter(|entry| entry.genome.controller_kind == ControllerKind::Ltc)
+        .map(|entry| entry.fitness)
+        .collect::<Vec<_>>();
     let best_fitness = scored
         .iter()
         .map(|entry| entry.fitness)
@@ -348,6 +362,10 @@ fn build_generation_metrics(
         generation_index,
         best_fitness,
         mean_fitness,
+        mlp_best_fitness: species_best(&mlp_scores),
+        mlp_mean_fitness: species_mean(&mlp_scores),
+        ltc_best_fitness: species_best(&ltc_scores),
+        ltc_mean_fitness: species_mean(&ltc_scores),
         survival_min,
         survival_mean,
         survival_max,
@@ -355,6 +373,14 @@ fn build_generation_metrics(
         controller_mlp,
         controller_ltc,
     }
+}
+
+fn species_best(scores: &[f32]) -> Option<f32> {
+    scores.iter().copied().max_by(f32::total_cmp)
+}
+
+fn species_mean(scores: &[f32]) -> Option<f32> {
+    (!scores.is_empty()).then(|| scores.iter().sum::<f32>() / scores.len() as f32)
 }
 
 fn evolution_rng_for_generation(run_seed: u64, generation_index: u32) -> StdRng {
