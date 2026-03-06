@@ -2,7 +2,9 @@ use rand::{Rng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::brain::{BrainGenome, ControllerFactory, ControllerKind, NeuralController};
+use crate::brain::{
+    BrainGenome, ControllerFactory, ControllerKind, ControllerStepOutput, NeuralController,
+};
 use crate::sim::{ActionVector, SensorVector};
 
 /// Layer sizes for a single-hidden-layer feed-forward MLP.
@@ -234,6 +236,22 @@ impl MlpController {
 
         outputs
     }
+
+    fn step_output_from_signals(outputs: &[f32]) -> ControllerStepOutput {
+        let steering_raw = outputs.first().copied().unwrap_or(0.0).clamp(-1.0, 1.0);
+        let throttle_raw = outputs.get(1).copied().unwrap_or(0.0).clamp(-1.0, 1.0);
+        let throttle_applied = ((throttle_raw + 1.0) * 0.5).clamp(0.0, 1.0);
+
+        ControllerStepOutput {
+            action: ActionVector {
+                steering: steering_raw,
+                throttle: throttle_applied,
+            },
+            steering_raw,
+            throttle_raw,
+            throttle_applied,
+        }
+    }
 }
 
 impl NeuralController for MlpController {
@@ -242,13 +260,12 @@ impl NeuralController for MlpController {
     }
 
     fn step(&mut self, input: &SensorVector, _dt: f32) -> ActionVector {
+        self.step_with_observability(input, 0.0).action
+    }
+
+    fn step_with_observability(&mut self, input: &SensorVector, _dt: f32) -> ControllerStepOutput {
         let outputs = self.forward_outputs(input);
-
-        let steering = outputs.first().copied().unwrap_or(0.0).clamp(-1.0, 1.0);
-        let throttle_signal = outputs.get(1).copied().unwrap_or(0.0).clamp(-1.0, 1.0);
-        let throttle = ((throttle_signal + 1.0) * 0.5).clamp(0.0, 1.0);
-
-        ActionVector { steering, throttle }
+        Self::step_output_from_signals(&outputs)
     }
 
     fn parameter_count(&self) -> usize {
@@ -391,5 +408,33 @@ mod tests {
 
         assert_eq!(controller.controller_kind(), ControllerKind::Mlp);
         assert_eq!(controller.parameter_count(), shape.parameter_count());
+    }
+
+    #[test]
+    fn step_with_observability_matches_action_mapping() {
+        let shape = MlpShape {
+            input_size: 2,
+            hidden_size: 2,
+            output_size: 2,
+        };
+        let genome = MlpGenome::from_flat_parameters(
+            shape,
+            &[
+                0.5, -0.25, -0.75, 0.1, 0.1, -0.2, 0.3, -0.4, 0.2, 0.6, 0.05, -0.1,
+            ],
+        )
+        .expect("parameter vector should match MLP shape");
+        let mut controller = MlpController::new(genome).expect("genome should construct");
+
+        let output = controller.step_with_observability(
+            &SensorVector {
+                values: vec![1.0, -1.0],
+            },
+            0.1,
+        );
+
+        assert!((output.action.steering - output.steering_raw).abs() < 1e-6);
+        assert!((output.action.throttle - output.throttle_applied).abs() < 1e-6);
+        assert!((output.throttle_applied - 0.2969760).abs() < 1e-5);
     }
 }

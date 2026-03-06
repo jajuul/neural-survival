@@ -10,6 +10,7 @@ This module defines shared controller interfaces and deterministic MLP/LTC contr
 - Includes a mixed-family controller factory that can generate and build both controller kinds.
 - Uses config-driven controller capacity settings (`mlp_hidden_size`, `ltc_state_size`) when factories are created by genetics/experiment flows.
 - Maps controller outputs into simulation actions (`steering`, `throttle`).
+- Exposes `step_with_observability` so UI code can inspect raw steering/throttle signals alongside the applied action.
 
 ## Inputs
 - `SensorVector` values from the simulation.
@@ -18,6 +19,7 @@ This module defines shared controller interfaces and deterministic MLP/LTC contr
 
 ## Outputs
 - Runtime controller actions via `NeuralController::step`.
+- Runtime controller observability via `NeuralController::step_with_observability`.
 - Encoded/decoded genome parameter vectors.
 
 ## Side Effects

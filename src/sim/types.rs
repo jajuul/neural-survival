@@ -49,6 +49,14 @@ pub struct SensorVector {
     pub values: Vec<f32>,
 }
 
+/// Decomposed sensor inputs used for controller observability.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+pub struct SensorObservation {
+    pub core_values: [f32; 4],
+    pub eye_bins: Vec<f32>,
+    pub input: SensorVector,
+}
+
 /// Neural output controls for one simulation step.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct ActionVector {
@@ -97,6 +105,26 @@ pub struct WorldState {
 pub struct StepOutcome {
     pub consumed_food: usize,
     pub deaths: usize,
+}
+
+/// Per-term energy accounting for one agent step.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+pub struct EnergyBreakdown {
+    pub base_loss: f32,
+    pub speed_loss: f32,
+    pub network_loss: f32,
+    pub perception_loss: f32,
+    pub food_gain: f32,
+    pub total_loss: f32,
+    pub net_delta: f32,
+}
+
+/// Per-agent telemetry captured during one world step.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+pub struct StepAgentTelemetry {
+    pub energy: EnergyBreakdown,
+    pub consumed_food: bool,
+    pub alive_after: bool,
 }
 
 /// Summary emitted after a headless episode for deterministic comparison.

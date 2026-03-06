@@ -76,6 +76,7 @@ Version 1 focuses on:
 2. User inspects movement, survival, and top-level statistics.
 3. User can pause/resume, adjust simulation speed, and toggle active world rules.
 4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `episode steps`, `mutation rate`).
+5. User can click an agent in the GUI to inspect its current eye-bin activations, controller outputs, and last-step energy-cost breakdown.
 
 ## Public Interfaces and Types
 
@@ -84,6 +85,11 @@ Version 1 focuses on:
 pub trait NeuralController {
     fn reset(&mut self);
     fn step(&mut self, input: &SensorVector, dt: f32) -> ActionVector;
+    fn step_with_observability(
+        &mut self,
+        input: &SensorVector,
+        dt: f32,
+    ) -> ControllerStepOutput;
     fn parameter_count(&self) -> usize;
     fn controller_kind(&self) -> ControllerKind;
 }
@@ -91,6 +97,13 @@ pub trait NeuralController {
 pub enum ControllerKind {
     Mlp,
     Ltc,
+}
+
+pub struct ControllerStepOutput {
+    pub action: ActionVector,
+    pub steering_raw: f32,
+    pub throttle_raw: f32,
+    pub throttle_applied: f32,
 }
 
 pub trait ControllerFactory {
@@ -192,6 +205,14 @@ Weights are config-driven and exported in run metadata.
 - Controller-family distribution (MLP/LTC).
 - Active world-rule toggle states.
 - Evolution continuation progress while GUI-triggered evolution is running.
+- Selected-agent inspector:
+  - click-to-select agent inspection
+  - live eye-bin chart for active perception channels
+  - core sensor values (`x`, `y`, `energy`, `speed`)
+  - raw controller outputs (`steering`, `throttle_raw`) and applied throttle
+  - last-step energy breakdown (`base`, `speed`, `network`, `perception`, `food`, `net`)
+  - selected agent remains inspectable after death using the last captured telemetry
+
 ### Controls
 - Start/stop simulation (pause/resume).
 - Simulation speed multiplier.
@@ -206,6 +227,7 @@ Weights are config-driven and exported in run metadata.
   - episode steps
   - mutation rate
 - Run continuation evolution from GUI controls.
+- Click an agent to select it; click empty world space to clear selection.
 
 ## Data Export
 

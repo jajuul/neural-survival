@@ -11,6 +11,8 @@ This module provides viewer entrypoints for loading and inspecting simulation sn
   - continue-evolution action that applies edited parameters to in-GUI evolution
   - live evolution progress visibility (`current/total generations`) during GUI-triggered continuation, updated every 10 generations (plus completion)
   - an in-viewer fitness-history plot showing best and mean fitness over generations from snapshot history and GUI-triggered continuation runs
+  - click-to-select agent inspection with a live eye-bin chart, core sensor values, controller outputs, and last-step energy-cost breakdown
+  - controller-driven viewer stepping, so GUI movement and observability use the same neural controllers rather than stub actions
   - speed/rule toggles and restart from loaded snapshot state
 - In non-GUI builds, keeps a viewer stub so CLI workflows remain testable in headless environments.
 

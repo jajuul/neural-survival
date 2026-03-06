@@ -26,13 +26,33 @@ pub enum BrainGenome {
     Ltc(LtcGenome),
 }
 
+/// Controller outputs for one fixed simulation step, including pre-remap signals.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ControllerStepOutput {
+    pub action: ActionVector,
+    pub steering_raw: f32,
+    pub throttle_raw: f32,
+    pub throttle_applied: f32,
+}
+
 /// Runtime controller behavior shared across controller families.
-pub trait NeuralController {
+pub trait NeuralController: Send + Sync {
     /// Reset controller internal state to episode-initial values.
     fn reset(&mut self);
 
     /// Compute one action from sensor inputs for a fixed simulation step.
     fn step(&mut self, input: &SensorVector, dt: f32) -> ActionVector;
+
+    /// Compute one action and expose raw control signals for observability.
+    fn step_with_observability(&mut self, input: &SensorVector, dt: f32) -> ControllerStepOutput {
+        let action = self.step(input, dt);
+        ControllerStepOutput {
+            action,
+            steering_raw: action.steering,
+            throttle_raw: (action.throttle * 2.0 - 1.0).clamp(-1.0, 1.0),
+            throttle_applied: action.throttle,
+        }
+    }
 
     /// Number of scalar parameters used by this controller instance.
     fn parameter_count(&self) -> usize;

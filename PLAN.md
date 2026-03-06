@@ -32,6 +32,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 19:30Z) Exposed controller layer sizes in TOML/config (`mlp_hidden_size`, `ltc_state_size`), validated non-zero bounds, and wired mixed-controller factory setup to use these configurable sizes.
 - [x] (2026-03-04 19:55Z) Added automatic `fitness.svg` artifact generation (best + mean fitness trends per generation) for headless `run`/`batch` outputs, with integration tests verifying plot presence.
 - [x] (2026-03-04 20:20Z) Added in-GUI fitness plotting by embedding generation history in snapshots and rendering best/mean fitness lines in the Bevy viewer, including continuation-time plot updates and backward-compatible snapshot deserialization.
+- [x] (2026-03-06 00:00Z) Added selected-agent observability in the GUI by switching viewer stepping from stub actions to real controller execution, capturing sensor/output/energy telemetry, rendering a selected-agent inspector with eye-bin activity, and validating with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 
 ## Surprises & Discoveries
 
@@ -77,6 +78,8 @@ The implementation is successful when three things are demonstrably true: headle
 - Observation: Evolving trait-level `perception_channels` conflicts with static MLP/LTC input shapes unless sensor width is fixed; a compatibility layer is needed.
   Evidence: Existing snapshots/genomes carry fixed input dimensions, so the new eye model had to keep a constant input width while activating only the first `perception_channels` bins.
 
+- Observation: The current GUI viewer loop still advances with `sim::step_world`, which uses deterministic stub actions instead of evolved controllers.
+  Evidence: `src/ui/mod.rs` calls `step_world` from `advance_simulation`, and `src/sim/world.rs` defines `step_world` as a wrapper around `step_world_with_actions` that supplies `stub_action`.
 
 ## Decision Log
 
@@ -180,6 +183,10 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: This keeps `view --snapshot` self-contained, preserves deterministic replay behavior, and lets in-GUI continuation append new points without depending on sidecar files.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: Implement GUI observability only after making the viewer simulation controller-driven, and store only the selected agent's last-step telemetry in the runtime.
+  Rationale: Eye bins, action outputs, and energy costs are only meaningful if they correspond to the controller that actually moved the agent. Persisting one selected agent's latest telemetry satisfies the inspector requirement without adding unnecessary per-frame history for the entire population.
+  Date/Author: 2026-03-06 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -215,6 +222,8 @@ Post-plan enhancement (v6): model-capacity knobs for `MLP` and `LTC` are now run
 Post-plan enhancement (v7): headless runs now export `fitness.svg` to visualize best and mean fitness trends over generations without external tooling.
 
 Post-plan enhancement (v8): the Bevy viewer now renders an internal fitness chart for best and mean fitness, sourced from snapshot-embedded metric history and extended during GUI continuation.
+
+Post-plan enhancement (v9): the Bevy viewer now runs real controllers in-frame and exposes a selected-agent inspector with eye-bin activations, controller outputs, and energy-cost breakdown, bringing GUI simulation behavior into alignment with headless controller-driven execution.
 
 ## Context and Orientation
 

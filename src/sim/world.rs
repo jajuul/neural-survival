@@ -4,8 +4,8 @@ use rand_chacha::ChaCha8Rng;
 use crate::config::SimulationConfig;
 
 use super::types::{
-    ActionVector, AgentState, EpisodeSummary, FoodState, SensorVector, StepOutcome, Vec2,
-    WorldState,
+    ActionVector, AgentState, EnergyBreakdown, EpisodeSummary, FoodState, SensorObservation,
+    SensorVector, StepAgentTelemetry, StepOutcome, Vec2, WorldState,
 };
 
 /// Number of non-vision scalar features included in controller input.
@@ -89,11 +89,27 @@ pub fn step_world_with_actions(
     config: &SimulationConfig,
     actions: &[ActionVector],
 ) -> StepOutcome {
+    step_world_with_actions_and_telemetry(world, config, actions).0
+}
+
+/// Advance the simulation by one fixed step using caller-provided actions and capture per-agent
+/// telemetry for observability.
+///
+/// Inputs: mutable world state, validated simulation config, and one action per agent.
+/// Output: aggregate changes (`consumed_food`, `deaths`) and one telemetry record per agent index.
+/// Side effects: mutates world state in-place.
+pub fn step_world_with_actions_and_telemetry(
+    world: &mut WorldState,
+    config: &SimulationConfig,
+    actions: &[ActionVector],
+) -> (StepOutcome, Vec<StepAgentTelemetry>) {
     let mut outcome = StepOutcome::default();
     let dt = config.timestep_seconds;
+    let mut telemetry = vec![StepAgentTelemetry::default(); world.agents.len()];
 
     for agent_idx in 0..world.agents.len() {
         if !world.agents[agent_idx].alive {
+            telemetry[agent_idx].alive_after = false;
             continue;
         }
 
@@ -124,18 +140,25 @@ pub fn step_world_with_actions(
             0.0
         };
 
-        let energy_loss = energy_loss_for_step(&world.agents[agent_idx], config, speed, dt);
+        let energy =
+            energy_breakdown_for_step(&world.agents[agent_idx], config, speed, dt, food_gain);
         world.agents[agent_idx].energy =
-            (world.agents[agent_idx].energy - energy_loss + food_gain).max(0.0);
+            (world.agents[agent_idx].energy - energy.total_loss + food_gain).max(0.0);
 
         if world.agents[agent_idx].energy <= 0.0 {
             world.agents[agent_idx].alive = false;
             outcome.deaths += 1;
         }
+
+        telemetry[agent_idx] = StepAgentTelemetry {
+            energy,
+            consumed_food: food_gain > 0.0,
+            alive_after: world.agents[agent_idx].alive,
+        };
     }
 
     world.step_count += 1;
-    outcome
+    (outcome, telemetry)
 }
 
 /// Run one headless episode and return aggregate summary stats.
@@ -172,6 +195,20 @@ pub fn basic_sensor_vector(
     world: &WorldState,
     config: &SimulationConfig,
 ) -> SensorVector {
+    sensor_observation(agent, world, config).input
+}
+
+/// Build decomposed controller inputs for one agent so UI code can inspect core scalars and eye
+/// bins without reimplementing the sensor model.
+///
+/// Inputs: current agent state, immutable world state, and validated config.
+/// Output: core scalar features, eye-bin activations, and the final fixed-width controller input.
+/// Side effects: none.
+pub fn sensor_observation(
+    agent: &AgentState,
+    world: &WorldState,
+    config: &SimulationConfig,
+) -> SensorObservation {
     let x_norm = (agent.position.x / world.width).clamp(0.0, 1.0);
     let y_norm = (agent.position.y / world.height).clamp(0.0, 1.0);
     let energy_norm = (agent.energy / config.initial_agent_energy).clamp(0.0, 2.0);
@@ -182,7 +219,11 @@ pub fn basic_sensor_vector(
     values.extend_from_slice(&[x_norm, y_norm, energy_norm, speed_norm]);
     values.extend_from_slice(&vision_cells);
 
-    SensorVector { values }
+    SensorObservation {
+        core_values: [x_norm, y_norm, energy_norm, speed_norm],
+        eye_bins: vision_cells,
+        input: SensorVector { values },
+    }
 }
 
 /// Build deterministic aggregate metrics from world state.
@@ -304,27 +345,51 @@ fn apply_kinematics(
     speed
 }
 
-fn energy_loss_for_step(agent: &AgentState, config: &SimulationConfig, speed: f32, dt: f32) -> f32 {
+/// Compute the exact per-term energy accounting for one agent step.
+///
+/// Inputs: current agent state before the step, config, realized speed for this step, step
+/// duration, and food energy gained during the same step.
+/// Output: per-term energy losses plus food gain and net delta.
+/// Side effects: none.
+pub fn energy_breakdown_for_step(
+    agent: &AgentState,
+    config: &SimulationConfig,
+    speed: f32,
+    dt: f32,
+    food_gain: f32,
+) -> EnergyBreakdown {
     let metabolic_scale = 1.0 / agent.metabolic_efficiency.max(0.001);
 
-    let mut total_loss = config.base_energy_cost_per_second * dt * metabolic_scale;
-
-    if config.rule_toggles.energy_by_speed {
-        total_loss += config.speed_energy_cost_factor * speed * dt;
-    }
-
-    if config.rule_toggles.energy_by_network_size {
-        total_loss += config.network_energy_cost_factor * agent.network_size as f32 * dt;
-    }
-
-    if config.rule_toggles.energy_by_perception_size {
-        total_loss += config.perception_energy_cost_factor
+    let base_loss = config.base_energy_cost_per_second * dt * metabolic_scale;
+    let speed_loss = if config.rule_toggles.energy_by_speed {
+        config.speed_energy_cost_factor * speed * dt
+    } else {
+        0.0
+    };
+    let network_loss = if config.rule_toggles.energy_by_network_size {
+        config.network_energy_cost_factor * agent.network_size as f32 * dt
+    } else {
+        0.0
+    };
+    let perception_loss = if config.rule_toggles.energy_by_perception_size {
+        config.perception_energy_cost_factor
             * agent.perception_radius
             * agent.perception_channels as f32
-            * dt;
-    }
+            * dt
+    } else {
+        0.0
+    };
+    let total_loss = base_loss + speed_loss + network_loss + perception_loss;
 
-    total_loss
+    EnergyBreakdown {
+        base_loss,
+        speed_loss,
+        network_loss,
+        perception_loss,
+        food_gain,
+        total_loss,
+        net_delta: food_gain - total_loss,
+    }
 }
 
 fn find_collided_food_index(
@@ -343,7 +408,8 @@ mod tests {
 
     use super::{
         AgentState, CORE_SENSOR_FEATURES, FoodState, Vec2, WorldState, basic_sensor_vector,
-        step_world, toroidal_distance, wrap_position,
+        energy_breakdown_for_step, step_world, step_world_with_actions_and_telemetry,
+        toroidal_distance, wrap_position,
     };
 
     fn test_agent(energy: f32) -> AgentState {
@@ -471,6 +537,65 @@ mod tests {
         assert!(speed_on_world.agents[0].energy < off_energy);
         assert!(network_on_world.agents[0].energy < off_energy);
         assert!(perception_on_world.agents[0].energy < off_energy);
+    }
+
+    #[test]
+    fn energy_breakdown_reports_each_enabled_term() {
+        let config = SimulationConfig {
+            timestep_seconds: 0.5,
+            base_energy_cost_per_second: 2.0,
+            speed_energy_cost_factor: 3.0,
+            network_energy_cost_factor: 0.1,
+            perception_energy_cost_factor: 0.2,
+            rule_toggles: RuleToggles {
+                energy_by_speed: true,
+                energy_by_network_size: true,
+                energy_by_perception_size: true,
+            },
+            ..SimulationConfig::default()
+        };
+        let agent = test_agent(10.0);
+
+        let breakdown =
+            energy_breakdown_for_step(&agent, &config, 4.0, config.timestep_seconds, 1.5);
+
+        assert!((breakdown.base_loss - 1.0).abs() < 1e-6);
+        assert!((breakdown.speed_loss - 6.0).abs() < 1e-6);
+        assert!((breakdown.network_loss - 0.8).abs() < 1e-6);
+        assert!((breakdown.perception_loss - 4.0).abs() < 1e-6);
+        assert!((breakdown.total_loss - 11.8).abs() < 1e-6);
+        assert!((breakdown.net_delta + 10.3).abs() < 1e-6);
+    }
+
+    #[test]
+    fn step_world_with_actions_and_telemetry_reports_food_and_survival() {
+        let config = SimulationConfig {
+            timestep_seconds: 0.1,
+            base_energy_cost_per_second: 0.0,
+            speed_energy_cost_factor: 0.0,
+            network_energy_cost_factor: 0.0,
+            perception_energy_cost_factor: 0.0,
+            ..SimulationConfig::default()
+        };
+        let mut world = WorldState {
+            width: 20.0,
+            height: 20.0,
+            agents: vec![test_agent(5.0)],
+            food: vec![FoodState {
+                id: 0,
+                position: Vec2::new(10.0, 10.0),
+                radius: 5.0,
+                energy_value: 3.0,
+            }],
+            step_count: 0,
+        };
+
+        let (_outcome, telemetry) = step_world_with_actions_and_telemetry(&mut world, &config, &[]);
+
+        assert_eq!(telemetry.len(), 1);
+        assert!(telemetry[0].consumed_food);
+        assert!(telemetry[0].alive_after);
+        assert!((telemetry[0].energy.food_gain - 3.0).abs() < 1e-6);
     }
 
     #[test]

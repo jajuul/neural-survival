@@ -6,18 +6,22 @@ use crate::io::snapshot::SnapshotFile;
 #[cfg(feature = "gui")]
 mod bevy_viewer {
     use bevy::input::keyboard::{Key, KeyboardInput};
+    use bevy::input::mouse::MouseButton;
     use bevy::math::primitives::{Circle, RegularPolygon};
     use bevy::prelude::*;
     use bevy::prelude::{Mesh2d, MeshMaterial2d};
     use bevy::window::PrimaryWindow;
 
-    use crate::brain::ControllerKind;
+    use crate::brain::{ControllerFactory, ControllerKind, ControllerStepOutput, NeuralController};
     use crate::experiment::{
-        continue_generations_from_population, world_state_for_population, GenerationMetrics,
+        GenerationMetrics, continue_generations_from_population, world_state_for_population,
     };
-    use crate::genetics::AgentGenome;
+    use crate::genetics::{AgentGenome, default_mixed_factory};
     use crate::io::snapshot::SnapshotFile;
-    use crate::sim::{step_world, FoodState, Vec2, WorldState};
+    use crate::sim::{
+        EnergyBreakdown, FoodState, SensorObservation, Vec2, WorldState, sensor_observation,
+        step_world_with_actions_and_telemetry,
+    };
 
     const EVOLVE_GENERATIONS_MIN: u32 = 1;
     const EVOLVE_GENERATIONS_MAX: u32 = 5000;
@@ -35,6 +39,14 @@ mod bevy_viewer {
     const FITNESS_PLOT_INSET_TOP: f32 = 64.0;
     const FITNESS_PLOT_INSET_BOTTOM: f32 = 22.0;
     const FITNESS_PLOT_MAX_POINTS: usize = 240;
+    const OBSERVABILITY_PANEL_WIDTH: f32 = 420.0;
+    const OBSERVABILITY_PANEL_HEIGHT: f32 = 330.0;
+    const OBSERVABILITY_PANEL_GAP: f32 = 12.0;
+    const OBSERVABILITY_EYE_PLOT_INSET_LEFT: f32 = 14.0;
+    const OBSERVABILITY_EYE_PLOT_INSET_RIGHT: f32 = 14.0;
+    const OBSERVABILITY_EYE_PLOT_INSET_TOP: f32 = 240.0;
+    const OBSERVABILITY_EYE_PLOT_INSET_BOTTOM: f32 = 18.0;
+    const SELECTION_PICK_RADIUS: f32 = 12.0;
 
     #[derive(Component)]
     struct AgentVisual {
@@ -60,6 +72,9 @@ mod bevy_viewer {
 
     #[derive(Component)]
     struct FitnessPlotSummaryText;
+
+    #[derive(Component)]
+    struct SelectedAgentSummaryText;
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum NumericFieldKind {
@@ -135,10 +150,27 @@ mod bevy_viewer {
         }
     }
 
-    #[derive(Resource, Clone)]
+    #[derive(Clone, Debug)]
+    struct SelectedAgentSnapshot {
+        agent_index: usize,
+        agent_id: u32,
+        controller_kind: ControllerKind,
+        alive: bool,
+        world_step: u64,
+        perception_radius: f32,
+        perception_channels: u16,
+        sensor: SensorObservation,
+        controller_output: ControllerStepOutput,
+        energy: EnergyBreakdown,
+        consumed_food: bool,
+        has_live_step: bool,
+    }
+
+    #[derive(Resource)]
     struct ViewerRuntime {
         initial_snapshot: SnapshotFile,
         population: Vec<AgentGenome>,
+        controllers: Vec<Box<dyn NeuralController>>,
         population_generation_index: u32,
         world: WorldState,
         config: crate::config::SimulationConfig,
@@ -151,6 +183,8 @@ mod bevy_viewer {
         metrics_history: Vec<GenerationMetrics>,
         active_input: Option<NumericFieldKind>,
         field_buffers: NumericFieldBuffers,
+        selected_agent_index: Option<usize>,
+        selected_agent_snapshot: Option<SelectedAgentSnapshot>,
         evolution_job: Option<EvolutionJob>,
     }
 
@@ -168,10 +202,13 @@ mod bevy_viewer {
             .iter()
             .map(|genome| genome.controller_kind)
             .collect::<Vec<_>>();
+        let controllers = build_runtime_controllers(&config, &snapshot.population);
+
         App::new()
             .insert_resource(ViewerRuntime {
                 initial_snapshot: snapshot.clone(),
                 population: snapshot.population.clone(),
+                controllers,
                 population_generation_index: snapshot.generation.saturating_sub(1),
                 world: snapshot.world_state.clone(),
                 config,
@@ -184,6 +221,8 @@ mod bevy_viewer {
                 metrics_history: snapshot.metrics_history.clone(),
                 active_input: None,
                 field_buffers,
+                selected_agent_index: None,
+                selected_agent_snapshot: None,
                 evolution_job: None,
             })
             .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -203,15 +242,18 @@ mod bevy_viewer {
                     numeric_field_focus_interaction,
                     numeric_field_keyboard_input,
                     evolve_run_button_interaction,
+                    agent_selection_input,
                     advance_evolution_job,
                     sync_start_stop_button_state,
                     sync_control_panel_state,
                     sync_fitness_plot_summary,
                     rebuild_world_visuals_if_requested,
                     advance_simulation,
+                    sync_selected_agent_summary,
                     sync_agent_visuals,
                     sync_food_visuals,
                     draw_fitness_plot,
+                    draw_selected_agent_eye_bins,
                     update_window_title,
                 )
                     .chain(),
@@ -381,6 +423,39 @@ mod bevy_viewer {
                     FitnessPlotSummaryText,
                 ));
             });
+
+        commands
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(FITNESS_PANEL_MARGIN),
+                    top: Val::Px(
+                        FITNESS_PANEL_MARGIN * 2.0 + FITNESS_PANEL_HEIGHT + OBSERVABILITY_PANEL_GAP,
+                    ),
+                    width: Val::Px(OBSERVABILITY_PANEL_WIDTH),
+                    height: Val::Px(OBSERVABILITY_PANEL_HEIGHT),
+                    padding: UiRect::all(Val::Px(12.0)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(6.0),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.08, 0.09, 0.11, 0.94)),
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    Text::new("Selected Agent"),
+                    TextFont::from_font_size(17.0),
+                    TextColor(Color::srgb(0.95, 0.95, 0.95)),
+                ));
+                parent.spawn((
+                    Text::new(
+                        "Click an agent in the world to inspect sensors and controller output.",
+                    ),
+                    TextFont::from_font_size(12.0),
+                    TextColor(Color::srgb(0.82, 0.86, 0.9)),
+                    SelectedAgentSummaryText,
+                ));
+            });
     }
 
     fn keyboard_controls(keys: Res<ButtonInput<KeyCode>>, mut runtime: ResMut<ViewerRuntime>) {
@@ -544,6 +619,51 @@ mod bevy_viewer {
         });
     }
 
+    fn agent_selection_input(
+        mouse_buttons: Res<ButtonInput<MouseButton>>,
+        window_query: Query<&Window, With<PrimaryWindow>>,
+        mut runtime: ResMut<ViewerRuntime>,
+    ) {
+        if !mouse_buttons.just_pressed(MouseButton::Left)
+            || runtime.evolution_job.is_some()
+            || runtime.active_input.is_some()
+        {
+            return;
+        }
+
+        let Ok(window) = window_query.get_single() else {
+            return;
+        };
+        let Some(cursor) = window.cursor_position() else {
+            return;
+        };
+        if cursor_over_ui_panel(cursor, window) {
+            return;
+        }
+
+        let selected = runtime
+            .world
+            .agents
+            .iter()
+            .enumerate()
+            .filter(|(_, agent)| agent.alive)
+            .filter_map(|(idx, agent)| {
+                let agent_cursor = world_to_cursor(
+                    agent.position,
+                    runtime.world.width,
+                    runtime.world.height,
+                    window,
+                );
+                let distance = cursor.distance(agent_cursor);
+                (distance <= SELECTION_PICK_RADIUS).then_some((idx, distance))
+            })
+            .min_by(|(_, distance_a), (_, distance_b)| distance_a.total_cmp(distance_b))
+            .map(|(idx, _)| idx);
+
+        runtime.selected_agent_index = selected;
+        refresh_selected_agent_preview(&mut runtime);
+    }
+
     fn advance_evolution_job(mut runtime: ResMut<ViewerRuntime>) {
         let Some(mut job) = runtime.evolution_job.take() else {
             return;
@@ -575,8 +695,10 @@ mod bevy_viewer {
                 runtime.generation,
                 &runtime.population,
             );
+            runtime.controllers = build_runtime_controllers(&runtime.config, &runtime.population);
             runtime.rebuild_visuals = true;
             runtime.paused = true;
+            refresh_selected_agent_preview(&mut runtime);
         } else {
             runtime.evolution_job = Some(job);
         }
@@ -676,6 +798,17 @@ mod bevy_viewer {
         }
     }
 
+    fn sync_selected_agent_summary(
+        runtime: Res<ViewerRuntime>,
+        mut query: Query<&mut Text, With<SelectedAgentSummaryText>>,
+    ) {
+        let summary = selected_agent_summary_text(&runtime);
+
+        for mut text in &mut query {
+            **text = summary.clone();
+        }
+    }
+
     fn start_stop_button_color(paused: bool, interaction: Interaction) -> BackgroundColor {
         if matches!(interaction, Interaction::Hovered) {
             return BackgroundColor(Color::srgb(0.35, 0.55, 0.85));
@@ -754,7 +887,63 @@ mod bevy_viewer {
         let steps = runtime.speed_multiplier.round().max(1.0) as u32;
         let config = runtime.config.clone();
         for _ in 0..steps {
-            step_world(&mut runtime.world, &config);
+            let world_snapshot = runtime.world.clone();
+            let mut actions = Vec::with_capacity(world_snapshot.agents.len());
+            let mut selected_sensor = None;
+            let mut selected_output = None;
+
+            for (idx, agent) in world_snapshot.agents.iter().enumerate() {
+                if !agent.alive {
+                    actions.push(crate::sim::ActionVector::default());
+                    continue;
+                }
+
+                let sensor = sensor_observation(agent, &world_snapshot, &config);
+                let output = runtime
+                    .controllers
+                    .get_mut(idx)
+                    .map(|controller| {
+                        controller.step_with_observability(&sensor.input, config.timestep_seconds)
+                    })
+                    .unwrap_or_default();
+                actions.push(output.action);
+
+                if runtime.selected_agent_index == Some(idx) {
+                    selected_sensor = Some(sensor);
+                    selected_output = Some(output);
+                }
+            }
+
+            let (_outcome, step_telemetry) =
+                step_world_with_actions_and_telemetry(&mut runtime.world, &config, &actions);
+
+            if let Some(selected_idx) = runtime.selected_agent_index {
+                if let (Some(agent), Some(sensor), Some(controller_output), Some(step_data)) = (
+                    runtime.world.agents.get(selected_idx),
+                    selected_sensor,
+                    selected_output,
+                    step_telemetry.get(selected_idx).copied(),
+                ) {
+                    runtime.selected_agent_snapshot = Some(SelectedAgentSnapshot {
+                        agent_index: selected_idx,
+                        agent_id: agent.id,
+                        controller_kind: runtime
+                            .controller_kinds
+                            .get(selected_idx)
+                            .copied()
+                            .unwrap_or(ControllerKind::Mlp),
+                        alive: agent.alive,
+                        world_step: runtime.world.step_count,
+                        perception_radius: agent.perception_radius,
+                        perception_channels: agent.perception_channels,
+                        sensor,
+                        controller_output,
+                        energy: step_data.energy,
+                        consumed_food: step_data.consumed_food,
+                        has_live_step: true,
+                    });
+                }
+            }
         }
     }
 
@@ -768,8 +957,17 @@ mod bevy_viewer {
                     agent.position,
                     runtime.world.width,
                     runtime.world.height,
-                    1.0,
+                    if runtime.selected_agent_index == Some(visual.index) {
+                        2.0
+                    } else {
+                        1.0
+                    },
                 );
+                transform.scale = if runtime.selected_agent_index == Some(visual.index) {
+                    bevy::math::Vec3::splat(1.8)
+                } else {
+                    bevy::math::Vec3::ONE
+                };
                 *visibility = if agent.alive {
                     Visibility::Visible
                 } else {
@@ -977,6 +1175,75 @@ mod bevy_viewer {
         }
     }
 
+    fn draw_selected_agent_eye_bins(
+        runtime: Res<ViewerRuntime>,
+        window_query: Query<&Window, With<PrimaryWindow>>,
+        mut gizmos: Gizmos,
+    ) {
+        let Some(snapshot) = &runtime.selected_agent_snapshot else {
+            return;
+        };
+        let Ok(window) = window_query.get_single() else {
+            return;
+        };
+
+        let panel_left = window.width() - FITNESS_PANEL_MARGIN - OBSERVABILITY_PANEL_WIDTH;
+        let panel_top = FITNESS_PANEL_MARGIN * 2.0 + FITNESS_PANEL_HEIGHT + OBSERVABILITY_PANEL_GAP;
+        let plot_left = panel_left + OBSERVABILITY_EYE_PLOT_INSET_LEFT;
+        let plot_right =
+            panel_left + OBSERVABILITY_PANEL_WIDTH - OBSERVABILITY_EYE_PLOT_INSET_RIGHT;
+        let plot_top = panel_top + OBSERVABILITY_EYE_PLOT_INSET_TOP;
+        let plot_bottom =
+            panel_top + OBSERVABILITY_PANEL_HEIGHT - OBSERVABILITY_EYE_PLOT_INSET_BOTTOM;
+
+        draw_screen_line(
+            &mut gizmos,
+            window,
+            plot_left,
+            plot_top,
+            plot_left,
+            plot_bottom,
+            Color::srgba(0.72, 0.78, 0.86, 0.45),
+        );
+        draw_screen_line(
+            &mut gizmos,
+            window,
+            plot_left,
+            plot_bottom,
+            plot_right,
+            plot_bottom,
+            Color::srgba(0.72, 0.78, 0.86, 0.45),
+        );
+
+        let active_bins = snapshot.perception_channels.max(1) as usize;
+        let bins = &snapshot.sensor.eye_bins[..active_bins.min(snapshot.sensor.eye_bins.len())];
+        if bins.is_empty() {
+            return;
+        }
+
+        let max_activation = bins.iter().copied().fold(0.0_f32, f32::max).max(1.0);
+        let bar_width = ((plot_right - plot_left) / bins.len() as f32).max(4.0);
+
+        for (idx, activation) in bins.iter().enumerate() {
+            let x0 = plot_left + idx as f32 * bar_width + 1.0;
+            let x1 = (x0 + bar_width - 2.0).min(plot_right);
+            let top = plot_bottom
+                - ((*activation / max_activation).clamp(0.0, 1.0) * (plot_bottom - plot_top));
+
+            let color = if Some(snapshot.agent_index) == runtime.selected_agent_index {
+                Color::srgb(0.22, 0.86, 0.55)
+            } else {
+                Color::srgb(0.4, 0.7, 0.55)
+            };
+
+            let mut x = x0;
+            while x <= x1 {
+                draw_screen_line(&mut gizmos, window, x, plot_bottom, x, top, color);
+                x += 2.0;
+            }
+        }
+    }
+
     fn spawn_food_entities(commands: &mut Commands, food: &[FoodState], width: f32, height: f32) {
         for item in food {
             spawn_one_food(commands, item, width, height);
@@ -1031,8 +1298,140 @@ mod bevy_viewer {
         ));
     }
 
+    fn build_runtime_controllers(
+        config: &crate::config::SimulationConfig,
+        population: &[AgentGenome],
+    ) -> Vec<Box<dyn NeuralController>> {
+        let factory = default_mixed_factory(config);
+        population
+            .iter()
+            .map(|genome| {
+                let mut controller = factory.build(&genome.brain);
+                controller.reset();
+                controller
+            })
+            .collect()
+    }
+
+    fn refresh_selected_agent_preview(runtime: &mut ViewerRuntime) {
+        let Some(selected_idx) = runtime.selected_agent_index else {
+            runtime.selected_agent_snapshot = None;
+            return;
+        };
+        let Some(agent) = runtime.world.agents.get(selected_idx) else {
+            runtime.selected_agent_index = None;
+            runtime.selected_agent_snapshot = None;
+            return;
+        };
+
+        let sensor = sensor_observation(agent, &runtime.world, &runtime.config);
+        runtime.selected_agent_snapshot = Some(SelectedAgentSnapshot {
+            agent_index: selected_idx,
+            agent_id: agent.id,
+            controller_kind: runtime
+                .controller_kinds
+                .get(selected_idx)
+                .copied()
+                .unwrap_or(ControllerKind::Mlp),
+            alive: agent.alive,
+            world_step: runtime.world.step_count,
+            perception_radius: agent.perception_radius,
+            perception_channels: agent.perception_channels,
+            sensor,
+            controller_output: ControllerStepOutput::default(),
+            energy: EnergyBreakdown::default(),
+            consumed_food: false,
+            has_live_step: false,
+        });
+    }
+
     fn world_to_screen(position: Vec2, width: f32, height: f32, z: f32) -> bevy::math::Vec3 {
         bevy::math::Vec3::new(position.x - width / 2.0, position.y - height / 2.0, z)
+    }
+
+    fn world_to_cursor(
+        position: Vec2,
+        width: f32,
+        height: f32,
+        window: &Window,
+    ) -> bevy::math::Vec2 {
+        let screen = world_to_screen(position, width, height, 0.0);
+        bevy::math::Vec2::new(
+            screen.x + window.width() * 0.5,
+            window.height() * 0.5 - screen.y,
+        )
+    }
+
+    fn cursor_over_ui_panel(cursor: bevy::math::Vec2, window: &Window) -> bool {
+        let left_panel_right = 220.0;
+        if cursor.x <= left_panel_right && cursor.y <= 520.0 {
+            return true;
+        }
+
+        let right_panel_left = window.width() - FITNESS_PANEL_MARGIN - OBSERVABILITY_PANEL_WIDTH;
+        cursor.x >= right_panel_left
+            && cursor.y
+                <= FITNESS_PANEL_MARGIN * 3.0
+                    + FITNESS_PANEL_HEIGHT
+                    + OBSERVABILITY_PANEL_GAP
+                    + OBSERVABILITY_PANEL_HEIGHT
+    }
+
+    fn selected_agent_summary_text(runtime: &ViewerRuntime) -> String {
+        let Some(snapshot) = &runtime.selected_agent_snapshot else {
+            return "Click an agent in the world to inspect sensors and controller output."
+                .to_string();
+        };
+
+        let [x_norm, y_norm, energy_norm, speed_norm] = snapshot.sensor.core_values;
+        let output_text = if snapshot.has_live_step {
+            format!(
+                "last action: steer={:.3} throttle_raw={:.3} throttle={:.3}",
+                snapshot.controller_output.steering_raw,
+                snapshot.controller_output.throttle_raw,
+                snapshot.controller_output.throttle_applied
+            )
+        } else {
+            "last action: waiting for first live simulation step".to_string()
+        };
+        let energy_text = if snapshot.has_live_step {
+            format!(
+                "energy: base={:.3} speed={:.3} network={:.3} perceive={:.3} food={:+.3} net={:+.3}",
+                snapshot.energy.base_loss,
+                snapshot.energy.speed_loss,
+                snapshot.energy.network_loss,
+                snapshot.energy.perception_loss,
+                snapshot.energy.food_gain,
+                snapshot.energy.net_delta
+            )
+        } else {
+            "energy: waiting for first live simulation step".to_string()
+        };
+        let eye_max = snapshot
+            .sensor
+            .eye_bins
+            .iter()
+            .take(snapshot.perception_channels as usize)
+            .copied()
+            .fold(0.0_f32, f32::max);
+
+        format!(
+            "agent #{} ({:?}) {}\nworld step: {}\nperception: radius={:.1} bins={}\ncore sensors: x={:.3} y={:.3} energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eye activation: {:.3}\nchart below: eye-bin activations across the active field of view",
+            snapshot.agent_id,
+            snapshot.controller_kind,
+            if snapshot.alive { "alive" } else { "dead" },
+            snapshot.world_step,
+            snapshot.perception_radius,
+            snapshot.perception_channels,
+            x_norm,
+            y_norm,
+            energy_norm,
+            speed_norm,
+            output_text,
+            energy_text,
+            snapshot.consumed_food,
+            eye_max
+        )
     }
 
     fn field_label(kind: NumericFieldKind) -> &'static str {
@@ -1144,6 +1543,7 @@ mod bevy_viewer {
         runtime.world = runtime.initial_snapshot.world_state.clone();
         runtime.config = runtime.initial_snapshot.resolved_config.clone();
         runtime.population = runtime.initial_snapshot.population.clone();
+        runtime.controllers = build_runtime_controllers(&runtime.config, &runtime.population);
         runtime.generation = runtime.initial_snapshot.generation;
         runtime.population_generation_index = runtime.initial_snapshot.generation.saturating_sub(1);
         runtime.paused = true;
@@ -1158,6 +1558,13 @@ mod bevy_viewer {
         runtime.active_input = None;
         runtime.field_buffers =
             NumericFieldBuffers::from_state(runtime.evolve_generations, &runtime.config);
+        if runtime
+            .selected_agent_index
+            .is_some_and(|idx| idx >= runtime.world.agents.len())
+        {
+            runtime.selected_agent_index = None;
+        }
+        refresh_selected_agent_preview(runtime);
         runtime.evolution_job = None;
         runtime.rebuild_visuals = true;
     }

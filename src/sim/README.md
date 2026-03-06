@@ -5,9 +5,10 @@ This module implements the deterministic fixed-step simulation core for the 2D t
 
 ## Behavior
 - Initializes agent and food state deterministically from a seed.
-- Advances the world one fixed step at a time using stub controller actions.
+- Advances the world one fixed step at a time either with stub controller actions (`step_world`) or caller-provided controller actions (`step_world_with_actions` / `step_world_with_actions_and_telemetry`).
 - Applies toroidal wrapping, food collision handling, and energy loss/gain updates.
 - Builds controller sensor vectors with Shorelark-inspired food "eyes": food intensity is binned by relative angle inside a configurable field-of-view and bounded by perception range/channel traits.
+- Exposes decomposed sensor observations and per-term energy telemetry so the GUI can inspect what a selected agent sensed and paid for on the last step.
 - Produces aggregate episode summaries for reproducibility checks.
 
 ## Inputs
@@ -17,6 +18,7 @@ This module implements the deterministic fixed-step simulation core for the 2D t
 ## Outputs
 - Updated `WorldState` per step.
 - `StepOutcome` (food consumed and deaths) per step.
+- `SensorObservation`, `EnergyBreakdown`, and `StepAgentTelemetry` for observability-aware callers.
 - `EpisodeSummary` for headless episode comparisons.
 
 ## Side Effects
