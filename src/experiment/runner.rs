@@ -244,6 +244,7 @@ fn evaluate_genome(
         agent.max_speed = genome.traits.max_speed;
         agent.perception_radius = genome.traits.perception_radius;
         agent.perception_channels = genome.traits.perception_channels;
+        agent.eye_cell_angle_radians = genome.traits.eye_cell_angle_radians;
         agent.metabolic_efficiency = genome.traits.metabolic_efficiency;
     }
 
@@ -297,6 +298,7 @@ pub fn world_state_for_population(
         agent.max_speed = genome.traits.max_speed;
         agent.perception_radius = genome.traits.perception_radius;
         agent.perception_channels = genome.traits.perception_channels;
+        agent.eye_cell_angle_radians = genome.traits.eye_cell_angle_radians;
         agent.metabolic_efficiency = genome.traits.metabolic_efficiency;
     }
 

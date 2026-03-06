@@ -14,9 +14,10 @@ Version 1 focuses on:
 2. Compare MLP and LTC controller families under the same world rules.
 3. Model mutable agent traits that affect sensing, movement, and energy economics.
 4. Allow world-rule toggles for energy consumption factors.
-5. Support running N headless generations before opening the GUI simulation view.
-6. Export per-generation metrics and run summaries for offline analysis.
-7. Surface generation progress in CLI/GUI during long evolution runs.
+5. Support configurable food replenishment during episodes.
+6. Support running N headless generations before opening the GUI simulation view.
+7. Export per-generation metrics and run summaries for offline analysis.
+8. Surface generation progress in CLI/GUI during long evolution runs.
 
 ## Non-Goals (v1)
 1. Predator-prey behavior.
@@ -35,7 +36,7 @@ Version 1 focuses on:
 ### Core Simulation
 - World geometry: 2D continuous toroidal (wrap-around edges).
 - Time model: fixed-step simulation.
-- Initial food model: stationary food points spawned uniformly at random.
+- Initial food model: stationary food points spawned uniformly at random and optionally respawned on consumption according to configurable probability.
 - Agent kinematics: steering plus bounded velocity.
 
 ### Neural Controllers
@@ -75,7 +76,7 @@ Version 1 focuses on:
 1. User opens saved snapshot in GUI.
 2. User inspects movement, survival, and top-level statistics.
 3. User can pause/resume, adjust simulation speed, and toggle active world rules.
-4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `episode steps`, `mutation rate`).
+4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `food respawn`, `episode steps`, `mutation rate`).
 5. User can click an agent in the GUI to inspect its current eye-bin activations, controller outputs, and last-step energy-cost breakdown.
 
 ## Public Interfaces and Types
@@ -123,6 +124,7 @@ pub struct TraitGenome {
     pub max_speed: f32,
     pub perception_radius: f32,
     pub perception_channels: u16,
+    pub eye_cell_angle_radians: f32,
     pub metabolic_efficiency: f32,
     pub food_preference_mask: u32,
 }
@@ -150,6 +152,7 @@ pub struct RuleToggles {
 
 ### World and Entities
 - Food entities are stationary points with collision radius.
+- Consumed food can respawn immediately at a new random position, controlled by `food_respawn_probability` in `[0, 1]`.
 - Agents have position, heading, velocity, energy, controller state, and trait values.
 - World wraps in both axes.
 
@@ -158,6 +161,8 @@ pub struct RuleToggles {
   - Core normalized scalar cues (`x`, `y`, `energy`, `speed`).
   - Shorelark-inspired "eye" bins: angular food-intensity cells within a configurable field-of-view and perception range.
   - Per-agent channel count trait controls active eye bin count.
+  - Per-agent `eye_cell_angle_radians` trait controls how much angle each eye/bin covers.
+  - Total visible field of view is derived from evolved eye count and evolved per-eye angle.
   - Fixed controller input width where inactive eye bins are zero-filled (current width: `4 + 24 = 28` values).
 - Action vector controls:
   - Steering direction change.
@@ -224,6 +229,7 @@ Weights are config-driven and exported in run metadata.
   - generations to evolve
   - world width / world height
   - food count
+  - food respawn probability
   - episode steps
   - mutation rate
 - Run continuation evolution from GUI controls.

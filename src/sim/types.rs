@@ -64,6 +64,11 @@ pub struct ActionVector {
     pub throttle: f32,
 }
 
+fn default_eye_cell_angle_radians() -> f32 {
+    crate::config::SimulationConfig::default().eye_fov_angle_radians
+        / crate::config::SimulationConfig::default().default_perception_channels as f32
+}
+
 /// Runtime state for one agent.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct AgentState {
@@ -76,6 +81,8 @@ pub struct AgentState {
     pub max_speed: f32,
     pub perception_radius: f32,
     pub perception_channels: u16,
+    #[serde(default = "default_eye_cell_angle_radians")]
+    pub eye_cell_angle_radians: f32,
     pub network_size: usize,
     pub metabolic_efficiency: f32,
     pub food_consumed: u32,

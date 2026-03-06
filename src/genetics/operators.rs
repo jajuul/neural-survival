@@ -8,6 +8,7 @@ use super::genome::{AgentGenome, TraitGenome};
 const MAX_SPEED_BOUNDS: (f32, f32) = (1.0, 12.0);
 const PERCEPTION_RADIUS_BOUNDS: (f32, f32) = (2.0, 40.0);
 const PERCEPTION_CHANNELS_BOUNDS: (u16, u16) = (1, MAX_PERCEPTION_CHANNELS);
+const EYE_CELL_ANGLE_BOUNDS: (f32, f32) = (0.05, std::f32::consts::PI);
 const METABOLIC_EFFICIENCY_BOUNDS: (f32, f32) = (0.5, 2.0);
 
 /// Build trait defaults from the simulation config.
@@ -16,6 +17,9 @@ pub fn default_traits(config: &SimulationConfig) -> TraitGenome {
         max_speed: config.default_agent_max_speed,
         perception_radius: config.default_perception_radius,
         perception_channels: config.default_perception_channels,
+        eye_cell_angle_radians: (config.eye_fov_angle_radians
+            / config.default_perception_channels.max(1) as f32)
+            .clamp(EYE_CELL_ANGLE_BOUNDS.0, EYE_CELL_ANGLE_BOUNDS.1),
         metabolic_efficiency: config.default_metabolic_efficiency,
         food_preference_mask: 1,
     }
@@ -47,6 +51,11 @@ pub fn crossover(parent_a: &AgentGenome, parent_b: &AgentGenome, rng: &mut StdRn
             parent_a.traits.perception_channels
         } else {
             parent_b.traits.perception_channels
+        },
+        eye_cell_angle_radians: if rng.gen_bool(0.5) {
+            parent_a.traits.eye_cell_angle_radians
+        } else {
+            parent_b.traits.eye_cell_angle_radians
         },
         metabolic_efficiency: if rng.gen_bool(0.5) {
             parent_a.traits.metabolic_efficiency
@@ -99,6 +108,12 @@ pub fn mutate(genome: &mut AgentGenome, rng: &mut StdRng, config: &SimulationCon
             PERCEPTION_CHANNELS_BOUNDS.0 as i32,
             PERCEPTION_CHANNELS_BOUNDS.1 as i32,
         ) as u16;
+    }
+
+    if rng.gen_bool(rate) {
+        genome.traits.eye_cell_angle_radians = (genome.traits.eye_cell_angle_radians
+            + rng.gen_range(-0.2..=0.2))
+        .clamp(EYE_CELL_ANGLE_BOUNDS.0, EYE_CELL_ANGLE_BOUNDS.1);
     }
 
     if rng.gen_bool(rate) {
@@ -204,8 +219,10 @@ mod tests {
     use crate::brain::{BrainGenome, ControllerKind, MlpGenome, MlpShape};
     use crate::config::SimulationConfig;
 
-    use super::{MAX_SPEED_BOUNDS, METABOLIC_EFFICIENCY_BOUNDS, crossover, mutate};
-    use super::{PERCEPTION_CHANNELS_BOUNDS, PERCEPTION_RADIUS_BOUNDS, default_traits};
+    use super::{
+        EYE_CELL_ANGLE_BOUNDS, MAX_SPEED_BOUNDS, METABOLIC_EFFICIENCY_BOUNDS,
+        PERCEPTION_CHANNELS_BOUNDS, PERCEPTION_RADIUS_BOUNDS, crossover, default_traits, mutate,
+    };
     use crate::genetics::genome::AgentGenome;
 
     fn test_mlp_genome(fill: f32) -> BrainGenome {
@@ -257,6 +274,10 @@ mod tests {
             assert!(
                 genome.traits.perception_channels >= PERCEPTION_CHANNELS_BOUNDS.0
                     && genome.traits.perception_channels <= PERCEPTION_CHANNELS_BOUNDS.1
+            );
+            assert!(
+                genome.traits.eye_cell_angle_radians >= EYE_CELL_ANGLE_BOUNDS.0
+                    && genome.traits.eye_cell_angle_radians <= EYE_CELL_ANGLE_BOUNDS.1
             );
             assert!(
                 genome.traits.metabolic_efficiency >= METABOLIC_EFFICIENCY_BOUNDS.0

@@ -82,15 +82,17 @@ mod bevy_viewer {
         WorldWidth,
         WorldHeight,
         FoodCount,
+        FoodRespawnProbability,
         EpisodeSteps,
         MutationRate,
     }
 
-    const NUMERIC_FIELDS: [NumericFieldKind; 6] = [
+    const NUMERIC_FIELDS: [NumericFieldKind; 7] = [
         NumericFieldKind::EvolveGenerations,
         NumericFieldKind::WorldWidth,
         NumericFieldKind::WorldHeight,
         NumericFieldKind::FoodCount,
+        NumericFieldKind::FoodRespawnProbability,
         NumericFieldKind::EpisodeSteps,
         NumericFieldKind::MutationRate,
     ];
@@ -111,6 +113,7 @@ mod bevy_viewer {
         world_width: String,
         world_height: String,
         food_count: String,
+        food_respawn_probability: String,
         episode_steps: String,
         mutation_rate: String,
     }
@@ -122,6 +125,7 @@ mod bevy_viewer {
                 world_width: format!("{:.1}", config.world_width),
                 world_height: format!("{:.1}", config.world_height),
                 food_count: config.food_count.to_string(),
+                food_respawn_probability: format!("{:.3}", config.food_respawn_probability),
                 episode_steps: config.episode_steps.to_string(),
                 mutation_rate: format!("{:.3}", config.mutation_rate),
             }
@@ -133,6 +137,7 @@ mod bevy_viewer {
                 NumericFieldKind::WorldWidth => &self.world_width,
                 NumericFieldKind::WorldHeight => &self.world_height,
                 NumericFieldKind::FoodCount => &self.food_count,
+                NumericFieldKind::FoodRespawnProbability => &self.food_respawn_probability,
                 NumericFieldKind::EpisodeSteps => &self.episode_steps,
                 NumericFieldKind::MutationRate => &self.mutation_rate,
             }
@@ -144,6 +149,7 @@ mod bevy_viewer {
                 NumericFieldKind::WorldWidth => &mut self.world_width,
                 NumericFieldKind::WorldHeight => &mut self.world_height,
                 NumericFieldKind::FoodCount => &mut self.food_count,
+                NumericFieldKind::FoodRespawnProbability => &mut self.food_respawn_probability,
                 NumericFieldKind::EpisodeSteps => &mut self.episode_steps,
                 NumericFieldKind::MutationRate => &mut self.mutation_rate,
             }
@@ -159,6 +165,7 @@ mod bevy_viewer {
         world_step: u64,
         perception_radius: f32,
         perception_channels: u16,
+        eye_cell_angle_radians: f32,
         sensor: SensorObservation,
         controller_output: ControllerStepOutput,
         energy: EnergyBreakdown,
@@ -938,6 +945,7 @@ mod bevy_viewer {
                         world_step: runtime.world.step_count,
                         perception_radius: agent.perception_radius,
                         perception_channels: agent.perception_channels,
+                        eye_cell_angle_radians: agent.eye_cell_angle_radians,
                         sensor,
                         controller_output,
                         energy: step_data.energy,
@@ -1365,6 +1373,7 @@ mod bevy_viewer {
             world_step: runtime.world.step_count,
             perception_radius: agent.perception_radius,
             perception_channels: agent.perception_channels,
+            eye_cell_angle_radians: agent.eye_cell_angle_radians,
             sensor,
             controller_output: ControllerStepOutput::default(),
             energy: EnergyBreakdown::default(),
@@ -1444,13 +1453,16 @@ mod bevy_viewer {
             .fold(0.0_f32, f32::max);
 
         format!(
-            "agent #{} ({:?}) {}\nworld step: {}\nperception: radius={:.1} bins={}\ncore sensors: x={:.3} y={:.3} energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eye activation: {:.3}\nchart below: eye-bin activations across the active field of view",
+            "agent #{} ({:?}) {}\nworld step: {}\nperception: radius={:.1} bins={} eye_angle={:.3} total_fov={:.3}\ncore sensors: x={:.3} y={:.3} energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eye activation: {:.3}\nchart below: eye-bin activations across the active field of view",
             snapshot.agent_id,
             snapshot.controller_kind,
             if snapshot.alive { "alive" } else { "dead" },
             snapshot.world_step,
             snapshot.perception_radius,
             snapshot.perception_channels,
+            snapshot.eye_cell_angle_radians,
+            (snapshot.eye_cell_angle_radians * snapshot.perception_channels.max(1) as f32)
+                .min(std::f32::consts::TAU),
             x_norm,
             y_norm,
             energy_norm,
@@ -1468,6 +1480,7 @@ mod bevy_viewer {
             NumericFieldKind::WorldWidth => "World Width",
             NumericFieldKind::WorldHeight => "World Height",
             NumericFieldKind::FoodCount => "Food Count",
+            NumericFieldKind::FoodRespawnProbability => "Food Respawn",
             NumericFieldKind::EpisodeSteps => "Episode Steps",
             NumericFieldKind::MutationRate => "Mutation Rate",
         }
@@ -1490,6 +1503,7 @@ mod bevy_viewer {
             kind,
             NumericFieldKind::WorldWidth
                 | NumericFieldKind::WorldHeight
+                | NumericFieldKind::FoodRespawnProbability
                 | NumericFieldKind::MutationRate
         ) && ch == '.'
             && !current.contains('.')
@@ -1529,6 +1543,11 @@ mod bevy_viewer {
                     runtime.config.food_count = value.clamp(FOOD_COUNT_MIN, FOOD_COUNT_MAX);
                 }
             }
+            NumericFieldKind::FoodRespawnProbability => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.food_respawn_probability = value.clamp(0.0, 1.0);
+                }
+            }
             NumericFieldKind::EpisodeSteps => {
                 if let Ok(value) = raw.parse::<u32>() {
                     runtime.config.episode_steps =
@@ -1556,6 +1575,10 @@ mod bevy_viewer {
             }
             NumericFieldKind::FoodCount => {
                 runtime.field_buffers.food_count = runtime.config.food_count.to_string();
+            }
+            NumericFieldKind::FoodRespawnProbability => {
+                runtime.field_buffers.food_respawn_probability =
+                    format!("{:.3}", runtime.config.food_respawn_probability);
             }
             NumericFieldKind::EpisodeSteps => {
                 runtime.field_buffers.episode_steps = runtime.config.episode_steps.to_string();

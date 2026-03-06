@@ -33,6 +33,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 19:55Z) Added automatic `fitness.svg` artifact generation (best + mean fitness trends per generation) for headless `run`/`batch` outputs, with integration tests verifying plot presence.
 - [x] (2026-03-04 20:20Z) Added in-GUI fitness plotting by embedding generation history in snapshots and rendering best/mean fitness lines in the Bevy viewer, including continuation-time plot updates and backward-compatible snapshot deserialization.
 - [x] (2026-03-06 00:00Z) Added selected-agent observability in the GUI by switching viewer stepping from stub actions to real controller execution, capturing sensor/output/energy telemetry, rendering a selected-agent inspector with eye-bin activity, and validating with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
+- [x] (2026-03-06 00:40Z) Added deterministic food respawn with configurable `food_respawn_probability`, exposed it in TOML and GUI continuation controls, and validated the new respawn behavior with simulation/config tests.
 
 ## Surprises & Discoveries
 
@@ -224,6 +225,8 @@ Post-plan enhancement (v7): headless runs now export `fitness.svg` to visualize 
 Post-plan enhancement (v8): the Bevy viewer now renders an internal fitness chart for best and mean fitness, sourced from snapshot-embedded metric history and extended during GUI continuation.
 
 Post-plan enhancement (v9): the Bevy viewer now runs real controllers in-frame and exposes a selected-agent inspector with eye-bin activations, controller outputs, and energy-cost breakdown, bringing GUI simulation behavior into alignment with headless controller-driven execution.
+
+Post-plan enhancement (v10): food now respawns deterministically on consumption according to configurable probability, with the same parameter available in both TOML and GUI continuation controls.
 
 ## Context and Orientation
 
