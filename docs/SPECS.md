@@ -56,6 +56,7 @@ Version 1 focuses on:
   - Tournament selection.
   - Crossover.
   - Mutation.
+- Fitness evaluation runs the current generation inside a shared controller-driven world, so agents compete indirectly through food depletion during scoring.
 - Controller families evolve in separate pools (MLP and LTC do not interbreed).
 - Reproducibility: strict seeded determinism for same seed/config/platform assumptions.
 
@@ -78,7 +79,7 @@ Version 1 focuses on:
 2. User inspects movement, survival, and top-level statistics.
 3. User can pause/resume, adjust simulation speed, and toggle active world rules.
 4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `food respawn`, `episode steps`, `mutation rate`).
-5. User can click an agent in the GUI to inspect its current eye-bin activations, controller outputs, and last-step energy-cost breakdown.
+5. User can click an agent in the GUI to inspect its current food/agent eye-bin activations, controller outputs, and last-step energy-cost breakdown.
 
 ## Public Interfaces and Types
 
@@ -160,7 +161,8 @@ pub struct RuleToggles {
 ### Sensors and Actions
 - Sensor vector includes:
   - Core normalized scalar cues (`x`, `y`, `energy`, `speed`).
-  - Shorelark-inspired "eye" bins: angular food-intensity cells within a configurable field-of-view and perception range.
+  - Shorelark-inspired "eye" bins: angular perception cells within a configurable field-of-view and perception range.
+  - Eye bins sense both food and other agents. The controller-facing value is the signed combination `food_bin - agent_bin`, while observability keeps the decomposed food/agent contributions.
   - Per-agent channel count trait controls active eye bin count.
   - Per-agent `eye_cell_angle_radians` trait controls how much angle each eye/bin covers.
   - Total visible field of view is derived from evolved eye count and evolved per-eye angle.
@@ -183,6 +185,8 @@ Per-agent episode fitness is weighted from:
 - Survival duration.
 - Food consumed.
 - Remaining energy.
+
+Fitness attribution is still per agent, but those components are gathered from shared-population episodes rather than private single-agent episodes.
 
 Weights are config-driven and exported in run metadata.
 
@@ -213,7 +217,7 @@ Weights are config-driven and exported in run metadata.
 - Evolution continuation progress while GUI-triggered evolution is running.
 - Selected-agent inspector:
   - click-to-select agent inspection
-  - live eye-bin chart for active perception channels
+  - live eye-bin chart for active perception channels, split into food and nearby-agent activations
   - core sensor values (`x`, `y`, `energy`, `speed`)
   - raw controller outputs (`steering`, `throttle_raw`) and applied throttle
   - last-step energy breakdown (`base`, `speed`, `network`, `perception`, `food`, `net`)

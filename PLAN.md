@@ -35,6 +35,8 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-06 00:00Z) Added selected-agent observability in the GUI by switching viewer stepping from stub actions to real controller execution, capturing sensor/output/energy telemetry, rendering a selected-agent inspector with eye-bin activity, and validating with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-06 00:40Z) Added deterministic food respawn with configurable `food_respawn_probability`, exposed it in TOML and GUI continuation controls, and validated the new respawn behavior with simulation/config tests.
 - [x] (2026-03-06 02:10Z) Replaced the prior LTC-inspired leaky RNN with a conductance-based LTC implementation (gated sensory/recurrent synapses, leak, capacitance, fixed internal ODE unfolds), added legacy snapshot/genome upgrade handling, and validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
+- [x] (2026-03-06 22:01Z) Switched generation scoring from private single-agent episodes to deterministic shared-world population episodes with synchronous action collection, added a competition-focused unit test, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
+- [x] (2026-03-06 22:20Z) Extended the eye model to sense nearby agents as well as food, kept controller input width stable by feeding signed `food-agent` eye bins, updated the GUI inspector to show decomposed food/agent activations, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 
 ## Surprises & Discoveries
 
@@ -88,6 +90,12 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: Existing Rust ODE crates (`ode_solvers`, `diffsol`, `differential_equations`) are broader and heavier than the controller loop needs; the LTC step only requires a tiny fixed-size, per-agent deterministic integrator.
   Evidence: The refactor succeeded with a fixed-count in-house unfold and all `cargo test` / `cargo check --features gui` validations passed without introducing a new dependency.
+
+- Observation: Shared-world evaluation changes selection pressure immediately even without explicit agent sensors, because food availability becomes non-stationary through competition.
+  Evidence: `experiment::runner::tests::shared_world_evaluation_introduces_food_competition` now proves two colocated agents can only claim one shared food item during evaluation.
+
+- Observation: Adding direct agent sensing did not require changing controller input width; feeding signed `food_bin - agent_bin` values preserves existing genome shapes and snapshot compatibility.
+  Evidence: The new `SensorObservation` carries separate `food_eye_bins` and `agent_eye_bins`, while `input.values` remains the same fixed width and all tests continue to pass.
 
 ## Decision Log
 
@@ -143,9 +151,17 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: Enables mixed-family population initialization and controller-kind metadata extraction for later UI/distribution reporting.
   Date/Author: 2026-03-04 / Codex
 
-- Decision: Evaluate genomes in single-agent deterministic episodes during Milestone 5 instead of full-population shared-world episodes.
-  Rationale: This keeps fitness attribution and reproducibility straightforward while still exercising controller + world integration for selection pressure.
+- Decision: Milestone 5 initially used single-agent deterministic episodes instead of full-population shared-world episodes.
+  Rationale: That was the simplest way to keep fitness attribution and reproducibility straightforward for the first GA implementation.
   Date/Author: 2026-03-04 / Codex
+
+- Decision: Replace private single-agent evaluation with synchronous shared-world population evaluation while keeping per-agent fitness attribution and the rest of the GA unchanged.
+  Rationale: This is the smallest code change that introduces competition-driven temporal non-stationarity, which is more likely to reward recurrent controllers without rewriting species separation, metrics, or artifact formats.
+  Date/Author: 2026-03-06 / Codex
+
+- Decision: Represent direct agent sensing in the controller input as signed eye bins (`food - agents`) and keep the decomposed food/agent activations only in observability structures.
+  Rationale: This adds direct awareness of nearby agents without breaking the fixed 28-value controller input contract or invalidating saved genomes/snapshots that depend on the current input shape.
+  Date/Author: 2026-03-06 / Codex
 
 - Decision: Enforce output-directory safety by rejecting existing non-empty `--out` directories at I/O layer entry.
   Rationale: Prevents accidental artifact mixing while preserving the existing CLI contract without extra overwrite flags.
@@ -240,6 +256,10 @@ Post-plan enhancement (v9): the Bevy viewer now runs real controllers in-frame a
 Post-plan enhancement (v10): food now respawns deterministically on consumption according to configurable probability, with the same parameter available in both TOML and GUI continuation controls.
 
 Post-plan enhancement (v11): the LTC controller is now a conductance-based liquid network with gated sensory/recurrent synapses, leak conductance, membrane capacitance, fixed internal ODE unfolds, and backward-compatible upgrade handling for older serialized genomes.
+
+Post-plan enhancement (v12): generation scoring now runs the full population in one shared controller-driven world per evaluation seed, introducing indirect competition through shared food depletion while preserving per-agent fitness reporting and species-isolated reproduction.
+
+Post-plan enhancement (v13): eyes now sense nearby agents directly in addition to food, with the GUI inspector showing separate food/agent activations while controllers receive a signed fixed-width combination that preserves existing genome shapes.
 
 ## Context and Orientation
 
@@ -571,3 +591,5 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after introducing config-driven controller layer sizes so network capacity can be tuned in `configs/default.toml` without code edits.
 2026-03-04: Plan updated after adding headless fitness-plot artifact generation (`fitness.svg`) and corresponding artifact tests.
 2026-03-04: Plan updated after embedding generation history in snapshots and rendering GUI fitness plots from that history.
+2026-03-06: Plan updated after replacing single-agent evaluation with shared-world population evaluation to document the new competition semantics, synchronous action-collection design, and passing shared-food-competition test.
+2026-03-06: Plan updated after adding agent sensing to the eye model to document the signed fixed-width controller input, separate GUI food/agent observability channels, and passing sensor-model tests.

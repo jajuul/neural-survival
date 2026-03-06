@@ -217,7 +217,13 @@ pub fn sensor_observation(
     let y_norm = (agent.position.y / world.height).clamp(0.0, 1.0);
     let energy_norm = (agent.energy / config.initial_agent_energy).clamp(0.0, 2.0);
     let speed_norm = (agent.velocity.length() / agent.max_speed.max(0.001)).clamp(0.0, 1.0);
-    let vision_cells = food_eye_cells(agent, world, config);
+    let food_eye_bins = food_eye_cells(agent, world, config);
+    let agent_eye_bins = agent_eye_cells(agent, world, config);
+    let vision_cells = food_eye_bins
+        .iter()
+        .zip(agent_eye_bins.iter())
+        .map(|(food, sensed_agent)| food - sensed_agent)
+        .collect::<Vec<_>>();
 
     let mut values = Vec::with_capacity(CONTROLLER_SENSOR_INPUT_SIZE);
     values.extend_from_slice(&[x_norm, y_norm, energy_norm, speed_norm]);
@@ -225,6 +231,8 @@ pub fn sensor_observation(
 
     SensorObservation {
         core_values: [x_norm, y_norm, energy_norm, speed_norm],
+        food_eye_bins,
+        agent_eye_bins,
         eye_bins: vision_cells,
         input: SensorVector { values },
     }
@@ -306,15 +314,58 @@ fn maybe_respawn_food(
 }
 
 fn food_eye_cells(agent: &AgentState, world: &WorldState, _config: &SimulationConfig) -> Vec<f32> {
+    let mut cells = empty_eye_cells(agent);
+    accumulate_eye_cells(
+        agent,
+        &mut cells,
+        world.food.iter().map(|food| food.position),
+        world.width,
+        world.height,
+    );
+    cells
+}
+
+fn agent_eye_cells(agent: &AgentState, world: &WorldState, _config: &SimulationConfig) -> Vec<f32> {
+    let mut cells = empty_eye_cells(agent);
+    accumulate_eye_cells(
+        agent,
+        &mut cells,
+        world
+            .agents
+            .iter()
+            .filter(|other| other.alive && other.id != agent.id)
+            .map(|other| other.position),
+        world.width,
+        world.height,
+    );
+    cells
+}
+
+fn empty_eye_cells(agent: &AgentState) -> Vec<f32> {
     let mut cells = vec![0.0; MAX_VISION_CELLS];
+    let active_cells = agent.perception_channels.clamp(1, MAX_VISION_CELLS as u16) as usize;
+    cells.truncate(MAX_VISION_CELLS.max(active_cells));
+    cells.resize(MAX_VISION_CELLS, 0.0);
+    cells
+}
+
+fn accumulate_eye_cells<I>(
+    agent: &AgentState,
+    cells: &mut [f32],
+    targets: I,
+    world_width: f32,
+    world_height: f32,
+) where
+    I: IntoIterator<Item = Vec2>,
+{
     let active_cells = agent.perception_channels.clamp(1, MAX_VISION_CELLS as u16) as usize;
     let fov = (agent.eye_cell_angle_radians.max(0.001) * active_cells as f32)
         .clamp(0.001, std::f32::consts::TAU);
     let half_fov = fov * 0.5;
     let max_range = agent.perception_radius.max(0.001);
 
-    for food in &world.food {
-        let offset = toroidal_offset(agent.position, food.position, world.width, world.height);
+    for target_position in targets {
+        let offset = toroidal_offset(agent.position, target_position, world_width, world_height);
         let distance = offset.length();
 
         if distance > max_range {
@@ -331,8 +382,6 @@ fn food_eye_cells(agent: &AgentState, world: &WorldState, _config: &SimulationCo
         let cell = ((normalized * active_cells as f32).floor() as usize).min(active_cells - 1);
         cells[cell] += (max_range - distance) / max_range;
     }
-
-    cells
 }
 
 fn toroidal_offset(from: Vec2, to: Vec2, width: f32, height: f32) -> Vec2 {
@@ -444,8 +493,8 @@ mod tests {
 
     use super::{
         AgentState, CORE_SENSOR_FEATURES, FoodState, Vec2, WorldState, basic_sensor_vector,
-        energy_breakdown_for_step, step_world, step_world_with_actions_and_telemetry,
-        toroidal_distance, wrap_position,
+        energy_breakdown_for_step, sensor_observation, step_world,
+        step_world_with_actions_and_telemetry, toroidal_distance, wrap_position,
     };
 
     fn test_agent(energy: f32) -> AgentState {
@@ -702,11 +751,13 @@ mod tests {
             step_count: 0,
         };
 
-        let sensor = basic_sensor_vector(&agent, &world, &config);
-        let vision = &sensor.values[CORE_SENSOR_FEATURES..];
+        let sensor = sensor_observation(&agent, &world, &config);
+        let vision = &sensor.input.values[CORE_SENSOR_FEATURES..];
         let active = &vision[..agent.perception_channels as usize];
 
         assert!(active[2] > 0.0);
+        assert!(sensor.food_eye_bins[2] > 0.0);
+        assert!(sensor.agent_eye_bins.iter().all(|value| value.abs() < 1e-6));
         assert!(
             active
                 .iter()
@@ -813,5 +864,58 @@ mod tests {
                 .iter()
                 .any(|value| *value > 0.0)
         );
+    }
+
+    #[test]
+    fn sensor_observation_places_other_agent_in_forward_center_cell() {
+        let config = SimulationConfig::default();
+        let mut agent = test_agent(50.0);
+        agent.position = Vec2::new(10.0, 10.0);
+        agent.heading_radians = 0.0;
+        agent.perception_radius = 20.0;
+        agent.perception_channels = 5;
+        agent.eye_cell_angle_radians = std::f32::consts::FRAC_PI_2 / 5.0;
+
+        let mut other_agent = test_agent(50.0);
+        other_agent.id = 1;
+        other_agent.position = Vec2::new(15.0, 10.0);
+
+        let world = WorldState {
+            width: 40.0,
+            height: 40.0,
+            agents: vec![agent.clone(), other_agent],
+            food: vec![],
+            step_count: 0,
+        };
+
+        let sensor = sensor_observation(&agent, &world, &config);
+
+        assert!(sensor.agent_eye_bins[2] > 0.0);
+        assert!(sensor.food_eye_bins.iter().all(|value| value.abs() < 1e-6));
+        assert!(sensor.eye_bins[2] < 0.0);
+    }
+
+    #[test]
+    fn sensor_observation_ignores_self_when_building_agent_bins() {
+        let config = SimulationConfig::default();
+        let mut agent = test_agent(50.0);
+        agent.position = Vec2::new(10.0, 10.0);
+        agent.heading_radians = 0.0;
+        agent.perception_radius = 20.0;
+        agent.perception_channels = 5;
+        agent.eye_cell_angle_radians = std::f32::consts::FRAC_PI_2 / 5.0;
+
+        let world = WorldState {
+            width: 40.0,
+            height: 40.0,
+            agents: vec![agent.clone()],
+            food: vec![],
+            step_count: 0,
+        };
+
+        let sensor = sensor_observation(&agent, &world, &config);
+
+        assert!(sensor.agent_eye_bins.iter().all(|value| value.abs() < 1e-6));
+        assert!(sensor.eye_bins.iter().all(|value| value.abs() < 1e-6));
     }
 }

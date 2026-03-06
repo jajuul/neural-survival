@@ -53,6 +53,8 @@ pub struct SensorVector {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct SensorObservation {
     pub core_values: [f32; 4],
+    pub food_eye_bins: Vec<f32>,
+    pub agent_eye_bins: Vec<f32>,
     pub eye_bins: Vec<f32>,
     pub input: SensorVector,
 }

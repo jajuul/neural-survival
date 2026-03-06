@@ -166,7 +166,6 @@ mod bevy_viewer {
 
     #[derive(Clone, Debug)]
     struct SelectedAgentSnapshot {
-        agent_index: usize,
         agent_id: u32,
         controller_kind: ControllerKind,
         alive: bool,
@@ -942,7 +941,6 @@ mod bevy_viewer {
                     step_telemetry.get(selected_idx).copied(),
                 ) {
                     runtime.selected_agent_snapshot = Some(SelectedAgentSnapshot {
-                        agent_index: selected_idx,
                         agent_id: agent.id,
                         controller_kind: runtime
                             .controller_kinds
@@ -1261,30 +1259,52 @@ mod bevy_viewer {
         );
 
         let active_bins = snapshot.perception_channels.max(1) as usize;
-        let bins = &snapshot.sensor.eye_bins[..active_bins.min(snapshot.sensor.eye_bins.len())];
-        if bins.is_empty() {
+        let bins_len = active_bins
+            .min(snapshot.sensor.food_eye_bins.len())
+            .min(snapshot.sensor.agent_eye_bins.len());
+        let food_bins = &snapshot.sensor.food_eye_bins[..bins_len];
+        let agent_bins = &snapshot.sensor.agent_eye_bins[..bins_len];
+        if food_bins.is_empty() {
             return;
         }
 
-        let max_activation = bins.iter().copied().fold(0.0_f32, f32::max).max(1.0);
-        let bar_width = ((plot_right - plot_left) / bins.len() as f32).max(4.0);
+        let max_activation = food_bins
+            .iter()
+            .chain(agent_bins.iter())
+            .copied()
+            .fold(0.0_f32, f32::max)
+            .max(1.0);
+        let bar_width = ((plot_right - plot_left) / food_bins.len() as f32).max(4.0);
 
-        for (idx, activation) in bins.iter().enumerate() {
+        for idx in 0..food_bins.len() {
             let x0 = plot_left + idx as f32 * bar_width + 1.0;
             let x1 = (x0 + bar_width - 2.0).min(plot_right);
-            let top = plot_bottom
-                - ((*activation / max_activation).clamp(0.0, 1.0) * (plot_bottom - plot_top));
-
-            let color = if Some(snapshot.agent_index) == runtime.selected_agent_index {
-                Color::srgb(0.22, 0.86, 0.55)
-            } else {
-                Color::srgb(0.4, 0.7, 0.55)
-            };
+            let food_top = plot_bottom
+                - ((food_bins[idx] / max_activation).clamp(0.0, 1.0) * (plot_bottom - plot_top));
+            let agent_top = plot_bottom
+                - ((agent_bins[idx] / max_activation).clamp(0.0, 1.0) * (plot_bottom - plot_top));
 
             let mut x = x0;
             while x <= x1 {
-                draw_screen_line(&mut gizmos, window, x, plot_bottom, x, top, color);
-                x += 2.0;
+                draw_screen_line(
+                    &mut gizmos,
+                    window,
+                    x,
+                    plot_bottom,
+                    x,
+                    food_top,
+                    Color::srgb(0.22, 0.86, 0.55),
+                );
+                draw_screen_line(
+                    &mut gizmos,
+                    window,
+                    x + 1.0,
+                    plot_bottom,
+                    x + 1.0,
+                    agent_top,
+                    Color::srgb(0.98, 0.62, 0.20),
+                );
+                x += 3.0;
             }
         }
     }
@@ -1391,7 +1411,6 @@ mod bevy_viewer {
 
         let sensor = sensor_observation(agent, &runtime.world, &runtime.config);
         runtime.selected_agent_snapshot = Some(SelectedAgentSnapshot {
-            agent_index: selected_idx,
             agent_id: agent.id,
             controller_kind: runtime
                 .controller_kinds
@@ -1473,16 +1492,23 @@ mod bevy_viewer {
         } else {
             "energy: waiting for first live simulation step".to_string()
         };
-        let eye_max = snapshot
+        let food_eye_max = snapshot
             .sensor
-            .eye_bins
+            .food_eye_bins
+            .iter()
+            .take(snapshot.perception_channels as usize)
+            .copied()
+            .fold(0.0_f32, f32::max);
+        let agent_eye_max = snapshot
+            .sensor
+            .agent_eye_bins
             .iter()
             .take(snapshot.perception_channels as usize)
             .copied()
             .fold(0.0_f32, f32::max);
 
         format!(
-            "agent #{} ({:?}) {}\nworld step: {}\nperception: radius={:.1} bins={} eye_angle={:.3} total_fov={:.3}\ncore sensors: x={:.3} y={:.3} energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eye activation: {:.3}\nchart below: eye-bin activations across the active field of view",
+            "agent #{} ({:?}) {}\nworld step: {}\nperception: radius={:.1} bins={} eye_angle={:.3} total_fov={:.3}\ncore sensors: x={:.3} y={:.3} energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eyes: food={:.3} agents={:.3}\nchart below: green=food, orange=agents, controller input=food-agents",
             snapshot.agent_id,
             snapshot.controller_kind,
             if snapshot.alive { "alive" } else { "dead" },
@@ -1499,7 +1525,8 @@ mod bevy_viewer {
             output_text,
             energy_text,
             snapshot.consumed_food,
-            eye_max
+            food_eye_max,
+            agent_eye_max
         )
     }
 
