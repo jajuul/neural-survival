@@ -63,6 +63,7 @@ Version 1 focuses on:
 1. User runs `run` command with config, seed, and `headless_generations = N`.
 2. Application evolves population headlessly for N generations.
 3. Application launches GUI with generation-N population snapshot.
+4. GUI shows the historical best/mean fitness plot carried in the snapshot and updates it if the user continues evolution from the viewer.
 
 ### 2) Batch experiments
 1. User runs headless batch for many generations.
@@ -191,13 +192,13 @@ Weights are config-driven and exported in run metadata.
 - Controller-family distribution (MLP/LTC).
 - Active world-rule toggle states.
 - Evolution continuation progress while GUI-triggered evolution is running.
-
 ### Controls
 - Start/stop simulation (pause/resume).
 - Simulation speed multiplier.
 - Toggle energy rule flags.
 - Restart from seed/config.
 - Load snapshot for replay/inspection.
+- View in-GUI fitness trend plot for best and mean fitness across generations.
 - Typed continuation controls:
   - generations to evolve
   - world width / world height
@@ -218,7 +219,7 @@ Weights are config-driven and exported in run metadata.
 3. `run_summary.json`
    - Seed, resolved config, fitness weights, runtime metadata.
 4. `snapshot_gen_<n>.json`
-   - Population genomes and minimal state for viewer playback/start.
+   - Population genomes, minimal viewer start state, and embedded generation-metric history for in-GUI plotting.
 
 ### Progress Feedback
 - CLI `run` and `batch` print generation progress in increments of 10 generations (and always on completion).

@@ -12,10 +12,12 @@ mod bevy_viewer {
     use bevy::window::PrimaryWindow;
 
     use crate::brain::ControllerKind;
-    use crate::experiment::{continue_generations_from_population, world_state_for_population};
+    use crate::experiment::{
+        continue_generations_from_population, world_state_for_population, GenerationMetrics,
+    };
     use crate::genetics::AgentGenome;
     use crate::io::snapshot::SnapshotFile;
-    use crate::sim::{FoodState, Vec2, WorldState, step_world};
+    use crate::sim::{step_world, FoodState, Vec2, WorldState};
 
     const EVOLVE_GENERATIONS_MIN: u32 = 1;
     const EVOLVE_GENERATIONS_MAX: u32 = 5000;
@@ -25,6 +27,14 @@ mod bevy_viewer {
     const FOOD_COUNT_MAX: usize = 10000;
     const EPISODE_STEPS_MIN: u32 = 10;
     const EPISODE_STEPS_MAX: u32 = 20000;
+    const FITNESS_PANEL_WIDTH: f32 = 420.0;
+    const FITNESS_PANEL_HEIGHT: f32 = 240.0;
+    const FITNESS_PANEL_MARGIN: f32 = 12.0;
+    const FITNESS_PLOT_INSET_LEFT: f32 = 18.0;
+    const FITNESS_PLOT_INSET_RIGHT: f32 = 16.0;
+    const FITNESS_PLOT_INSET_TOP: f32 = 64.0;
+    const FITNESS_PLOT_INSET_BOTTOM: f32 = 22.0;
+    const FITNESS_PLOT_MAX_POINTS: usize = 240;
 
     #[derive(Component)]
     struct AgentVisual {
@@ -47,6 +57,9 @@ mod bevy_viewer {
 
     #[derive(Component)]
     struct EvolveStatusText;
+
+    #[derive(Component)]
+    struct FitnessPlotSummaryText;
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum NumericFieldKind {
@@ -135,6 +148,7 @@ mod bevy_viewer {
         evolve_generations: u32,
         rebuild_visuals: bool,
         controller_kinds: Vec<ControllerKind>,
+        metrics_history: Vec<GenerationMetrics>,
         active_input: Option<NumericFieldKind>,
         field_buffers: NumericFieldBuffers,
         evolution_job: Option<EvolutionJob>,
@@ -154,7 +168,6 @@ mod bevy_viewer {
             .iter()
             .map(|genome| genome.controller_kind)
             .collect::<Vec<_>>();
-
         App::new()
             .insert_resource(ViewerRuntime {
                 initial_snapshot: snapshot.clone(),
@@ -168,6 +181,7 @@ mod bevy_viewer {
                 evolve_generations: 1,
                 rebuild_visuals: false,
                 controller_kinds,
+                metrics_history: snapshot.metrics_history.clone(),
                 active_input: None,
                 field_buffers,
                 evolution_job: None,
@@ -192,10 +206,12 @@ mod bevy_viewer {
                     advance_evolution_job,
                     sync_start_stop_button_state,
                     sync_control_panel_state,
+                    sync_fitness_plot_summary,
                     rebuild_world_visuals_if_requested,
                     advance_simulation,
                     sync_agent_visuals,
                     sync_food_visuals,
+                    draw_fitness_plot,
                     update_window_title,
                 )
                     .chain(),
@@ -334,6 +350,35 @@ mod bevy_viewer {
                     TextFont::from_font_size(14.0),
                     TextColor(Color::srgb(0.86, 0.86, 0.86)),
                     EvolveStatusText,
+                ));
+            });
+
+        commands
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(FITNESS_PANEL_MARGIN),
+                    top: Val::Px(FITNESS_PANEL_MARGIN),
+                    width: Val::Px(FITNESS_PANEL_WIDTH),
+                    height: Val::Px(FITNESS_PANEL_HEIGHT),
+                    padding: UiRect::all(Val::Px(12.0)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(6.0),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.07, 0.1, 0.14, 0.92)),
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    Text::new("Fitness History"),
+                    TextFont::from_font_size(17.0),
+                    TextColor(Color::srgb(0.95, 0.95, 0.95)),
+                ));
+                parent.spawn((
+                    Text::new("No generation metrics loaded"),
+                    TextFont::from_font_size(13.0),
+                    TextColor(Color::srgb(0.82, 0.86, 0.9)),
+                    FitnessPlotSummaryText,
                 ));
             });
     }
@@ -512,6 +557,7 @@ mod bevy_viewer {
             1,
         );
 
+        merge_generation_metrics(&mut runtime.metrics_history, &run.generations);
         runtime.population = run.final_population;
         runtime.population_generation_index = runtime.population_generation_index.saturating_add(1);
         runtime.generation = runtime.generation.saturating_add(1);
@@ -607,6 +653,26 @@ mod bevy_viewer {
             } else if status_marker.is_some() {
                 **text = status.clone();
             }
+        }
+    }
+
+    fn sync_fitness_plot_summary(
+        runtime: Res<ViewerRuntime>,
+        mut query: Query<&mut Text, With<FitnessPlotSummaryText>>,
+    ) {
+        let summary = if let Some(metric) = runtime.metrics_history.last() {
+            format!(
+                "gens: {}\nlatest best: {:.2}\nlatest mean: {:.2}\nlegend: orange=best, blue=mean",
+                runtime.metrics_history.len(),
+                metric.best_fitness,
+                metric.mean_fitness
+            )
+        } else {
+            "No embedded history in this snapshot yet.\nLegend: orange=best, blue=mean".to_string()
+        };
+
+        for mut text in &mut query {
+            **text = summary.clone();
         }
     }
 
@@ -805,6 +871,112 @@ mod bevy_viewer {
         );
     }
 
+    fn draw_fitness_plot(
+        runtime: Res<ViewerRuntime>,
+        window_query: Query<&Window, With<PrimaryWindow>>,
+        mut gizmos: Gizmos,
+    ) {
+        let Ok(window) = window_query.get_single() else {
+            return;
+        };
+
+        let panel_left = window.width() - FITNESS_PANEL_MARGIN - FITNESS_PANEL_WIDTH;
+        let panel_top = FITNESS_PANEL_MARGIN;
+        let plot_left = panel_left + FITNESS_PLOT_INSET_LEFT;
+        let plot_right = panel_left + FITNESS_PANEL_WIDTH - FITNESS_PLOT_INSET_RIGHT;
+        let plot_top = panel_top + FITNESS_PLOT_INSET_TOP;
+        let plot_bottom = panel_top + FITNESS_PANEL_HEIGHT - FITNESS_PLOT_INSET_BOTTOM;
+
+        let axis_color = Color::srgba(0.72, 0.78, 0.86, 0.45);
+        let grid_color = Color::srgba(0.38, 0.46, 0.58, 0.28);
+
+        draw_screen_line(
+            &mut gizmos,
+            window,
+            plot_left,
+            plot_top,
+            plot_right,
+            plot_top,
+            axis_color,
+        );
+        draw_screen_line(
+            &mut gizmos,
+            window,
+            plot_left,
+            plot_bottom,
+            plot_right,
+            plot_bottom,
+            axis_color,
+        );
+        draw_screen_line(
+            &mut gizmos,
+            window,
+            plot_left,
+            plot_top,
+            plot_left,
+            plot_bottom,
+            axis_color,
+        );
+        draw_screen_line(
+            &mut gizmos,
+            window,
+            plot_left,
+            (plot_top + plot_bottom) * 0.5,
+            plot_right,
+            (plot_top + plot_bottom) * 0.5,
+            grid_color,
+        );
+
+        let Some(sampled) = sampled_metrics(&runtime.metrics_history, FITNESS_PLOT_MAX_POINTS)
+        else {
+            return;
+        };
+
+        let min_generation = sampled.first().map(|m| m.generation_index).unwrap_or(0);
+        let max_generation = sampled
+            .last()
+            .map(|m| m.generation_index)
+            .unwrap_or(min_generation);
+        let max_fitness = sampled
+            .iter()
+            .flat_map(|metric| [metric.best_fitness, metric.mean_fitness])
+            .fold(0.0_f32, f32::max)
+            .max(1.0);
+        let generation_span = (max_generation.saturating_sub(min_generation)).max(1) as f32;
+
+        let x_for_generation = |generation: u32| -> f32 {
+            let progress = (generation.saturating_sub(min_generation)) as f32 / generation_span;
+            plot_left + progress * (plot_right - plot_left)
+        };
+        let y_for_fitness = |fitness: f32| -> f32 {
+            let progress = (fitness / max_fitness).clamp(0.0, 1.0);
+            plot_bottom - progress * (plot_bottom - plot_top)
+        };
+
+        for pair in sampled.windows(2) {
+            let previous = pair[0];
+            let current = pair[1];
+            draw_screen_line(
+                &mut gizmos,
+                window,
+                x_for_generation(previous.generation_index),
+                y_for_fitness(previous.best_fitness),
+                x_for_generation(current.generation_index),
+                y_for_fitness(current.best_fitness),
+                Color::srgb(0.95, 0.64, 0.08),
+            );
+            draw_screen_line(
+                &mut gizmos,
+                window,
+                x_for_generation(previous.generation_index),
+                y_for_fitness(previous.mean_fitness),
+                x_for_generation(current.generation_index),
+                y_for_fitness(current.mean_fitness),
+                Color::srgb(0.31, 0.66, 0.87),
+            );
+        }
+    }
+
     fn spawn_food_entities(commands: &mut Commands, food: &[FoodState], width: f32, height: f32) {
         for item in food {
             spawn_one_food(commands, item, width, height);
@@ -982,11 +1154,75 @@ mod bevy_viewer {
             .iter()
             .map(|genome| genome.controller_kind)
             .collect::<Vec<_>>();
+        runtime.metrics_history = runtime.initial_snapshot.metrics_history.clone();
         runtime.active_input = None;
         runtime.field_buffers =
             NumericFieldBuffers::from_state(runtime.evolve_generations, &runtime.config);
         runtime.evolution_job = None;
         runtime.rebuild_visuals = true;
+    }
+
+    fn sampled_metrics(
+        metrics: &[GenerationMetrics],
+        max_points: usize,
+    ) -> Option<Vec<&GenerationMetrics>> {
+        if metrics.is_empty() {
+            return None;
+        }
+
+        if metrics.len() <= max_points {
+            return Some(metrics.iter().collect());
+        }
+
+        let stride = metrics.len().div_ceil(max_points);
+        let mut sampled = metrics.iter().step_by(stride).collect::<Vec<_>>();
+        if let Some(last) = metrics.last() {
+            if sampled
+                .last()
+                .map(|entry| entry.generation_index != last.generation_index)
+                .unwrap_or(true)
+            {
+                sampled.push(last);
+            }
+        }
+        Some(sampled)
+    }
+
+    fn merge_generation_metrics(
+        history: &mut Vec<GenerationMetrics>,
+        new_metrics: &[GenerationMetrics],
+    ) {
+        for metric in new_metrics {
+            if let Some(existing) = history
+                .iter_mut()
+                .find(|existing| existing.generation_index == metric.generation_index)
+            {
+                *existing = metric.clone();
+            } else {
+                history.push(metric.clone());
+            }
+        }
+        history.sort_by_key(|metric| metric.generation_index);
+    }
+
+    fn draw_screen_line(
+        gizmos: &mut Gizmos,
+        window: &Window,
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        color: Color,
+    ) {
+        gizmos.line_2d(
+            screen_to_world(window, x0, y0),
+            screen_to_world(window, x1, y1),
+            color,
+        );
+    }
+
+    fn screen_to_world(window: &Window, x: f32, y: f32) -> bevy::math::Vec2 {
+        bevy::math::Vec2::new(x - window.width() * 0.5, window.height() * 0.5 - y)
     }
 }
 

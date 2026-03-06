@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use neural_survival::config::SimulationConfig;
-use neural_survival::experiment::run_batch_to_dir;
+use neural_survival::experiment::{GenerationMetrics, run_batch_to_dir};
 use neural_survival::genetics::AgentGenome;
 use neural_survival::io::snapshot::{SnapshotFile, read_snapshot, write_snapshot};
 use neural_survival::sim::initialize_world;
@@ -48,6 +48,7 @@ fn batch_run_writes_metrics_summary_and_snapshot() {
 
     let snapshot = read_snapshot(&snapshot_path).expect("snapshot should deserialize");
     assert_eq!(snapshot.generation, 3);
+    assert_eq!(snapshot.metrics_history.len(), 3);
     assert_eq!(snapshot.population.len(), config.population_size);
 }
 
@@ -67,6 +68,17 @@ fn snapshot_round_trip_preserves_payload() {
         generation: 2,
         seed: 99,
         resolved_config: config,
+        metrics_history: vec![GenerationMetrics {
+            generation_index: 1,
+            best_fitness: 2.0,
+            mean_fitness: 1.5,
+            survival_min: 5,
+            survival_mean: 6.0,
+            survival_max: 7,
+            population_size: 4,
+            controller_mlp: 2,
+            controller_ltc: 2,
+        }],
         population: Vec::<AgentGenome>::new(),
         world_state: world,
     };

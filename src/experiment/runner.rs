@@ -1,6 +1,8 @@
 use rand::{SeedableRng, rngs::StdRng};
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 use crate::brain::{ControllerFactory, ControllerKind};
 use crate::config::SimulationConfig;
 use crate::fitness::{FitnessComponents, compute_fitness};
@@ -15,7 +17,7 @@ use crate::io::summary::{RunSummary, config_hash, write_run_summary};
 use crate::sim::{basic_sensor_vector, initialize_world, step_world_with_actions};
 
 /// Per-generation aggregate metrics used for experiment reporting.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GenerationMetrics {
     pub generation_index: u32,
     pub best_fitness: f32,
@@ -191,6 +193,7 @@ where
         generation: generations,
         seed,
         resolved_config: config.clone(),
+        metrics_history: run.generations.clone(),
         population: run.final_population.clone(),
         world_state: world_state_for_population(config, seed, generations, &run.final_population),
     };

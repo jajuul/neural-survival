@@ -31,6 +31,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 19:05Z) Implemented Shorelark-inspired food vision ("eyes"): angular food-intensity bins with configurable FOV, trait-driven active channel count/range, fixed-width controller sensor vectors, updated controller input shapes, and passing sensor/config validation tests.
 - [x] (2026-03-04 19:30Z) Exposed controller layer sizes in TOML/config (`mlp_hidden_size`, `ltc_state_size`), validated non-zero bounds, and wired mixed-controller factory setup to use these configurable sizes.
 - [x] (2026-03-04 19:55Z) Added automatic `fitness.svg` artifact generation (best + mean fitness trends per generation) for headless `run`/`batch` outputs, with integration tests verifying plot presence.
+- [x] (2026-03-04 20:20Z) Added in-GUI fitness plotting by embedding generation history in snapshots and rendering best/mean fitness lines in the Bevy viewer, including continuation-time plot updates and backward-compatible snapshot deserialization.
 
 ## Surprises & Discoveries
 
@@ -75,6 +76,7 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: Evolving trait-level `perception_channels` conflicts with static MLP/LTC input shapes unless sensor width is fixed; a compatibility layer is needed.
   Evidence: Existing snapshots/genomes carry fixed input dimensions, so the new eye model had to keep a constant input width while activating only the first `perception_channels` bins.
+
 
 ## Decision Log
 
@@ -174,6 +176,10 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: This provides immediate, lightweight trend visibility for average/max fitness while preserving deterministic headless workflow and avoiding UI complexity.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: Feed the GUI plot from `SnapshotFile.metrics_history` instead of parsing `metrics.csv` at viewer startup.
+  Rationale: This keeps `view --snapshot` self-contained, preserves deterministic replay behavior, and lets in-GUI continuation append new points without depending on sidecar files.
+  Date/Author: 2026-03-04 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -207,6 +213,8 @@ Post-plan enhancement (v5): controllers now receive Shorelark-inspired eye input
 Post-plan enhancement (v6): model-capacity knobs for `MLP` and `LTC` are now runtime-configurable through TOML (`mlp_hidden_size`, `ltc_state_size`) with validation and factory wiring.
 
 Post-plan enhancement (v7): headless runs now export `fitness.svg` to visualize best and mean fitness trends over generations without external tooling.
+
+Post-plan enhancement (v8): the Bevy viewer now renders an internal fitness chart for best and mean fitness, sourced from snapshot-embedded metric history and extended during GUI continuation.
 
 ## Context and Orientation
 
@@ -537,3 +545,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after Shorelark-inspired eye-sensor implementation to document fixed-width vision-bin sensing, FOV configuration, and compatibility constraints between evolvable perception traits and static controller genome shapes.
 2026-03-04: Plan updated after introducing config-driven controller layer sizes so network capacity can be tuned in `configs/default.toml` without code edits.
 2026-03-04: Plan updated after adding headless fitness-plot artifact generation (`fitness.svg`) and corresponding artifact tests.
+2026-03-04: Plan updated after embedding generation history in snapshots and rendering GUI fitness plots from that history.

@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::config::SimulationConfig;
+use crate::experiment::GenerationMetrics;
 use crate::genetics::AgentGenome;
 use crate::sim::WorldState;
 
@@ -13,6 +14,8 @@ pub struct SnapshotFile {
     pub generation: u32,
     pub seed: u64,
     pub resolved_config: SimulationConfig,
+    #[serde(default)]
+    pub metrics_history: Vec<GenerationMetrics>,
     pub population: Vec<AgentGenome>,
     pub world_state: WorldState,
 }
@@ -42,4 +45,34 @@ pub fn read_snapshot(path: &Path) -> anyhow::Result<SnapshotFile> {
     let bytes = fs::read(path)?;
     let snapshot = serde_json::from_slice(&bytes)?;
     Ok(snapshot)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::SimulationConfig;
+    use crate::sim::initialize_world;
+
+    use super::SnapshotFile;
+
+    #[test]
+    fn snapshot_defaults_missing_metrics_history() {
+        let config = SimulationConfig {
+            population_size: 2,
+            food_count: 2,
+            ..SimulationConfig::default()
+        };
+        let world = initialize_world(&config, 7);
+        let json = serde_json::json!({
+            "generation": 3,
+            "seed": 7,
+            "resolved_config": config,
+            "population": [],
+            "world_state": world
+        });
+
+        let snapshot: SnapshotFile =
+            serde_json::from_value(json).expect("legacy snapshot shape should deserialize");
+
+        assert!(snapshot.metrics_history.is_empty());
+    }
 }
