@@ -42,12 +42,13 @@ Version 1 focuses on:
 ### Neural Controllers
 - Controller families required in v1:
   - Feed-forward MLP.
-  - LTC network.
+  - Conductance-based LTC network.
 - Inference backend: custom lightweight deterministic Rust implementation.
 - Both controller families must be usable through one shared controller interface.
 - Controller capacity knobs are runtime-configurable via config:
   - `mlp_hidden_size`
   - `ltc_state_size`
+- The LTC controller uses gated sensory/recurrent conductances with leak and membrane-capacitance terms, advanced by a fixed-count internal ODE unfold each simulation step.
 
 ### Evolution
 - Genetic algorithm strategy:

@@ -6,7 +6,8 @@ This module defines shared controller interfaces and deterministic MLP/LTC contr
 ## Behavior
 - Exposes `NeuralController`, `ControllerFactory`, and `ControllerKind` as the common brain abstraction.
 - Defines serializable `BrainGenome` payloads for controller parameters.
-- Implements MLP and LTC genome encode/decode routines and deterministic stepping/inference.
+- Implements MLP and a conductance-based LTC genome encode/decode routines and deterministic stepping/inference.
+- The LTC path uses gated sensory/recurrent synapses, leak conductance, membrane capacitance, and a fixed-count internal ODE unfold per simulation step.
 - Includes a mixed-family controller factory that can generate and build both controller kinds.
 - Uses config-driven controller capacity settings (`mlp_hidden_size`, `ltc_state_size`) when factories are created by genetics/experiment flows.
 - Maps controller outputs into simulation actions (`steering`, `throttle`).

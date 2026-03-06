@@ -34,6 +34,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 20:20Z) Added in-GUI fitness plotting by embedding generation history in snapshots and rendering best/mean fitness lines in the Bevy viewer, including continuation-time plot updates and backward-compatible snapshot deserialization.
 - [x] (2026-03-06 00:00Z) Added selected-agent observability in the GUI by switching viewer stepping from stub actions to real controller execution, capturing sensor/output/energy telemetry, rendering a selected-agent inspector with eye-bin activity, and validating with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-06 00:40Z) Added deterministic food respawn with configurable `food_respawn_probability`, exposed it in TOML and GUI continuation controls, and validated the new respawn behavior with simulation/config tests.
+- [x] (2026-03-06 02:10Z) Replaced the prior LTC-inspired leaky RNN with a conductance-based LTC implementation (gated sensory/recurrent synapses, leak, capacitance, fixed internal ODE unfolds), added legacy snapshot/genome upgrade handling, and validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 
 ## Surprises & Discoveries
 
@@ -81,6 +82,12 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: The current GUI viewer loop still advances with `sim::step_world`, which uses deterministic stub actions instead of evolved controllers.
   Evidence: `src/ui/mod.rs` calls `step_world` from `advance_simulation`, and `src/sim/world.rs` defines `step_world` as a wrapper around `step_world_with_actions` that supplies `stub_action`.
+
+- Observation: The original “LTC” implementation was only a leaky recurrent state model with fixed per-neuron time constants, not a conductance-based liquid time-constant cell.
+  Evidence: Old `src/brain/ltc.rs` updated state by `(-x + target) / tau` with linear input/recurrent drives and no gated synaptic conductances or leak/capacitance terms.
+
+- Observation: Existing Rust ODE crates (`ode_solvers`, `diffsol`, `differential_equations`) are broader and heavier than the controller loop needs; the LTC step only requires a tiny fixed-size, per-agent deterministic integrator.
+  Evidence: The refactor succeeded with a fixed-count in-house unfold and all `cargo test` / `cargo check --features gui` validations passed without introducing a new dependency.
 
 ## Decision Log
 
@@ -188,6 +195,10 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: Eye bins, action outputs, and energy costs are only meaningful if they correspond to the controller that actually moved the agent. Persisting one selected agent's latest telemetry satisfies the inspector requirement without adding unnecessary per-frame history for the entire population.
   Date/Author: 2026-03-06 / Codex
 
+- Decision: Replace the prior Euler-stepped leaky RNN with a conductance-based LTC cell and keep the ODE integration in-house instead of adding a general solver crate.
+  Rationale: The user explicitly asked for a real LTC. A conductance-based implementation with gated sensory/recurrent synapses, leak, capacitance, and fixed internal unfolds matches LTC behavior materially better, while a custom integrator keeps per-agent stepping deterministic, dependency-light, and fast for tiny state vectors.
+  Date/Author: 2026-03-06 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -227,6 +238,8 @@ Post-plan enhancement (v8): the Bevy viewer now renders an internal fitness char
 Post-plan enhancement (v9): the Bevy viewer now runs real controllers in-frame and exposes a selected-agent inspector with eye-bin activations, controller outputs, and energy-cost breakdown, bringing GUI simulation behavior into alignment with headless controller-driven execution.
 
 Post-plan enhancement (v10): food now respawns deterministically on consumption according to configurable probability, with the same parameter available in both TOML and GUI continuation controls.
+
+Post-plan enhancement (v11): the LTC controller is now a conductance-based liquid network with gated sensory/recurrent synapses, leak conductance, membrane capacitance, fixed internal ODE unfolds, and backward-compatible upgrade handling for older serialized genomes.
 
 ## Context and Orientation
 

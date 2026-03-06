@@ -7,7 +7,26 @@ use crate::brain::{
 };
 use crate::sim::{ActionVector, SensorVector};
 
-/// Layer sizes for a simple LTC network.
+const LTC_ODE_UNFOLDS: usize = 6;
+const MIN_CONDUCTANCE: f32 = 0.001;
+const MAX_CONDUCTANCE: f32 = 3.0;
+const MIN_SIGMA: f32 = 0.1;
+const MAX_SIGMA: f32 = 10.0;
+const MIN_MU: f32 = -1.5;
+const MAX_MU: f32 = 1.5;
+const MIN_EREV: f32 = -1.0;
+const MAX_EREV: f32 = 1.0;
+const MIN_VLEAK: f32 = -1.0;
+const MAX_VLEAK: f32 = 1.0;
+const MIN_CM: f32 = 0.05;
+const MAX_CM: f32 = 5.0;
+const MIN_OUTPUT_WEIGHT: f32 = -3.0;
+const MAX_OUTPUT_WEIGHT: f32 = 3.0;
+const MIN_OUTPUT_BIAS: f32 = -3.0;
+const MAX_OUTPUT_BIAS: f32 = 3.0;
+const DENOMINATOR_EPSILON: f32 = 1e-6;
+
+/// Layer sizes for a conductance-based LTC network.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LtcShape {
     pub input_size: usize,
@@ -44,26 +63,53 @@ impl LtcShape {
 
     /// Total scalar parameter count for this shape.
     pub fn parameter_count(self) -> usize {
-        self.state_size * self.input_size
-            + self.state_size * self.state_size
-            + self.state_size
-            + self.state_size
+        4 * self.state_size * self.input_size
+            + 4 * self.state_size * self.state_size
+            + 3 * self.state_size
             + self.output_size * self.state_size
             + self.output_size
     }
 }
 
-/// Serialized LTC parameters with explicit state time constants.
+/// Serialized conductance-based LTC parameters.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LtcGenome {
     pub shape: LtcShape,
-    /// Row-major `[state][input]` matrix.
-    pub weights_input_state: Vec<f32>,
-    /// Row-major `[state][state]` matrix.
-    pub weights_state_state: Vec<f32>,
-    pub bias_state: Vec<f32>,
-    pub tau_state: Vec<f32>,
-    /// Row-major `[output][state]` matrix.
+    /// Row-major `[state][input]` sensory conductance magnitudes.
+    #[serde(alias = "weights_input_state")]
+    pub sensory_weight: Vec<f32>,
+    /// Row-major `[state][input]` sensory gate means.
+    #[serde(default)]
+    pub sensory_mu: Vec<f32>,
+    /// Row-major `[state][input]` sensory gate slopes.
+    #[serde(default)]
+    pub sensory_sigma: Vec<f32>,
+    /// Row-major `[state][input]` sensory reversal potentials.
+    #[serde(default)]
+    pub sensory_erev: Vec<f32>,
+    /// Row-major `[state][state]` recurrent conductance magnitudes.
+    #[serde(alias = "weights_state_state")]
+    pub recurrent_weight: Vec<f32>,
+    /// Row-major `[state][state]` recurrent gate means.
+    #[serde(default)]
+    pub recurrent_mu: Vec<f32>,
+    /// Row-major `[state][state]` recurrent gate slopes.
+    #[serde(default)]
+    pub recurrent_sigma: Vec<f32>,
+    /// Row-major `[state][state]` recurrent reversal potentials.
+    #[serde(default)]
+    pub recurrent_erev: Vec<f32>,
+    /// Per-state leak reversal potential.
+    #[serde(alias = "bias_state")]
+    pub vleak_state: Vec<f32>,
+    /// Per-state membrane capacitance / inertia term.
+    #[serde(alias = "tau_state")]
+    pub cm_state: Vec<f32>,
+    /// Per-state leak conductance.
+    #[serde(default)]
+    pub gleak_state: Vec<f32>,
+    /// Row-major `[output][state]` readout matrix.
+    #[serde(alias = "weights_state_output")]
     pub weights_state_output: Vec<f32>,
     pub bias_output: Vec<f32>,
 }
@@ -76,8 +122,12 @@ pub enum LtcGenomeError {
         field: &'static str,
         message: String,
     },
-    #[error("invalid parameter vector length: expected {expected}, got {actual}")]
-    InvalidParameterLength { expected: usize, actual: usize },
+    #[error("invalid parameter vector length for `{field}`: expected {expected}, got {actual}")]
+    InvalidParameterLength {
+        field: &'static str,
+        expected: usize,
+        actual: usize,
+    },
 }
 
 impl LtcGenome {
@@ -87,23 +137,42 @@ impl LtcGenome {
             .validate()
             .expect("factory should only construct valid LTC shapes");
 
+        let sensory_len = shape.state_size * shape.input_size;
+        let recurrent_len = shape.state_size * shape.state_size;
+        let output_len = shape.output_size * shape.state_size;
+
         let mut genome = Self {
             shape,
-            weights_input_state: (0..shape.state_size * shape.input_size)
-                .map(|_| rng.gen_range(-1.0..=1.0))
+            sensory_weight: (0..sensory_len)
+                .map(|_| rng.gen_range(0.05..=1.0))
                 .collect(),
-            weights_state_state: (0..shape.state_size * shape.state_size)
-                .map(|_| rng.gen_range(-0.8..=0.8))
+            sensory_mu: (0..sensory_len).map(|_| rng.gen_range(0.0..=1.0)).collect(),
+            sensory_sigma: (0..sensory_len).map(|_| rng.gen_range(1.0..=8.0)).collect(),
+            sensory_erev: (0..sensory_len)
+                .map(|_| if rng.gen_bool(0.5) { 1.0 } else { -1.0 })
                 .collect(),
-            bias_state: (0..shape.state_size)
+            recurrent_weight: (0..recurrent_len)
+                .map(|_| rng.gen_range(0.05..=1.0))
+                .collect(),
+            recurrent_mu: (0..recurrent_len)
                 .map(|_| rng.gen_range(-0.5..=0.5))
                 .collect(),
-            tau_state: (0..shape.state_size)
-                .map(|_| rng.gen_range(0.5..=2.5))
+            recurrent_sigma: (0..recurrent_len)
+                .map(|_| rng.gen_range(1.0..=8.0))
                 .collect(),
-            weights_state_output: (0..shape.output_size * shape.state_size)
-                .map(|_| rng.gen_range(-1.0..=1.0))
+            recurrent_erev: (0..recurrent_len)
+                .map(|_| if rng.gen_bool(0.5) { 1.0 } else { -1.0 })
                 .collect(),
+            vleak_state: (0..shape.state_size)
+                .map(|_| rng.gen_range(-0.2..=0.2))
+                .collect(),
+            cm_state: (0..shape.state_size)
+                .map(|_| rng.gen_range(0.4..=0.8))
+                .collect(),
+            gleak_state: (0..shape.state_size)
+                .map(|_| rng.gen_range(0.05..=1.0))
+                .collect(),
+            weights_state_output: (0..output_len).map(|_| rng.gen_range(-1.0..=1.0)).collect(),
             bias_output: (0..shape.output_size)
                 .map(|_| rng.gen_range(-0.5..=0.5))
                 .collect(),
@@ -122,39 +191,60 @@ impl LtcGenome {
         let expected = shape.parameter_count();
         if parameters.len() != expected {
             return Err(LtcGenomeError::InvalidParameterLength {
+                field: "flat_parameters",
                 expected,
                 actual: parameters.len(),
             });
         }
 
+        let sensory_len = shape.state_size * shape.input_size;
+        let recurrent_len = shape.state_size * shape.state_size;
+        let output_len = shape.output_size * shape.state_size;
+
         let mut cursor = 0;
 
-        let input_state_len = shape.state_size * shape.input_size;
-        let weights_input_state = parameters[cursor..cursor + input_state_len].to_vec();
-        cursor += input_state_len;
+        let sensory_weight = parameters[cursor..cursor + sensory_len].to_vec();
+        cursor += sensory_len;
+        let sensory_mu = parameters[cursor..cursor + sensory_len].to_vec();
+        cursor += sensory_len;
+        let sensory_sigma = parameters[cursor..cursor + sensory_len].to_vec();
+        cursor += sensory_len;
+        let sensory_erev = parameters[cursor..cursor + sensory_len].to_vec();
+        cursor += sensory_len;
 
-        let state_state_len = shape.state_size * shape.state_size;
-        let weights_state_state = parameters[cursor..cursor + state_state_len].to_vec();
-        cursor += state_state_len;
+        let recurrent_weight = parameters[cursor..cursor + recurrent_len].to_vec();
+        cursor += recurrent_len;
+        let recurrent_mu = parameters[cursor..cursor + recurrent_len].to_vec();
+        cursor += recurrent_len;
+        let recurrent_sigma = parameters[cursor..cursor + recurrent_len].to_vec();
+        cursor += recurrent_len;
+        let recurrent_erev = parameters[cursor..cursor + recurrent_len].to_vec();
+        cursor += recurrent_len;
 
-        let bias_state = parameters[cursor..cursor + shape.state_size].to_vec();
+        let vleak_state = parameters[cursor..cursor + shape.state_size].to_vec();
+        cursor += shape.state_size;
+        let cm_state = parameters[cursor..cursor + shape.state_size].to_vec();
+        cursor += shape.state_size;
+        let gleak_state = parameters[cursor..cursor + shape.state_size].to_vec();
         cursor += shape.state_size;
 
-        let tau_state = parameters[cursor..cursor + shape.state_size].to_vec();
-        cursor += shape.state_size;
-
-        let state_output_len = shape.output_size * shape.state_size;
-        let weights_state_output = parameters[cursor..cursor + state_output_len].to_vec();
-        cursor += state_output_len;
-
+        let weights_state_output = parameters[cursor..cursor + output_len].to_vec();
+        cursor += output_len;
         let bias_output = parameters[cursor..cursor + shape.output_size].to_vec();
 
         Ok(Self {
             shape,
-            weights_input_state,
-            weights_state_state,
-            bias_state,
-            tau_state,
+            sensory_weight,
+            sensory_mu,
+            sensory_sigma,
+            sensory_erev,
+            recurrent_weight,
+            recurrent_mu,
+            recurrent_sigma,
+            recurrent_erev,
+            vleak_state,
+            cm_state,
+            gleak_state,
             weights_state_output,
             bias_output,
         })
@@ -162,13 +252,23 @@ impl LtcGenome {
 
     /// Flatten this genome into deterministic row-major parameter order.
     pub fn to_flat_parameters(&self) -> Vec<f32> {
-        let mut flat = Vec::with_capacity(self.parameter_count());
-        flat.extend_from_slice(&self.weights_input_state);
-        flat.extend_from_slice(&self.weights_state_state);
-        flat.extend_from_slice(&self.bias_state);
-        flat.extend_from_slice(&self.tau_state);
-        flat.extend_from_slice(&self.weights_state_output);
-        flat.extend_from_slice(&self.bias_output);
+        let mut normalized = self.clone();
+        normalized.ensure_layout();
+
+        let mut flat = Vec::with_capacity(normalized.parameter_count());
+        flat.extend_from_slice(&normalized.sensory_weight);
+        flat.extend_from_slice(&normalized.sensory_mu);
+        flat.extend_from_slice(&normalized.sensory_sigma);
+        flat.extend_from_slice(&normalized.sensory_erev);
+        flat.extend_from_slice(&normalized.recurrent_weight);
+        flat.extend_from_slice(&normalized.recurrent_mu);
+        flat.extend_from_slice(&normalized.recurrent_sigma);
+        flat.extend_from_slice(&normalized.recurrent_erev);
+        flat.extend_from_slice(&normalized.vleak_state);
+        flat.extend_from_slice(&normalized.cm_state);
+        flat.extend_from_slice(&normalized.gleak_state);
+        flat.extend_from_slice(&normalized.weights_state_output);
+        flat.extend_from_slice(&normalized.bias_output);
         flat
     }
 
@@ -177,76 +277,139 @@ impl LtcGenome {
         self.shape.parameter_count()
     }
 
-    /// Clamp parameters to ranges that keep discrete stepping numerically stable.
+    /// Clamp parameters to ranges that keep conductance-based stepping stable.
     pub fn clamp_stable_ranges(&mut self) {
-        for value in &mut self.weights_input_state {
-            *value = value.clamp(-3.0, 3.0);
+        self.ensure_layout();
+
+        for value in &mut self.sensory_weight {
+            *value = value.clamp(MIN_CONDUCTANCE, MAX_CONDUCTANCE);
         }
-        for value in &mut self.weights_state_state {
-            *value = value.clamp(-2.0, 2.0);
+        for value in &mut self.sensory_mu {
+            *value = value.clamp(MIN_MU, MAX_MU);
         }
-        for value in &mut self.bias_state {
-            *value = value.clamp(-3.0, 3.0);
+        for value in &mut self.sensory_sigma {
+            *value = value.clamp(MIN_SIGMA, MAX_SIGMA);
         }
-        for value in &mut self.tau_state {
-            *value = value.clamp(0.1, 10.0);
+        for value in &mut self.sensory_erev {
+            *value = value.clamp(MIN_EREV, MAX_EREV);
+        }
+        for value in &mut self.recurrent_weight {
+            *value = value.clamp(MIN_CONDUCTANCE, MAX_CONDUCTANCE);
+        }
+        for value in &mut self.recurrent_mu {
+            *value = value.clamp(MIN_MU, MAX_MU);
+        }
+        for value in &mut self.recurrent_sigma {
+            *value = value.clamp(MIN_SIGMA, MAX_SIGMA);
+        }
+        for value in &mut self.recurrent_erev {
+            *value = value.clamp(MIN_EREV, MAX_EREV);
+        }
+        for value in &mut self.vleak_state {
+            *value = value.clamp(MIN_VLEAK, MAX_VLEAK);
+        }
+        for value in &mut self.cm_state {
+            *value = value.clamp(MIN_CM, MAX_CM);
+        }
+        for value in &mut self.gleak_state {
+            *value = value.clamp(MIN_CONDUCTANCE, MAX_CONDUCTANCE);
         }
         for value in &mut self.weights_state_output {
-            *value = value.clamp(-3.0, 3.0);
+            *value = value.clamp(MIN_OUTPUT_WEIGHT, MAX_OUTPUT_WEIGHT);
         }
         for value in &mut self.bias_output {
-            *value = value.clamp(-3.0, 3.0);
+            *value = value.clamp(MIN_OUTPUT_BIAS, MAX_OUTPUT_BIAS);
         }
     }
 
-    /// Validate internal vector lengths against shape.
-    pub fn validate(&self) -> Result<(), LtcGenomeError> {
+    /// Validate internal vector lengths against shape, normalizing legacy serialized genomes.
+    pub fn validate(&mut self) -> Result<(), LtcGenomeError> {
         self.shape.validate()?;
+        self.ensure_layout();
 
-        if self.weights_input_state.len() != self.shape.state_size * self.shape.input_size {
-            return Err(LtcGenomeError::InvalidParameterLength {
-                expected: self.shape.state_size * self.shape.input_size,
-                actual: self.weights_input_state.len(),
-            });
-        }
+        let sensory_len = self.shape.state_size * self.shape.input_size;
+        let recurrent_len = self.shape.state_size * self.shape.state_size;
+        let output_len = self.shape.output_size * self.shape.state_size;
 
-        if self.weights_state_state.len() != self.shape.state_size * self.shape.state_size {
-            return Err(LtcGenomeError::InvalidParameterLength {
-                expected: self.shape.state_size * self.shape.state_size,
-                actual: self.weights_state_state.len(),
-            });
-        }
-
-        if self.bias_state.len() != self.shape.state_size {
-            return Err(LtcGenomeError::InvalidParameterLength {
-                expected: self.shape.state_size,
-                actual: self.bias_state.len(),
-            });
-        }
-
-        if self.tau_state.len() != self.shape.state_size {
-            return Err(LtcGenomeError::InvalidParameterLength {
-                expected: self.shape.state_size,
-                actual: self.tau_state.len(),
-            });
-        }
-
-        if self.weights_state_output.len() != self.shape.output_size * self.shape.state_size {
-            return Err(LtcGenomeError::InvalidParameterLength {
-                expected: self.shape.output_size * self.shape.state_size,
-                actual: self.weights_state_output.len(),
-            });
-        }
-
-        if self.bias_output.len() != self.shape.output_size {
-            return Err(LtcGenomeError::InvalidParameterLength {
-                expected: self.shape.output_size,
-                actual: self.bias_output.len(),
-            });
-        }
-
+        validate_len("sensory_weight", &self.sensory_weight, sensory_len)?;
+        validate_len("sensory_mu", &self.sensory_mu, sensory_len)?;
+        validate_len("sensory_sigma", &self.sensory_sigma, sensory_len)?;
+        validate_len("sensory_erev", &self.sensory_erev, sensory_len)?;
+        validate_len("recurrent_weight", &self.recurrent_weight, recurrent_len)?;
+        validate_len("recurrent_mu", &self.recurrent_mu, recurrent_len)?;
+        validate_len("recurrent_sigma", &self.recurrent_sigma, recurrent_len)?;
+        validate_len("recurrent_erev", &self.recurrent_erev, recurrent_len)?;
+        validate_len("vleak_state", &self.vleak_state, self.shape.state_size)?;
+        validate_len("cm_state", &self.cm_state, self.shape.state_size)?;
+        validate_len("gleak_state", &self.gleak_state, self.shape.state_size)?;
+        validate_len(
+            "weights_state_output",
+            &self.weights_state_output,
+            output_len,
+        )?;
+        validate_len("bias_output", &self.bias_output, self.shape.output_size)?;
         Ok(())
     }
+
+    fn ensure_layout(&mut self) {
+        let sensory_len = self.shape.state_size * self.shape.input_size;
+        let recurrent_len = self.shape.state_size * self.shape.state_size;
+        let sensory_weight = self.sensory_weight.clone();
+        let recurrent_weight = self.recurrent_weight.clone();
+
+        fill_or_preserve(&mut self.sensory_mu, sensory_len, 0.0);
+        fill_or_preserve(&mut self.sensory_sigma, sensory_len, 1.0);
+        fill_or_preserve_with(&mut self.sensory_erev, sensory_len, |idx| {
+            legacy_erev(sensory_weight.get(idx).copied().unwrap_or(1.0))
+        });
+
+        fill_or_preserve(&mut self.recurrent_mu, recurrent_len, 0.0);
+        fill_or_preserve(&mut self.recurrent_sigma, recurrent_len, 1.0);
+        fill_or_preserve_with(&mut self.recurrent_erev, recurrent_len, |idx| {
+            legacy_erev(recurrent_weight.get(idx).copied().unwrap_or(1.0))
+        });
+
+        fill_or_preserve(&mut self.gleak_state, self.shape.state_size, 1.0);
+    }
+}
+
+fn validate_len(
+    field: &'static str,
+    values: &[f32],
+    expected: usize,
+) -> Result<(), LtcGenomeError> {
+    if values.len() == expected {
+        Ok(())
+    } else {
+        Err(LtcGenomeError::InvalidParameterLength {
+            field,
+            expected,
+            actual: values.len(),
+        })
+    }
+}
+
+fn fill_or_preserve(values: &mut Vec<f32>, expected: usize, fill: f32) {
+    if values.is_empty() {
+        values.resize(expected, fill);
+    }
+}
+
+fn fill_or_preserve_with<F>(values: &mut Vec<f32>, expected: usize, mut fill: F)
+where
+    F: FnMut(usize) -> f32,
+{
+    if values.is_empty() {
+        values.extend((0..expected).map(&mut fill));
+    }
+}
+
+fn legacy_erev(weight: f32) -> f32 {
+    if weight >= 0.0 { 1.0 } else { -1.0 }
+}
+
+fn sigmoid(value: f32) -> f32 {
+    1.0 / (1.0 + (-value.clamp(-60.0, 60.0)).exp())
 }
 
 /// Runtime LTC controller with persistent hidden state.
@@ -270,36 +433,49 @@ impl LtcController {
 
     fn forward_outputs(&mut self, input: &SensorVector, dt: f32) -> Vec<f32> {
         let shape = self.genome.shape;
-        let dt = dt.max(0.0);
+        let elapsed = dt.max(1e-4);
 
         let mut input_buffer = vec![0.0; shape.input_size];
         for (dst, src) in input_buffer.iter_mut().zip(input.values.iter().copied()) {
             *dst = src;
         }
 
-        let previous_state = self.state.clone();
+        let sensory_drive = self.compute_sensory_drive(&input_buffer);
+        let cm_scale = self
+            .genome
+            .cm_state
+            .iter()
+            .map(|cm| cm / (elapsed / LTC_ODE_UNFOLDS as f32))
+            .collect::<Vec<_>>();
 
-        for state_idx in 0..shape.state_size {
-            let input_row_start = state_idx * shape.input_size;
-            let input_drive = self.genome.weights_input_state
-                [input_row_start..input_row_start + shape.input_size]
-                .iter()
-                .zip(input_buffer.iter())
-                .map(|(w, x)| w * x)
-                .sum::<f32>();
+        for _ in 0..LTC_ODE_UNFOLDS {
+            let previous_state = self.state.clone();
+            let mut next_state = vec![0.0; shape.state_size];
 
-            let recurrent_row_start = state_idx * shape.state_size;
-            let recurrent_drive = self.genome.weights_state_state
-                [recurrent_row_start..recurrent_row_start + shape.state_size]
-                .iter()
-                .zip(previous_state.iter())
-                .map(|(w, x)| w * x.tanh())
-                .sum::<f32>();
+            for state_idx in 0..shape.state_size {
+                let mut numerator = cm_scale[state_idx] * previous_state[state_idx]
+                    + self.genome.gleak_state[state_idx] * self.genome.vleak_state[state_idx]
+                    + sensory_drive.numerator[state_idx];
+                let mut denominator = cm_scale[state_idx]
+                    + self.genome.gleak_state[state_idx]
+                    + sensory_drive.denominator[state_idx];
 
-            let target = input_drive + recurrent_drive + self.genome.bias_state[state_idx];
-            let tau = self.genome.tau_state[state_idx].clamp(0.1, 10.0);
-            let derivative = (-previous_state[state_idx] + target) / tau;
-            self.state[state_idx] = previous_state[state_idx] + dt * derivative;
+                let recurrent_row_start = state_idx * shape.state_size;
+                for recurrent_idx in 0..shape.state_size {
+                    let index = recurrent_row_start + recurrent_idx;
+                    let gate = sigmoid(
+                        (previous_state[recurrent_idx] - self.genome.recurrent_mu[index])
+                            * self.genome.recurrent_sigma[index],
+                    );
+                    let conductance = self.genome.recurrent_weight[index] * gate;
+                    numerator += conductance * self.genome.recurrent_erev[index];
+                    denominator += conductance;
+                }
+
+                next_state[state_idx] = numerator / denominator.max(DENOMINATOR_EPSILON);
+            }
+
+            self.state = next_state;
         }
 
         let mut outputs = vec![0.0; shape.output_size];
@@ -318,6 +494,31 @@ impl LtcController {
         outputs
     }
 
+    fn compute_sensory_drive(&self, input: &[f32]) -> SynapseDrive {
+        let shape = self.genome.shape;
+        let mut numerator = vec![0.0; shape.state_size];
+        let mut denominator = vec![0.0; shape.state_size];
+
+        for state_idx in 0..shape.state_size {
+            let sensory_row_start = state_idx * shape.input_size;
+            for input_idx in 0..shape.input_size {
+                let index = sensory_row_start + input_idx;
+                let gate = sigmoid(
+                    (input[input_idx] - self.genome.sensory_mu[index])
+                        * self.genome.sensory_sigma[index],
+                );
+                let conductance = self.genome.sensory_weight[index] * gate;
+                numerator[state_idx] += conductance * self.genome.sensory_erev[index];
+                denominator[state_idx] += conductance;
+            }
+        }
+
+        SynapseDrive {
+            numerator,
+            denominator,
+        }
+    }
+
     fn step_output_from_signals(outputs: &[f32]) -> ControllerStepOutput {
         let steering_raw = outputs.first().copied().unwrap_or(0.0).clamp(-1.0, 1.0);
         let throttle_raw = outputs.get(1).copied().unwrap_or(0.0).clamp(-1.0, 1.0);
@@ -333,6 +534,12 @@ impl LtcController {
             throttle_applied,
         }
     }
+}
+
+#[derive(Clone, Debug)]
+struct SynapseDrive {
+    numerator: Vec<f32>,
+    denominator: Vec<f32>,
 }
 
 impl NeuralController for LtcController {
@@ -407,10 +614,17 @@ mod tests {
         };
 
         let params = [
-            1.0, // input->state
-            0.0, // state->state
-            0.0, // state bias
-            1.0, // tau
+            1.0,   // sensory_weight
+            0.0,   // sensory_mu
+            1.0,   // sensory_sigma
+            1.0,   // sensory_erev
+            0.001, // recurrent_weight
+            0.0,   // recurrent_mu
+            1.0,   // recurrent_sigma
+            0.0,   // recurrent_erev
+            0.0,   // vleak
+            1.0,   // cm
+            1.0,   // gleak
             1.0, -1.0, // state->output
             0.0, 0.0, // output bias
         ];
@@ -420,16 +634,13 @@ mod tests {
         let mut controller =
             LtcController::new(genome).expect("known genome must construct controller");
 
-        let action_1 = controller.step(&SensorVector { values: vec![0.5] }, 0.1);
-        let action_2 = controller.step(&SensorVector { values: vec![0.5] }, 0.1);
-        let action_3 = controller.step(&SensorVector { values: vec![0.0] }, 0.1);
+        let action_1 = controller.step(&SensorVector { values: vec![0.0] }, 1.0);
+        let action_2 = controller.step(&SensorVector { values: vec![0.0] }, 1.0);
 
-        assert!((action_1.steering - 0.0499169).abs() < 1e-5);
-        assert!((action_1.throttle - 0.4750416).abs() < 1e-5);
-        assert!((action_2.steering - 0.0944330).abs() < 1e-5);
-        assert!((action_2.throttle - 0.4527835).abs() < 1e-5);
-        assert!((action_3.steering - 0.0850860).abs() < 1e-5);
-        assert!((action_3.throttle - 0.4574570).abs() < 1e-5);
+        assert!((action_1.steering - 0.2365018).abs() < 1e-5);
+        assert!((action_1.throttle - 0.3817491).abs() < 1e-5);
+        assert!((action_2.steering - 0.2919969).abs() < 1e-5);
+        assert!((action_2.throttle - 0.3540015).abs() < 1e-5);
     }
 
     #[test]
@@ -440,16 +651,25 @@ mod tests {
             output_size: 1,
         };
 
-        let params = [100.0, -99.0, 88.0, 0.001, -77.0, 66.0];
+        let params = [
+            100.0, -99.0, 88.0, -77.0, 66.0, -55.0, 44.0, -33.0, 22.0, 0.001, -11.0, -77.0, 66.0,
+        ];
         let mut genome = LtcGenome::from_flat_parameters(shape, &params)
             .expect("parameter vector should match LTC shape");
 
         genome.clamp_stable_ranges();
 
-        assert_eq!(genome.weights_input_state[0], 3.0);
-        assert_eq!(genome.weights_state_state[0], -2.0);
-        assert_eq!(genome.bias_state[0], 3.0);
-        assert_eq!(genome.tau_state[0], 0.1);
+        assert_eq!(genome.sensory_weight[0], 3.0);
+        assert_eq!(genome.sensory_mu[0], -1.5);
+        assert_eq!(genome.sensory_sigma[0], 10.0);
+        assert_eq!(genome.sensory_erev[0], -1.0);
+        assert_eq!(genome.recurrent_weight[0], 3.0);
+        assert_eq!(genome.recurrent_mu[0], -1.5);
+        assert_eq!(genome.recurrent_sigma[0], 10.0);
+        assert_eq!(genome.recurrent_erev[0], -1.0);
+        assert_eq!(genome.vleak_state[0], 1.0);
+        assert_eq!(genome.cm_state[0], 0.05);
+        assert_eq!(genome.gleak_state[0], 0.001);
         assert_eq!(genome.weights_state_output[0], -3.0);
         assert_eq!(genome.bias_output[0], 3.0);
     }
@@ -466,6 +686,7 @@ mod tests {
         assert_eq!(
             err,
             LtcGenomeError::InvalidParameterLength {
+                field: "flat_parameters",
                 expected: shape.parameter_count(),
                 actual: 2,
             }
@@ -490,21 +711,48 @@ mod tests {
     }
 
     #[test]
+    fn legacy_serialized_genome_deserializes_with_defaults() {
+        let legacy_json = r#"{
+            "shape": { "input_size": 1, "state_size": 1, "output_size": 2 },
+            "weights_input_state": [0.8],
+            "weights_state_state": [0.2],
+            "bias_state": [0.1],
+            "tau_state": [0.7],
+            "weights_state_output": [0.4, -0.6],
+            "bias_output": [0.0, 0.0]
+        }"#;
+
+        let genome: LtcGenome =
+            serde_json::from_str(legacy_json).expect("legacy genome should deserialize");
+        let mut controller = LtcController::new(genome).expect("legacy genome should upgrade");
+
+        let output = controller.step_with_observability(&SensorVector { values: vec![0.5] }, 0.1);
+
+        assert!(output.steering_raw.is_finite());
+        assert!(output.throttle_applied.is_finite());
+    }
+
+    #[test]
     fn step_with_observability_matches_action_mapping() {
         let shape = LtcShape {
             input_size: 1,
             state_size: 1,
             output_size: 2,
         };
-        let genome =
-            LtcGenome::from_flat_parameters(shape, &[1.0, 0.0, 0.0, 1.0, 1.0, -1.0, 0.0, 0.0])
-                .expect("parameter vector should match LTC shape");
+        let genome = LtcGenome::from_flat_parameters(
+            shape,
+            &[
+                1.0, 0.0, 1.0, 1.0, 0.001, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, -1.0, 0.0, 0.0,
+            ],
+        )
+        .expect("parameter vector should match LTC shape");
         let mut controller = LtcController::new(genome).expect("genome should construct");
 
-        let output = controller.step_with_observability(&SensorVector { values: vec![0.5] }, 0.1);
+        let output = controller.step_with_observability(&SensorVector { values: vec![0.0] }, 1.0);
 
         assert!((output.action.steering - output.steering_raw).abs() < 1e-6);
         assert!((output.action.throttle - output.throttle_applied).abs() < 1e-6);
-        assert!((output.throttle_applied - 0.4750416).abs() < 1e-5);
+        assert!((output.steering_raw - 0.2365018).abs() < 1e-5);
+        assert!((output.throttle_applied - 0.3817491).abs() < 1e-5);
     }
 }
