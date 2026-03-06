@@ -4,6 +4,7 @@ use std::fs;
 use std::path::Path;
 
 pub mod metrics;
+pub mod plots;
 pub mod snapshot;
 pub mod summary;
 

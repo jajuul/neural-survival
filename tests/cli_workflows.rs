@@ -25,6 +25,7 @@ fn batch_command_writes_expected_artifacts() {
     .expect("batch command should succeed");
 
     assert!(out.join("metrics.csv").exists());
+    assert!(out.join("fitness.svg").exists());
     assert!(out.join("run_summary.json").exists());
     assert!(out.join("snapshot_gen_0003.json").exists());
 }
@@ -41,6 +42,7 @@ fn run_command_fast_forwards_and_creates_snapshot() {
     }))
     .expect("run command should succeed");
 
+    assert!(out.join("fitness.svg").exists());
     assert!(out.join("snapshot_gen_0002.json").exists());
 }
 

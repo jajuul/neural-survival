@@ -1,11 +1,12 @@
 # io
 
 ## Purpose
-This module persists experiment artifacts (`metrics.csv`, `run_summary.json`, snapshots).
+This module persists experiment artifacts (`metrics.csv`, `fitness.svg`, `run_summary.json`, snapshots).
 
 ## Behavior
 - Validates output directory safety (must be absent or empty).
 - Writes generation metrics CSV rows.
+- Writes an SVG plot of best and mean fitness over generations.
 - Writes run summary JSON with config hash and resolved config.
 - Writes and reads snapshot JSON payloads.
 
@@ -14,6 +15,7 @@ This module persists experiment artifacts (`metrics.csv`, `run_summary.json`, sn
 
 ## Outputs
 - `metrics.csv`
+- `fitness.svg`
 - `run_summary.json`
 - `snapshot_gen_<n>.json`
 

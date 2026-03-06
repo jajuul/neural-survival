@@ -20,13 +20,13 @@ max_turn_rate_radians = 3.1415927
 default_perception_radius = 10.0
 default_perception_channels = 3
 default_network_size = 64
-mlp_hidden_size = 8
+mlp_hidden_size = 15
 ltc_state_size = 8
 default_metabolic_efficiency = 1.0
 controller_ltc_probability = 0.5
-fitness_weight_survival = 0.50
+fitness_weight_survival = 0.050
 fitness_weight_food = 10.0
-fitness_weight_energy = 0.5
+fitness_weight_energy = 0.05
 
 [rule_toggles]
 energy_by_speed = false

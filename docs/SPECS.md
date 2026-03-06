@@ -7,6 +7,7 @@ Version 1 focuses on:
 - Fast, deterministic, headless evolution runs.
 - Visual inspection of evolved populations in a GUI.
 - Side-by-side support for feed-forward MLP and Liquid Time-Constant (LTC) controllers.
+- In-viewer continuation of evolution from loaded snapshots.
 
 ## Goals
 1. Evolve agents with a genetic algorithm in a 2D toroidal environment.
@@ -15,6 +16,7 @@ Version 1 focuses on:
 4. Allow world-rule toggles for energy consumption factors.
 5. Support running N headless generations before opening the GUI simulation view.
 6. Export per-generation metrics and run summaries for offline analysis.
+7. Surface generation progress in CLI/GUI during long evolution runs.
 
 ## Non-Goals (v1)
 1. Predator-prey behavior.
@@ -42,6 +44,9 @@ Version 1 focuses on:
   - LTC network.
 - Inference backend: custom lightweight deterministic Rust implementation.
 - Both controller families must be usable through one shared controller interface.
+- Controller capacity knobs are runtime-configurable via config:
+  - `mlp_hidden_size`
+  - `ltc_state_size`
 
 ### Evolution
 - Genetic algorithm strategy:
@@ -49,6 +54,7 @@ Version 1 focuses on:
   - Tournament selection.
   - Crossover.
   - Mutation.
+- Controller families evolve in separate pools (MLP and LTC do not interbreed).
 - Reproducibility: strict seeded determinism for same seed/config/platform assumptions.
 
 ## User Workflows
@@ -62,11 +68,13 @@ Version 1 focuses on:
 1. User runs headless batch for many generations.
 2. Application outputs metrics and run summary files.
 3. User compares runs across seeds/configs offline.
+4. Output directory must be absent or empty (non-empty directories are rejected to prevent artifact mixing).
 
 ### 3) Interactive inspection
 1. User opens saved snapshot in GUI.
 2. User inspects movement, survival, and top-level statistics.
-3. User toggles active world rules and reruns from seed/config.
+3. User can pause/resume, adjust simulation speed, and toggle active world rules.
+4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `episode steps`, `mutation rate`).
 
 ## Public Interfaces and Types
 
@@ -134,8 +142,9 @@ pub struct RuleToggles {
 ### Sensors and Actions
 - Sensor vector includes:
   - Core normalized scalar cues (`x`, `y`, `energy`, `speed`).
-  - Shorelark-inspired "eye" bins: angular food intensity cells within a configurable field-of-view and perception range.
-  - Per-agent channel count trait controls active eye bin count (bounded by fixed controller input width).
+  - Shorelark-inspired "eye" bins: angular food-intensity cells within a configurable field-of-view and perception range.
+  - Per-agent channel count trait controls active eye bin count.
+  - Fixed controller input width where inactive eye bins are zero-filled (current width: `4 + 24 = 28` values).
 - Action vector controls:
   - Steering direction change.
   - Throttle/drive magnitude.
@@ -162,6 +171,7 @@ Weights are config-driven and exported in run metadata.
 - Selection: tournament selection.
 - Retention: elitism by top fitness percentile/count.
 - Reproduction: crossover followed by mutation.
+- Species isolation: parent selection and reproduction are partitioned by `ControllerKind`.
 - Trait genes and brain genes are both subject to mutation and crossover.
 - Mutations are bounded to valid ranges.
 - All random draws use deterministic seeded RNG streams.
@@ -180,13 +190,21 @@ Weights are config-driven and exported in run metadata.
 - Best and mean fitness.
 - Controller-family distribution (MLP/LTC).
 - Active world-rule toggle states.
+- Evolution continuation progress while GUI-triggered evolution is running.
 
 ### Controls
-- Pause/resume.
+- Start/stop simulation (pause/resume).
 - Simulation speed multiplier.
 - Toggle energy rule flags.
 - Restart from seed/config.
 - Load snapshot for replay/inspection.
+- Typed continuation controls:
+  - generations to evolve
+  - world width / world height
+  - food count
+  - episode steps
+  - mutation rate
+- Run continuation evolution from GUI controls.
 
 ## Data Export
 
@@ -194,10 +212,17 @@ Weights are config-driven and exported in run metadata.
 1. `metrics.csv`
    - One row per generation.
    - Includes generation, best/mean fitness, survival stats, controller distribution, config hash.
-2. `run_summary.json`
+2. `fitness.svg`
+   - Line chart for best and mean fitness vs generation.
+   - Written for headless runs to provide quick visual trend inspection.
+3. `run_summary.json`
    - Seed, resolved config, fitness weights, runtime metadata.
-3. `snapshot_gen_<n>.json`
+4. `snapshot_gen_<n>.json`
    - Population genomes and minimal state for viewer playback/start.
+
+### Progress Feedback
+- CLI `run` and `batch` print generation progress in increments of 10 generations (and always on completion).
+- GUI continuation status/title displays progress with the same 10-generation cadence (and exact completion).
 
 ## Repository Architecture (Planned)
 - `src/main.rs`: CLI entry and mode dispatch.
@@ -240,4 +265,14 @@ Weights are config-driven and exported in run metadata.
 - Elitism: top 10%.
 - Tournament size: 5.
 - Mutation rate: 0.15 per gene.
+- Default energy coefficients in `configs/default.toml`:
+  - `base_energy_cost_per_second = 0.005`
+  - `speed_energy_cost_factor = 0.0003`
+  - `network_energy_cost_factor = 0.000008`
+  - `perception_energy_cost_factor = 0.000005`
+- Eye FOV angle: 1.0 radians.
+- Default perception radius/channels: `10.0` / `3` (with max channels `24`).
+- Default controller sizes: `mlp_hidden_size = 8`, `ltc_state_size = 8`.
+- Default fitness weights: survival `0.50`, food `10.0`, energy `0.5`.
+- Default energy rule toggles in `configs/default.toml`: speed/network/perception all disabled.
 - v1 includes one active food type in simulation, with trait fields prepared for future multi-food compatibility.

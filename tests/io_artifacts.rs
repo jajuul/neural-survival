@@ -31,15 +31,20 @@ fn batch_run_writes_metrics_summary_and_snapshot() {
     assert_eq!(run.generations.len(), 3);
 
     let metrics_path = out_dir.join("metrics.csv");
+    let plot_path = out_dir.join("fitness.svg");
     let summary_path = out_dir.join("run_summary.json");
     let snapshot_path = out_dir.join("snapshot_gen_0003.json");
 
     assert!(metrics_path.exists());
+    assert!(plot_path.exists());
     assert!(summary_path.exists());
     assert!(snapshot_path.exists());
 
     let metrics_content = fs::read_to_string(&metrics_path).expect("metrics file must be readable");
     assert!(metrics_content.contains("generation,best_fitness,mean_fitness,survival_min"));
+    let plot_content = fs::read_to_string(&plot_path).expect("plot file must be readable");
+    assert!(plot_content.contains("best fitness"));
+    assert!(plot_content.contains("mean fitness"));
 
     let snapshot = read_snapshot(&snapshot_path).expect("snapshot should deserialize");
     assert_eq!(snapshot.generation, 3);

@@ -30,6 +30,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-04 18:15Z) Enforced species-isolated GA evolution (MLP and LTC evolve in separate pools with no interbreeding) and throttled progress feedback display cadence to every 10 generations (plus completion) for CLI and GUI progress indicators.
 - [x] (2026-03-04 19:05Z) Implemented Shorelark-inspired food vision ("eyes"): angular food-intensity bins with configurable FOV, trait-driven active channel count/range, fixed-width controller sensor vectors, updated controller input shapes, and passing sensor/config validation tests.
 - [x] (2026-03-04 19:30Z) Exposed controller layer sizes in TOML/config (`mlp_hidden_size`, `ltc_state_size`), validated non-zero bounds, and wired mixed-controller factory setup to use these configurable sizes.
+- [x] (2026-03-04 19:55Z) Added automatic `fitness.svg` artifact generation (best + mean fitness trends per generation) for headless `run`/`batch` outputs, with integration tests verifying plot presence.
 
 ## Surprises & Discoveries
 
@@ -169,6 +170,10 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: Input size depends on sensor contract and output size maps to steering/throttle controls; exposing hidden/state layers provides flexibility without breaking controller-action interface guarantees.
   Date/Author: 2026-03-04 / Codex
 
+- Decision: Emit a static `fitness.svg` plot artifact during headless runs instead of introducing an in-GUI plotting dependency first.
+  Rationale: This provides immediate, lightweight trend visibility for average/max fitness while preserving deterministic headless workflow and avoiding UI complexity.
+  Date/Author: 2026-03-04 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -200,6 +205,8 @@ Post-plan enhancement (v4): MLP and LTC species now evolve independently without
 Post-plan enhancement (v5): controllers now receive Shorelark-inspired eye inputs (food intensity binned by relative angle and perception range), with fixed-width sensor vectors, new FOV configuration, and trait-driven active eye channel counts.
 
 Post-plan enhancement (v6): model-capacity knobs for `MLP` and `LTC` are now runtime-configurable through TOML (`mlp_hidden_size`, `ltc_state_size`) with validation and factory wiring.
+
+Post-plan enhancement (v7): headless runs now export `fitness.svg` to visualize best and mean fitness trends over generations without external tooling.
 
 ## Context and Orientation
 
@@ -529,3 +536,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after species-isolated evolution and feedback-throttling changes to document the no-interbreeding evolution partitioning and 10-generation progress cadence.
 2026-03-04: Plan updated after Shorelark-inspired eye-sensor implementation to document fixed-width vision-bin sensing, FOV configuration, and compatibility constraints between evolvable perception traits and static controller genome shapes.
 2026-03-04: Plan updated after introducing config-driven controller layer sizes so network capacity can be tuned in `configs/default.toml` without code edits.
+2026-03-04: Plan updated after adding headless fitness-plot artifact generation (`fitness.svg`) and corresponding artifact tests.

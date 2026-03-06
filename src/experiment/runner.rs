@@ -9,6 +9,7 @@ use crate::genetics::{
 };
 use crate::io::ensure_output_dir;
 use crate::io::metrics::write_metrics_csv;
+use crate::io::plots::write_fitness_svg;
 use crate::io::snapshot::{SnapshotFile, write_snapshot};
 use crate::io::summary::{RunSummary, config_hash, write_run_summary};
 use crate::sim::{basic_sensor_vector, initialize_world, step_world_with_actions};
@@ -171,6 +172,7 @@ where
     let cfg_hash = config_hash(config)?;
 
     write_metrics_csv(out_dir, &run.generations, &cfg_hash)?;
+    write_fitness_svg(out_dir, &run.generations)?;
     write_run_summary(
         out_dir,
         &RunSummary {
