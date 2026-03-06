@@ -198,8 +198,8 @@ Weights are config-driven and exported in run metadata.
 ## GUI Specification (Bevy)
 
 ### Visual Encoding
-- MLP-controlled agents: circles.
-- LTC-controlled agents: triangles.
+- MLP-controlled agents: circles with a forward marker so heading is visible.
+- LTC-controlled agents: triangles rotated to show heading directly.
 - Food: small static points.
 
 ### Live Statistics Panel

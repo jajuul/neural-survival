@@ -85,6 +85,13 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if !(0.0..=1.0).contains(&config.food_respawn_probability) {
+        return Err(ConfigError::Invalid {
+            field: "food_respawn_probability",
+            message: "must be in [0, 1]".into(),
+        });
+    }
+
     if !(0.0..=1.0).contains(&config.elitism_fraction) || config.elitism_fraction == 0.0 {
         return Err(ConfigError::Invalid {
             field: "elitism_fraction",
@@ -290,6 +297,7 @@ mod tests {
         assert_eq!(parsed.episode_steps, 300);
         assert_eq!(parsed.population_size, 128);
         assert_eq!(parsed.food_count, 400);
+        assert_eq!(parsed.food_respawn_probability, 1.0);
         assert_eq!(parsed.elitism_fraction, 0.10);
         assert_eq!(parsed.tournament_size, 5);
         assert_eq!(parsed.mutation_rate, 0.15);
@@ -328,6 +336,22 @@ mod tests {
             ConfigError::Invalid { field, .. } => assert_eq!(field, "tournament_size"),
             _ => panic!("expected ConfigError::Invalid"),
         }
+    }
+
+    #[test]
+    fn invalid_food_respawn_probability_is_rejected() {
+        let raw = r#"
+            food_respawn_probability = 1.5
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("respawn probability above 1 must fail");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                field: "food_respawn_probability",
+                ..
+            }
+        ));
     }
 
     #[test]

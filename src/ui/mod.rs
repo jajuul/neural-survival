@@ -54,6 +54,9 @@ mod bevy_viewer {
     }
 
     #[derive(Component)]
+    struct AgentHeadingMarker;
+
+    #[derive(Component)]
     struct FoodVisual {
         id: u32,
     }
@@ -154,6 +157,11 @@ mod bevy_viewer {
                 NumericFieldKind::MutationRate => &mut self.mutation_rate,
             }
         }
+    }
+
+    fn visual_heading_rotation(heading_radians: f32) -> Quat {
+        // The sim uses 0 rad = +X, while Bevy's regular polygon mesh points along +Y.
+        Quat::from_rotation_z(heading_radians - std::f32::consts::FRAC_PI_2)
     }
 
     #[derive(Clone, Debug)]
@@ -973,6 +981,7 @@ mod bevy_viewer {
                         1.0
                     },
                 );
+                transform.rotation = visual_heading_rotation(agent.heading_radians);
                 transform.scale = if runtime.selected_agent_index == Some(visual.index) {
                     bevy::math::Vec3::splat(1.8)
                 } else {
@@ -1308,17 +1317,37 @@ mod bevy_viewer {
             };
             let material = materials.add(ColorMaterial::from(color));
 
-            commands.spawn((
-                Mesh2d(mesh),
-                MeshMaterial2d(material),
-                Transform::from_translation(world_to_screen(
-                    agent.position,
-                    world.width,
-                    world.height,
-                    1.0,
-                )),
-                AgentVisual { index: idx },
-            ));
+            let entity = commands
+                .spawn((
+                    Mesh2d(mesh),
+                    MeshMaterial2d(material),
+                    Transform {
+                        translation: world_to_screen(
+                            agent.position,
+                            world.width,
+                            world.height,
+                            1.0,
+                        ),
+                        rotation: visual_heading_rotation(agent.heading_radians),
+                        ..default()
+                    },
+                    AgentVisual { index: idx },
+                ))
+                .id();
+
+            if kind == ControllerKind::Mlp {
+                commands.entity(entity).with_children(|parent| {
+                    parent.spawn((
+                        Sprite {
+                            color: Color::srgb(0.95, 0.97, 1.0),
+                            custom_size: Some(bevy::math::Vec2::new(2.0, 6.0)),
+                            ..default()
+                        },
+                        Transform::from_translation(bevy::math::Vec3::new(0.0, 6.5, 0.1)),
+                        AgentHeadingMarker,
+                    ));
+                });
+            }
         }
     }
 
