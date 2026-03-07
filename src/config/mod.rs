@@ -337,6 +337,21 @@ mod tests {
     }
 
     #[test]
+    fn evaluation_schedule_parses_from_toml() {
+        let raw = r#"
+            evaluation_mode = "solo"
+            evaluation_mode_after_switch = "shared"
+            evaluation_mode_switch_after_generation = 100
+        "#;
+
+        let parsed = parse_config_toml(raw).expect("evaluation schedule should parse");
+
+        assert_eq!(parsed.evaluation_mode, EvaluationMode::Solo);
+        assert_eq!(parsed.evaluation_mode_after_switch, EvaluationMode::Shared);
+        assert_eq!(parsed.evaluation_mode_switch_after_generation, 100);
+    }
+
+    #[test]
     fn invalid_tournament_size_is_rejected() {
         let raw = r#"
             population_size = 4

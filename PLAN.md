@@ -38,6 +38,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-06 22:01Z) Switched generation scoring from private single-agent episodes to deterministic shared-world population episodes with synchronous action collection, added a competition-focused unit test, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-06 22:20Z) Extended the eye model to sense nearby agents as well as food, kept controller input width stable by feeding signed `food-agent` eye bins, updated the GUI inspector to show decomposed food/agent activations, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-07 00:10Z) Reworked eyes to use separate food and agent controller channels, added configurable `evaluation_mode` (`solo`/`shared`) with a GUI toggle for continuation runs, restored `solo` as the default evaluation regime, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
+- [x] (2026-03-07 00:45Z) Added scheduled evaluation-mode switching (`evaluation_mode`, `evaluation_mode_after_switch`, `evaluation_mode_switch_after_generation`) to config, runner, and GUI so curricula such as `solo -> shared @ 100` are reproducible without manual toggling.
 
 ## Surprises & Discoveries
 
@@ -169,6 +170,10 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Decision: Replace the signed-merged eye input with separate food and agent channel stacks, and add `evaluation_mode` so `solo` remains the default while `shared` stays available for comparison.
   Rationale: Backward compatibility is no longer a goal. Separate channels preserve information needed for future extensions such as edible/prey/predator distinctions, and a switchable evaluation regime makes behavior comparisons reproducible instead of conflating sensor and scoring changes.
+  Date/Author: 2026-03-07 / Codex
+
+- Decision: Promote `solo -> shared` curricula to explicit config/runtime schedule fields instead of manual GUI timing.
+  Rationale: The observed LTC behavior depends materially on when shared-world pressure is introduced, so the regime transition must be encoded in config and reused by both CLI and GUI runs to remain reproducible.
   Date/Author: 2026-03-07 / Codex
 
 - Decision: Enforce output-directory safety by rejecting existing non-empty `--out` directories at I/O layer entry.

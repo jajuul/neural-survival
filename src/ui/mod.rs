@@ -81,6 +81,12 @@ mod bevy_viewer {
     struct EvaluationModeButtonLabel;
 
     #[derive(Component)]
+    struct EvaluationModeAfterSwitchButton;
+
+    #[derive(Component)]
+    struct EvaluationModeAfterSwitchButtonLabel;
+
+    #[derive(Component)]
     struct FitnessPlotSummaryText;
 
     #[derive(Component)]
@@ -89,6 +95,7 @@ mod bevy_viewer {
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum NumericFieldKind {
         EvolveGenerations,
+        EvaluationSwitchAfterGeneration,
         WorldWidth,
         WorldHeight,
         FoodCount,
@@ -97,8 +104,9 @@ mod bevy_viewer {
         MutationRate,
     }
 
-    const NUMERIC_FIELDS: [NumericFieldKind; 7] = [
+    const NUMERIC_FIELDS: [NumericFieldKind; 8] = [
         NumericFieldKind::EvolveGenerations,
+        NumericFieldKind::EvaluationSwitchAfterGeneration,
         NumericFieldKind::WorldWidth,
         NumericFieldKind::WorldHeight,
         NumericFieldKind::FoodCount,
@@ -120,6 +128,7 @@ mod bevy_viewer {
     #[derive(Clone, Debug)]
     struct NumericFieldBuffers {
         evolve_generations: String,
+        evaluation_switch_after_generation: String,
         world_width: String,
         world_height: String,
         food_count: String,
@@ -132,6 +141,9 @@ mod bevy_viewer {
         fn from_state(evolve_generations: u32, config: &crate::config::SimulationConfig) -> Self {
             Self {
                 evolve_generations: evolve_generations.to_string(),
+                evaluation_switch_after_generation: config
+                    .evaluation_mode_switch_after_generation
+                    .to_string(),
                 world_width: format!("{:.1}", config.world_width),
                 world_height: format!("{:.1}", config.world_height),
                 food_count: config.food_count.to_string(),
@@ -144,6 +156,9 @@ mod bevy_viewer {
         fn get(&self, kind: NumericFieldKind) -> &str {
             match kind {
                 NumericFieldKind::EvolveGenerations => &self.evolve_generations,
+                NumericFieldKind::EvaluationSwitchAfterGeneration => {
+                    &self.evaluation_switch_after_generation
+                }
                 NumericFieldKind::WorldWidth => &self.world_width,
                 NumericFieldKind::WorldHeight => &self.world_height,
                 NumericFieldKind::FoodCount => &self.food_count,
@@ -156,6 +171,9 @@ mod bevy_viewer {
         fn get_mut(&mut self, kind: NumericFieldKind) -> &mut String {
             match kind {
                 NumericFieldKind::EvolveGenerations => &mut self.evolve_generations,
+                NumericFieldKind::EvaluationSwitchAfterGeneration => {
+                    &mut self.evaluation_switch_after_generation
+                }
                 NumericFieldKind::WorldWidth => &mut self.world_width,
                 NumericFieldKind::WorldHeight => &mut self.world_height,
                 NumericFieldKind::FoodCount => &mut self.food_count,
@@ -261,6 +279,7 @@ mod bevy_viewer {
                     keyboard_controls,
                     start_stop_button_interaction,
                     evaluation_mode_button_interaction,
+                    evaluation_mode_after_switch_button_interaction,
                     numeric_field_focus_interaction,
                     numeric_field_keyboard_input,
                     evolve_run_button_interaction,
@@ -354,6 +373,48 @@ mod bevy_viewer {
                                 TextFont::from_font_size(15.0),
                                 TextColor(Color::srgb(0.95, 0.95, 0.95)),
                                 EvaluationModeButtonLabel,
+                            ));
+                        });
+                    });
+
+                parent
+                    .spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(8.0),
+                        align_items: AlignItems::Center,
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        row.spawn((
+                            Text::new("After Switch"),
+                            TextFont::from_font_size(15.0),
+                            TextColor(Color::srgb(0.88, 0.88, 0.88)),
+                            Node {
+                                width: Val::Px(150.0),
+                                ..default()
+                            },
+                        ));
+
+                        row.spawn((
+                            Button,
+                            Node {
+                                width: Val::Px(140.0),
+                                height: Val::Px(30.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.35, 0.35, 0.42)),
+                            EvaluationModeAfterSwitchButton,
+                        ))
+                        .with_children(|button| {
+                            button.spawn((
+                                Text::new(format_evaluation_mode(
+                                    runtime.config.evaluation_mode_after_switch,
+                                )),
+                                TextFont::from_font_size(15.0),
+                                TextColor(Color::srgb(0.95, 0.95, 0.95)),
+                                EvaluationModeAfterSwitchButtonLabel,
                             ));
                         });
                     });
@@ -594,10 +655,32 @@ mod bevy_viewer {
         for interaction in &interactions {
             if matches!(*interaction, Interaction::Pressed) {
                 runtime.active_input = None;
-                runtime.config.evaluation_mode = match runtime.config.evaluation_mode {
-                    EvaluationMode::Solo => EvaluationMode::Shared,
-                    EvaluationMode::Shared => EvaluationMode::Solo,
-                };
+                runtime.config.evaluation_mode =
+                    toggle_evaluation_mode(runtime.config.evaluation_mode);
+            }
+        }
+    }
+
+    fn evaluation_mode_after_switch_button_interaction(
+        interactions: Query<
+            &Interaction,
+            (
+                Changed<Interaction>,
+                With<Button>,
+                With<EvaluationModeAfterSwitchButton>,
+            ),
+        >,
+        mut runtime: ResMut<ViewerRuntime>,
+    ) {
+        if runtime.evolution_job.is_some() {
+            return;
+        }
+
+        for interaction in &interactions {
+            if matches!(*interaction, Interaction::Pressed) {
+                runtime.active_input = None;
+                runtime.config.evaluation_mode_after_switch =
+                    toggle_evaluation_mode(runtime.config.evaluation_mode_after_switch);
             }
         }
     }
@@ -822,6 +905,7 @@ mod bevy_viewer {
                 Option<&NumericField>,
                 Option<&EvolveRunButton>,
                 Option<&EvaluationModeButton>,
+                Option<&EvaluationModeAfterSwitchButton>,
             ),
             With<Button>,
         >,
@@ -830,11 +914,18 @@ mod bevy_viewer {
             Option<&NumericFieldValueText>,
             Option<&EvolveStatusText>,
             Option<&EvaluationModeButtonLabel>,
+            Option<&EvaluationModeAfterSwitchButtonLabel>,
         )>,
     ) {
         let is_evolving = runtime.evolution_job.is_some();
-        for (interaction, mut color, maybe_field, maybe_evolve, maybe_eval_mode) in
-            &mut button_query
+        for (
+            interaction,
+            mut color,
+            maybe_field,
+            maybe_evolve,
+            maybe_eval_mode,
+            maybe_eval_mode_after,
+        ) in &mut button_query
         {
             if let Some(field) = maybe_field {
                 *color = numeric_field_color(
@@ -847,6 +938,11 @@ mod bevy_viewer {
                 *color = evolve_run_button_color(*interaction, is_evolving);
             } else if maybe_eval_mode.is_some() {
                 *color = evaluation_mode_button_color(*interaction, runtime.config.evaluation_mode);
+            } else if maybe_eval_mode_after.is_some() {
+                *color = evaluation_mode_button_color(
+                    *interaction,
+                    runtime.config.evaluation_mode_after_switch,
+                );
             }
         }
 
@@ -863,13 +959,18 @@ mod bevy_viewer {
             )
         };
 
-        for (mut text, value_marker, status_marker, eval_mode_marker) in &mut text_query {
+        for (mut text, value_marker, status_marker, eval_mode_marker, eval_mode_after_marker) in
+            &mut text_query
+        {
             if let Some(marker) = value_marker {
                 **text = runtime.field_buffers.get(marker.kind).to_string();
             } else if status_marker.is_some() {
                 **text = status.clone();
             } else if eval_mode_marker.is_some() {
                 **text = format_evaluation_mode(runtime.config.evaluation_mode).to_string();
+            } else if eval_mode_after_marker.is_some() {
+                **text =
+                    format_evaluation_mode(runtime.config.evaluation_mode_after_switch).to_string();
             }
         }
     }
@@ -1173,7 +1274,7 @@ mod bevy_viewer {
             mlp,
             ltc,
             runtime.speed_multiplier,
-            format_evaluation_mode(runtime.config.evaluation_mode),
+            format_evaluation_schedule(&runtime.config),
             runtime.config.world_width,
             runtime.config.world_height,
             runtime.config.rule_toggles.energy_by_speed,
@@ -1630,6 +1731,7 @@ mod bevy_viewer {
     fn field_label(kind: NumericFieldKind) -> &'static str {
         match kind {
             NumericFieldKind::EvolveGenerations => "Generations",
+            NumericFieldKind::EvaluationSwitchAfterGeneration => "Eval Switch After",
             NumericFieldKind::WorldWidth => "World Width",
             NumericFieldKind::WorldHeight => "World Height",
             NumericFieldKind::FoodCount => "Food Count",
@@ -1643,6 +1745,26 @@ mod bevy_viewer {
         match mode {
             EvaluationMode::Solo => "Solo",
             EvaluationMode::Shared => "Shared",
+        }
+    }
+
+    fn format_evaluation_schedule(config: &crate::config::SimulationConfig) -> String {
+        if config.evaluation_mode_switch_after_generation == 0 {
+            format_evaluation_mode(config.evaluation_mode).to_string()
+        } else {
+            format!(
+                "{}->{}@{}",
+                format_evaluation_mode(config.evaluation_mode),
+                format_evaluation_mode(config.evaluation_mode_after_switch),
+                config.evaluation_mode_switch_after_generation
+            )
+        }
+    }
+
+    fn toggle_evaluation_mode(mode: EvaluationMode) -> EvaluationMode {
+        match mode {
+            EvaluationMode::Solo => EvaluationMode::Shared,
+            EvaluationMode::Shared => EvaluationMode::Solo,
         }
     }
 
@@ -1688,6 +1810,11 @@ mod bevy_viewer {
                         value.clamp(EVOLVE_GENERATIONS_MIN, EVOLVE_GENERATIONS_MAX);
                 }
             }
+            NumericFieldKind::EvaluationSwitchAfterGeneration => {
+                if let Ok(value) = raw.parse::<u32>() {
+                    runtime.config.evaluation_mode_switch_after_generation = value;
+                }
+            }
             NumericFieldKind::WorldWidth => {
                 if let Ok(value) = raw.parse::<f32>() {
                     runtime.config.world_width = value.clamp(WORLD_SIZE_MIN, WORLD_SIZE_MAX);
@@ -1726,6 +1853,12 @@ mod bevy_viewer {
         match field {
             NumericFieldKind::EvolveGenerations => {
                 runtime.field_buffers.evolve_generations = runtime.evolve_generations.to_string();
+            }
+            NumericFieldKind::EvaluationSwitchAfterGeneration => {
+                runtime.field_buffers.evaluation_switch_after_generation = runtime
+                    .config
+                    .evaluation_mode_switch_after_generation
+                    .to_string();
             }
             NumericFieldKind::WorldWidth => {
                 runtime.field_buffers.world_width = format!("{:.1}", runtime.config.world_width);

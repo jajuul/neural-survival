@@ -215,7 +215,7 @@ fn evaluate_population(
     population: &[AgentGenome],
     factory: &impl ControllerFactory,
 ) -> Vec<EvaluatedGenome> {
-    match config.evaluation_mode {
+    match evaluation_mode_for_generation(config, generation_index) {
         EvaluationMode::Solo => population
             .iter()
             .enumerate()
@@ -246,6 +246,19 @@ fn evaluate_population(
                 })
                 .collect()
         }
+    }
+}
+
+fn evaluation_mode_for_generation(
+    config: &SimulationConfig,
+    generation_index: u32,
+) -> EvaluationMode {
+    if config.evaluation_mode_switch_after_generation > 0
+        && generation_index >= config.evaluation_mode_switch_after_generation
+    {
+        config.evaluation_mode_after_switch
+    } else {
+        config.evaluation_mode
     }
 }
 
@@ -520,11 +533,12 @@ struct EvaluatedGenome {
 #[cfg(test)]
 mod tests {
     use crate::brain::{ControllerKind, NeuralController};
-    use crate::config::SimulationConfig;
+    use crate::config::{EvaluationMode, SimulationConfig};
     use crate::sim::{ActionVector, AgentState, FoodState, SensorVector, Vec2, WorldState};
 
     use super::{
-        continue_generations_from_population, evaluate_population_in_world, run_generations,
+        continue_generations_from_population, evaluate_population_in_world,
+        evaluation_mode_for_generation, run_generations,
     };
 
     #[derive(Default)]
@@ -670,6 +684,33 @@ mod tests {
         assert_eq!(
             results.iter().map(|entry| entry.food_consumed).sum::<u32>(),
             1
+        );
+    }
+
+    #[test]
+    fn evaluation_mode_schedule_switches_on_boundary_generation() {
+        let config = SimulationConfig {
+            evaluation_mode: EvaluationMode::Solo,
+            evaluation_mode_after_switch: EvaluationMode::Shared,
+            evaluation_mode_switch_after_generation: 2,
+            ..SimulationConfig::default()
+        };
+
+        assert_eq!(
+            evaluation_mode_for_generation(&config, 0),
+            EvaluationMode::Solo
+        );
+        assert_eq!(
+            evaluation_mode_for_generation(&config, 1),
+            EvaluationMode::Solo
+        );
+        assert_eq!(
+            evaluation_mode_for_generation(&config, 2),
+            EvaluationMode::Shared
+        );
+        assert_eq!(
+            evaluation_mode_for_generation(&config, 9),
+            EvaluationMode::Shared
         );
     }
 }

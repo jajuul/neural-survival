@@ -139,6 +139,8 @@ pub struct TraitGenome {
 pub struct SimulationConfig {
     // world, timing, food, GA, and fitness fields
     pub evaluation_mode: EvaluationMode,
+    pub evaluation_mode_after_switch: EvaluationMode,
+    pub evaluation_mode_switch_after_generation: u32,
 }
 
 pub enum EvaluationMode {
@@ -195,7 +197,13 @@ Per-agent episode fitness is weighted from:
 - Food consumed.
 - Remaining energy.
 
-Fitness attribution is always per agent. The source episode depends on `evaluation_mode`: private single-agent episodes in `solo`, shared-population episodes in `shared`.
+Fitness attribution is always per agent. The source episode depends on the effective evaluation mode for that generation: private single-agent episodes in `solo`, shared-population episodes in `shared`.
+
+Evaluation mode can be scheduled across a run:
+- `evaluation_mode`: initial mode
+- `evaluation_mode_after_switch`: mode used after the switch point
+- `evaluation_mode_switch_after_generation`: generation index where the switch becomes active
+- `0` disables switching and keeps `evaluation_mode` for the whole run
 
 Weights are config-driven and exported in run metadata.
 
@@ -238,6 +246,10 @@ Weights are config-driven and exported in run metadata.
 - Toggle energy rule flags.
 - Restart from seed/config.
 - Load snapshot for replay/inspection.
+- Continuation evaluation schedule controls:
+  - initial evaluation mode
+  - post-switch evaluation mode
+  - switch generation (`0` disables the schedule)
 - View in-GUI fitness trend plot for best and mean fitness across generations.
 - Typed continuation controls:
   - generations to evolve
