@@ -9,6 +9,7 @@ This module provides viewer entrypoints for loading and inspecting simulation sn
   - directional agent rendering, so heading is visible directly in the scene (`LTC` triangles rotate with heading; `MLP` circles include a forward marker)
   - start/stop simulation control
   - typed numeric fields for evolution continuation (`generations`, `world size`, `food count`, `food respawn`, `episode steps`, `mutation rate`)
+  - an evaluation-mode toggle (`Solo`/`Shared`) that applies to GUI-triggered continuation runs
   - continue-evolution action that applies edited parameters to in-GUI evolution
   - live evolution progress visibility (`current/total generations`) during GUI-triggered continuation, updated every 10 generations (plus completion)
   - an in-viewer fitness-history plot showing best and mean fitness over generations from snapshot history and GUI-triggered continuation runs

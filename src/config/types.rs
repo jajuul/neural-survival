@@ -1,7 +1,21 @@
 use serde::{Deserialize, Serialize};
 
 /// Hard upper bound for evolvable `perception_channels`.
-pub const MAX_PERCEPTION_CHANNELS: u16 = 24;
+pub const MAX_PERCEPTION_CHANNELS: u16 = 10;
+
+/// Runtime evaluation regime for GA fitness scoring.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum EvaluationMode {
+    Solo,
+    Shared,
+}
+
+impl Default for EvaluationMode {
+    fn default() -> Self {
+        Self::Solo
+    }
+}
 
 /// Runtime switches for optional energy model terms.
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -53,6 +67,7 @@ pub struct SimulationConfig {
     pub ltc_state_size: usize,
     pub default_metabolic_efficiency: f32,
     pub controller_ltc_probability: f32,
+    pub evaluation_mode: EvaluationMode,
     pub fitness_weight_survival: f32,
     pub fitness_weight_food: f32,
     pub fitness_weight_energy: f32,
@@ -89,6 +104,7 @@ impl Default for SimulationConfig {
             ltc_state_size: 8,
             default_metabolic_efficiency: 1.0,
             controller_ltc_probability: 0.5,
+            evaluation_mode: EvaluationMode::Solo,
             fitness_weight_survival: 1.0,
             fitness_weight_food: 2.0,
             fitness_weight_energy: 0.5,

@@ -56,7 +56,9 @@ Version 1 focuses on:
   - Tournament selection.
   - Crossover.
   - Mutation.
-- Fitness evaluation runs the current generation inside a shared controller-driven world, so agents compete indirectly through food depletion during scoring.
+- Fitness evaluation mode is configurable:
+  - `solo`: each genome is scored in a private deterministic episode
+  - `shared`: the current generation is scored inside a shared controller-driven world, so agents compete indirectly through food depletion
 - Controller families evolve in separate pools (MLP and LTC do not interbreed).
 - Reproducibility: strict seeded determinism for same seed/config/platform assumptions.
 
@@ -78,7 +80,7 @@ Version 1 focuses on:
 1. User opens saved snapshot in GUI.
 2. User inspects movement, survival, and top-level statistics.
 3. User can pause/resume, adjust simulation speed, and toggle active world rules.
-4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `food respawn`, `episode steps`, `mutation rate`).
+4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `food respawn`, `episode steps`, `mutation rate`) and a selectable evaluation mode (`solo` or `shared`).
 5. User can click an agent in the GUI to inspect its current food/agent eye-bin activations, controller outputs, and last-step energy-cost breakdown.
 
 ## Public Interfaces and Types
@@ -136,6 +138,12 @@ pub struct TraitGenome {
 ```rust
 pub struct SimulationConfig {
     // world, timing, food, GA, and fitness fields
+    pub evaluation_mode: EvaluationMode,
+}
+
+pub enum EvaluationMode {
+    Solo,
+    Shared,
 }
 
 pub struct RuleToggles {
@@ -162,11 +170,12 @@ pub struct RuleToggles {
 - Sensor vector includes:
   - Core normalized scalar cues (`x`, `y`, `energy`, `speed`).
   - Shorelark-inspired "eye" bins: angular perception cells within a configurable field-of-view and perception range.
-  - Eye bins sense both food and other agents. The controller-facing value is the signed combination `food_bin - agent_bin`, while observability keeps the decomposed food/agent contributions.
+  - Eye bins sense both food and other agents.
+  - Controller input uses separate channel stacks for food bins and agent bins, preserving type information for future extensions such as edible-agent versus predator-agent channels.
   - Per-agent channel count trait controls active eye bin count.
   - Per-agent `eye_cell_angle_radians` trait controls how much angle each eye/bin covers.
   - Total visible field of view is derived from evolved eye count and evolved per-eye angle.
-  - Fixed controller input width where inactive eye bins are zero-filled (current width: `4 + 24 = 28` values).
+  - Fixed controller input width where inactive eye bins are zero-filled (current width: `4 + 10 food + 10 agent = 24` values).
 - Action vector controls:
   - Steering direction change.
   - Throttle/drive magnitude.
@@ -186,7 +195,7 @@ Per-agent episode fitness is weighted from:
 - Food consumed.
 - Remaining energy.
 
-Fitness attribution is still per agent, but those components are gathered from shared-population episodes rather than private single-agent episodes.
+Fitness attribution is always per agent. The source episode depends on `evaluation_mode`: private single-agent episodes in `solo`, shared-population episodes in `shared`.
 
 Weights are config-driven and exported in run metadata.
 
@@ -237,6 +246,7 @@ Weights are config-driven and exported in run metadata.
   - food respawn probability
   - episode steps
   - mutation rate
+  - evaluation mode (`solo`/`shared`)
 - Run continuation evolution from GUI controls.
 - Click an agent to select it; click empty world space to clear selection.
 
@@ -305,7 +315,7 @@ Weights are config-driven and exported in run metadata.
   - `network_energy_cost_factor = 0.000008`
   - `perception_energy_cost_factor = 0.000005`
 - Eye FOV angle: 1.0 radians.
-- Default perception radius/channels: `10.0` / `3` (with max channels `24`).
+- Default perception radius/channels: `10.0` / `3` (with max channels `10`).
 - Default controller sizes: `mlp_hidden_size = 8`, `ltc_state_size = 8`.
 - Default fitness weights: survival `0.50`, food `10.0`, energy `0.5`.
 - Default energy rule toggles in `configs/default.toml`: speed/network/perception all disabled.

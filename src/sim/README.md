@@ -9,7 +9,7 @@ This module implements the deterministic fixed-step simulation core for the 2D t
 - Applies toroidal wrapping, food collision handling, deterministic optional food respawn, and energy loss/gain updates.
 - Builds controller sensor vectors with Shorelark-inspired eyes: food and other agents are binned by relative angle inside a configurable field-of-view and bounded by perception range/channel traits.
 - Eye geometry is trait-driven: agents evolve their perception range, number of eye bins, and per-eye angular width.
-- Exposes decomposed sensor observations (food bins, agent bins, and the signed controller-facing combination) and per-term energy telemetry so the GUI can inspect what a selected agent sensed and paid for on the last step.
+- Exposes decomposed sensor observations (food bins, agent bins, and the flattened controller-facing channel stack) and per-term energy telemetry so the GUI can inspect what a selected agent sensed and paid for on the last step.
 - Produces aggregate episode summaries for reproducibility checks.
 
 ## Inputs

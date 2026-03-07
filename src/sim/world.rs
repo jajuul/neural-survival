@@ -10,10 +10,16 @@ use super::types::{
 
 /// Number of non-vision scalar features included in controller input.
 pub const CORE_SENSOR_FEATURES: usize = 4;
-/// Maximum number of food-vision bins exposed to controllers.
+/// Maximum number of bins in one vision channel.
 pub const MAX_VISION_CELLS: usize = crate::config::MAX_PERCEPTION_CHANNELS as usize;
+/// Number of distinct vision channels currently exposed to controllers.
+///
+/// Keeping this as a constant makes it straightforward to add future channels such as
+/// `edible_agents` or `predators` without reworking the flattening logic again.
+pub const VISION_CHANNEL_COUNT: usize = 2;
 /// Fixed controller input width used by MLP/LTC genomes.
-pub const CONTROLLER_SENSOR_INPUT_SIZE: usize = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
+pub const CONTROLLER_SENSOR_INPUT_SIZE: usize =
+    CORE_SENSOR_FEATURES + MAX_VISION_CELLS * VISION_CHANNEL_COUNT;
 
 /// Build a deterministic world state from config defaults and a seed.
 ///
@@ -191,8 +197,8 @@ pub fn run_steps(world: &mut WorldState, config: &SimulationConfig, steps: u32) 
 ///
 /// Inputs: the current agent state, world dimensions, and config normalization constants.
 /// Output: fixed-width vector
-/// `[x_norm, y_norm, energy_norm, speed_norm, vision_cells(24)]`, where active
-/// vision bins are bounded by the agent's `perception_channels` trait.
+/// `[x_norm, y_norm, energy_norm, speed_norm, food_vision(10), agent_vision(10)]`, where active
+/// bins are bounded by the agent's `perception_channels` trait.
 /// Side effects: none.
 pub fn basic_sensor_vector(
     agent: &AgentState,
@@ -206,7 +212,8 @@ pub fn basic_sensor_vector(
 /// bins without reimplementing the sensor model.
 ///
 /// Inputs: current agent state, immutable world state, and validated config.
-/// Output: core scalar features, eye-bin activations, and the final fixed-width controller input.
+/// Output: core scalar features, decomposed vision activations, and the final fixed-width
+/// controller input.
 /// Side effects: none.
 pub fn sensor_observation(
     agent: &AgentState,
@@ -219,11 +226,7 @@ pub fn sensor_observation(
     let speed_norm = (agent.velocity.length() / agent.max_speed.max(0.001)).clamp(0.0, 1.0);
     let food_eye_bins = food_eye_cells(agent, world, config);
     let agent_eye_bins = agent_eye_cells(agent, world, config);
-    let vision_cells = food_eye_bins
-        .iter()
-        .zip(agent_eye_bins.iter())
-        .map(|(food, sensed_agent)| food - sensed_agent)
-        .collect::<Vec<_>>();
+    let vision_cells = flatten_vision_channels([&food_eye_bins, &agent_eye_bins]);
 
     let mut values = Vec::with_capacity(CONTROLLER_SENSOR_INPUT_SIZE);
     values.extend_from_slice(&[x_norm, y_norm, energy_norm, speed_norm]);
@@ -341,12 +344,8 @@ fn agent_eye_cells(agent: &AgentState, world: &WorldState, _config: &SimulationC
     cells
 }
 
-fn empty_eye_cells(agent: &AgentState) -> Vec<f32> {
-    let mut cells = vec![0.0; MAX_VISION_CELLS];
-    let active_cells = agent.perception_channels.clamp(1, MAX_VISION_CELLS as u16) as usize;
-    cells.truncate(MAX_VISION_CELLS.max(active_cells));
-    cells.resize(MAX_VISION_CELLS, 0.0);
-    cells
+fn empty_eye_cells(_agent: &AgentState) -> Vec<f32> {
+    vec![0.0; MAX_VISION_CELLS]
 }
 
 fn accumulate_eye_cells<I>(
@@ -382,6 +381,17 @@ fn accumulate_eye_cells<I>(
         let cell = ((normalized * active_cells as f32).floor() as usize).min(active_cells - 1);
         cells[cell] += (max_range - distance) / max_range;
     }
+}
+
+fn flatten_vision_channels<'a, I>(channels: I) -> Vec<f32>
+where
+    I: IntoIterator<Item = &'a Vec<f32>>,
+{
+    let mut flat = Vec::with_capacity(MAX_VISION_CELLS * VISION_CHANNEL_COUNT);
+    for channel in channels {
+        flat.extend_from_slice(channel);
+    }
+    flat
 }
 
 fn toroidal_offset(from: Vec2, to: Vec2, width: f32, height: f32) -> Vec2 {
@@ -492,8 +502,8 @@ mod tests {
     use crate::config::{RuleToggles, SimulationConfig};
 
     use super::{
-        AgentState, CORE_SENSOR_FEATURES, FoodState, Vec2, WorldState, basic_sensor_vector,
-        energy_breakdown_for_step, sensor_observation, step_world,
+        AgentState, CORE_SENSOR_FEATURES, FoodState, MAX_VISION_CELLS, Vec2, WorldState,
+        basic_sensor_vector, energy_breakdown_for_step, sensor_observation, step_world,
         step_world_with_actions_and_telemetry, toroidal_distance, wrap_position,
     };
 
@@ -752,12 +762,18 @@ mod tests {
         };
 
         let sensor = sensor_observation(&agent, &world, &config);
-        let vision = &sensor.input.values[CORE_SENSOR_FEATURES..];
-        let active = &vision[..agent.perception_channels as usize];
+        let food_vision =
+            &sensor.input.values[CORE_SENSOR_FEATURES..CORE_SENSOR_FEATURES + MAX_VISION_CELLS];
+        let active = &food_vision[..agent.perception_channels as usize];
 
         assert!(active[2] > 0.0);
         assert!(sensor.food_eye_bins[2] > 0.0);
         assert!(sensor.agent_eye_bins.iter().all(|value| value.abs() < 1e-6));
+        assert!(
+            sensor.input.values[CORE_SENSOR_FEATURES + MAX_VISION_CELLS..]
+                .iter()
+                .all(|value| value.abs() < 1e-6)
+        );
         assert!(
             active
                 .iter()
@@ -789,8 +805,9 @@ mod tests {
         };
 
         let sensor = basic_sensor_vector(&agent, &world, &config);
-        let vision = &sensor.values[CORE_SENSOR_FEATURES..];
-        let active = &vision[..agent.perception_channels as usize];
+        let food_vision =
+            &sensor.values[CORE_SENSOR_FEATURES..CORE_SENSOR_FEATURES + MAX_VISION_CELLS];
+        let active = &food_vision[..agent.perception_channels as usize];
 
         assert!(active.iter().all(|value| value.abs() < 1e-6));
     }
@@ -818,10 +835,15 @@ mod tests {
         };
 
         let sensor = basic_sensor_vector(&agent, &world, &config);
-        let vision = &sensor.values[CORE_SENSOR_FEATURES..];
+        let vision = &sensor.values[CORE_SENSOR_FEATURES..CORE_SENSOR_FEATURES + MAX_VISION_CELLS];
 
         assert!(vision.iter().take(3).any(|value| *value > 0.0));
         assert!(vision.iter().skip(3).all(|value| value.abs() < 1e-6));
+        assert!(
+            sensor.values[CORE_SENSOR_FEATURES + MAX_VISION_CELLS..]
+                .iter()
+                .all(|value| value.abs() < 1e-6)
+        );
     }
 
     #[test]
@@ -855,12 +877,12 @@ mod tests {
         let wide_sensor = basic_sensor_vector(&wide, &world, &config);
 
         assert!(
-            narrow_sensor.values[CORE_SENSOR_FEATURES..]
+            narrow_sensor.values[CORE_SENSOR_FEATURES..CORE_SENSOR_FEATURES + MAX_VISION_CELLS]
                 .iter()
                 .all(|value| value.abs() < 1e-6)
         );
         assert!(
-            wide_sensor.values[CORE_SENSOR_FEATURES..]
+            wide_sensor.values[CORE_SENSOR_FEATURES..CORE_SENSOR_FEATURES + MAX_VISION_CELLS]
                 .iter()
                 .any(|value| *value > 0.0)
         );
@@ -892,7 +914,12 @@ mod tests {
 
         assert!(sensor.agent_eye_bins[2] > 0.0);
         assert!(sensor.food_eye_bins.iter().all(|value| value.abs() < 1e-6));
-        assert!(sensor.eye_bins[2] < 0.0);
+        assert!(sensor.eye_bins[MAX_VISION_CELLS + 2] > 0.0);
+        assert!(
+            sensor.eye_bins[..MAX_VISION_CELLS]
+                .iter()
+                .all(|value| value.abs() < 1e-6)
+        );
     }
 
     #[test]

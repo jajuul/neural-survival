@@ -4,7 +4,7 @@ use thiserror::Error;
 
 pub mod types;
 
-pub use types::{MAX_PERCEPTION_CHANNELS, RuleToggles, SimulationConfig};
+pub use types::{EvaluationMode, MAX_PERCEPTION_CHANNELS, RuleToggles, SimulationConfig};
 
 /// Errors returned while loading or validating configuration.
 #[derive(Debug, Error)]
@@ -284,7 +284,9 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConfigError, MAX_PERCEPTION_CHANNELS, SimulationConfig, parse_config_toml};
+    use super::{
+        ConfigError, EvaluationMode, MAX_PERCEPTION_CHANNELS, SimulationConfig, parse_config_toml,
+    };
 
     #[test]
     fn empty_toml_uses_spec_defaults() {
@@ -321,6 +323,17 @@ mod tests {
         assert_eq!(parsed.world_width, 512.0);
         assert_eq!(parsed.mutation_rate, 0.2);
         assert_eq!(parsed.population_size, 128);
+    }
+
+    #[test]
+    fn evaluation_mode_parses_from_toml() {
+        let raw = r#"
+            evaluation_mode = "shared"
+        "#;
+
+        let parsed = parse_config_toml(raw).expect("evaluation mode should parse");
+
+        assert_eq!(parsed.evaluation_mode, EvaluationMode::Shared);
     }
 
     #[test]

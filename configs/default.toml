@@ -25,9 +25,10 @@ mlp_hidden_size = 8
 ltc_state_size = 8
 default_metabolic_efficiency = 1.0
 controller_ltc_probability = 0.5
-fitness_weight_survival = 1.00
-fitness_weight_food = 2.0
-fitness_weight_energy = 1.0
+evaluation_mode = "solo"
+fitness_weight_survival = 0.00
+fitness_weight_food = 10.0
+fitness_weight_energy = 0.00
 
 [rule_toggles]
 energy_by_speed = true

@@ -3,8 +3,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::brain::{ControllerFactory, ControllerKind};
-use crate::config::SimulationConfig;
+use crate::brain::{ControllerFactory, ControllerKind, NeuralController};
+use crate::config::{EvaluationMode, SimulationConfig};
 use crate::fitness::{FitnessComponents, compute_fitness};
 use crate::genetics::{
     AgentGenome, ScoredGenome, default_mixed_factory, evolve_population, initialize_population,
@@ -14,7 +14,9 @@ use crate::io::metrics::write_metrics_csv;
 use crate::io::plots::write_fitness_svg;
 use crate::io::snapshot::{SnapshotFile, write_snapshot};
 use crate::io::summary::{RunSummary, config_hash, write_run_summary};
-use crate::sim::{basic_sensor_vector, initialize_world, step_world_with_actions};
+use crate::sim::{
+    ActionVector, WorldState, basic_sensor_vector, initialize_world, step_world_with_actions,
+};
 
 /// Per-generation aggregate metrics used for experiment reporting.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -213,24 +215,60 @@ fn evaluate_population(
     population: &[AgentGenome],
     factory: &impl ControllerFactory,
 ) -> Vec<EvaluatedGenome> {
-    population
-        .iter()
-        .enumerate()
-        .map(|(agent_index, genome)| {
-            let eval_seed = per_agent_eval_seed(run_seed, generation_index, agent_index);
-            let components = evaluate_genome(config, eval_seed, genome, factory);
-            let fitness = compute_fitness(components, config);
+    match config.evaluation_mode {
+        EvaluationMode::Solo => population
+            .iter()
+            .enumerate()
+            .map(|(agent_index, genome)| {
+                let eval_seed = per_agent_eval_seed(run_seed, generation_index, agent_index);
+                let components = evaluate_genome_solo(config, eval_seed, genome, factory);
 
-            EvaluatedGenome {
-                genome: genome.clone(),
-                fitness,
-                components,
-            }
-        })
-        .collect()
+                EvaluatedGenome {
+                    fitness: compute_fitness(components, config),
+                    genome: genome.clone(),
+                    components,
+                }
+            })
+            .collect(),
+        EvaluationMode::Shared => {
+            let eval_seed = shared_eval_seed(run_seed, generation_index);
+            let components =
+                evaluate_population_shared_episode(config, eval_seed, population, factory);
+
+            population
+                .iter()
+                .cloned()
+                .zip(components)
+                .map(|(genome, components)| EvaluatedGenome {
+                    fitness: compute_fitness(components, config),
+                    genome,
+                    components,
+                })
+                .collect()
+        }
+    }
 }
 
-fn evaluate_genome(
+fn evaluate_population_shared_episode(
+    config: &SimulationConfig,
+    eval_seed: u64,
+    population: &[AgentGenome],
+    factory: &impl ControllerFactory,
+) -> Vec<FitnessComponents> {
+    let world = evaluation_world_for_population(config, eval_seed, population);
+    let mut controllers = population
+        .iter()
+        .map(|genome| {
+            let mut controller = factory.build(&genome.brain);
+            controller.reset();
+            controller
+        })
+        .collect::<Vec<_>>();
+
+    evaluate_population_in_world(config, world, &mut controllers)
+}
+
+fn evaluate_genome_solo(
     config: &SimulationConfig,
     eval_seed: u64,
     genome: &AgentGenome,
@@ -272,6 +310,85 @@ fn evaluate_genome(
         food_consumed: agent.food_consumed,
         final_energy: agent.energy,
     }
+}
+
+fn evaluation_world_for_population(
+    config: &SimulationConfig,
+    eval_seed: u64,
+    population: &[AgentGenome],
+) -> WorldState {
+    let mut world = initialize_world(config, eval_seed);
+    world.agents.truncate(population.len());
+
+    for (agent, genome) in world.agents.iter_mut().zip(population.iter()) {
+        agent.max_speed = genome.traits.max_speed;
+        agent.perception_radius = genome.traits.perception_radius;
+        agent.perception_channels = genome.traits.perception_channels;
+        agent.eye_cell_angle_radians = genome.traits.eye_cell_angle_radians;
+        agent.metabolic_efficiency = genome.traits.metabolic_efficiency;
+    }
+
+    world
+}
+
+fn evaluate_population_in_world(
+    config: &SimulationConfig,
+    mut world: WorldState,
+    controllers: &mut [Box<dyn NeuralController>],
+) -> Vec<FitnessComponents> {
+    let mut survival_steps = vec![0_u32; world.agents.len()];
+
+    for _ in 0..config.episode_steps {
+        if world.agents.iter().all(|agent| !agent.alive) {
+            break;
+        }
+
+        let actions = collect_population_actions(&world, config, controllers);
+        step_world_with_actions(&mut world, config, &actions);
+
+        for (agent_idx, agent) in world.agents.iter().enumerate() {
+            if agent.alive {
+                survival_steps[agent_idx] += 1;
+            }
+        }
+    }
+
+    world
+        .agents
+        .iter()
+        .enumerate()
+        .map(|(agent_idx, agent)| FitnessComponents {
+            survival_steps: survival_steps[agent_idx],
+            food_consumed: agent.food_consumed,
+            final_energy: agent.energy,
+        })
+        .collect()
+}
+
+fn collect_population_actions(
+    world: &WorldState,
+    config: &SimulationConfig,
+    controllers: &mut [Box<dyn NeuralController>],
+) -> Vec<ActionVector> {
+    let mut actions = Vec::with_capacity(world.agents.len());
+
+    for (agent_idx, agent) in world.agents.iter().enumerate() {
+        if !agent.alive {
+            actions.push(ActionVector::default());
+            continue;
+        }
+
+        let sensor = basic_sensor_vector(agent, world, config);
+        actions.push(controllers[agent_idx].step(&sensor, config.timestep_seconds));
+    }
+
+    actions
+}
+
+fn shared_eval_seed(run_seed: u64, generation_index: u32) -> u64 {
+    run_seed
+        ^ 0xC6A4_A793_5BD1_E995
+        ^ ((generation_index as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15))
 }
 
 fn per_agent_eval_seed(run_seed: u64, generation_index: u32, agent_index: usize) -> u64 {
@@ -402,9 +519,32 @@ struct EvaluatedGenome {
 
 #[cfg(test)]
 mod tests {
+    use crate::brain::{ControllerKind, NeuralController};
     use crate::config::SimulationConfig;
+    use crate::sim::{ActionVector, AgentState, FoodState, SensorVector, Vec2, WorldState};
 
-    use super::{continue_generations_from_population, run_generations};
+    use super::{
+        continue_generations_from_population, evaluate_population_in_world, run_generations,
+    };
+
+    #[derive(Default)]
+    struct NullController;
+
+    impl NeuralController for NullController {
+        fn reset(&mut self) {}
+
+        fn step(&mut self, _input: &SensorVector, _dt: f32) -> ActionVector {
+            ActionVector::default()
+        }
+
+        fn parameter_count(&self) -> usize {
+            0
+        }
+
+        fn controller_kind(&self) -> ControllerKind {
+            ControllerKind::Mlp
+        }
+    }
 
     #[test]
     fn run_generations_is_deterministic_for_same_seed() {
@@ -463,5 +603,73 @@ mod tests {
 
         assert_eq!(continued.final_population, full_run.final_population);
         assert_eq!(continued.generations.len(), 3);
+    }
+
+    #[test]
+    fn shared_world_evaluation_introduces_food_competition() {
+        let config = SimulationConfig {
+            population_size: 2,
+            episode_steps: 1,
+            food_count: 1,
+            food_respawn_probability: 0.0,
+            initial_agent_energy: 100.0,
+            base_energy_cost_per_second: 0.0,
+            speed_energy_cost_factor: 0.0,
+            network_energy_cost_factor: 0.0,
+            perception_energy_cost_factor: 0.0,
+            ..SimulationConfig::default()
+        };
+        let world = WorldState {
+            width: 100.0,
+            height: 100.0,
+            agents: vec![
+                AgentState {
+                    id: 0,
+                    position: Vec2::new(10.0, 10.0),
+                    heading_radians: 0.0,
+                    velocity: Vec2::default(),
+                    energy: 100.0,
+                    alive: true,
+                    max_speed: 0.0,
+                    perception_radius: 10.0,
+                    perception_channels: 1,
+                    eye_cell_angle_radians: 1.0,
+                    network_size: 1,
+                    metabolic_efficiency: 1.0,
+                    food_consumed: 0,
+                },
+                AgentState {
+                    id: 1,
+                    position: Vec2::new(10.0, 10.0),
+                    heading_radians: 0.0,
+                    velocity: Vec2::default(),
+                    energy: 100.0,
+                    alive: true,
+                    max_speed: 0.0,
+                    perception_radius: 10.0,
+                    perception_channels: 1,
+                    eye_cell_angle_radians: 1.0,
+                    network_size: 1,
+                    metabolic_efficiency: 1.0,
+                    food_consumed: 0,
+                },
+            ],
+            food: vec![FoodState {
+                id: 0,
+                position: Vec2::new(10.0, 10.0),
+                radius: 1.5,
+                energy_value: 20.0,
+            }],
+            step_count: 0,
+        };
+        let mut controllers: Vec<Box<dyn NeuralController>> =
+            vec![Box::new(NullController), Box::new(NullController)];
+
+        let results = evaluate_population_in_world(&config, world, &mut controllers);
+
+        assert_eq!(
+            results.iter().map(|entry| entry.food_consumed).sum::<u32>(),
+            1
+        );
     }
 }

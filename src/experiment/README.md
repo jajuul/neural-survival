@@ -5,8 +5,10 @@ This module orchestrates deterministic multi-generation evolution runs.
 
 ## Behavior
 - Initializes a mixed-family population from config and seed.
-- Scores the full population through deterministic shared-world episode evaluation, so genomes compete over the same food field during fitness assignment.
-- Feeds controllers deterministic sensor vectors (core scalar cues plus signed eye-bin vision derived from food and nearby agents).
+- Scores genomes through deterministic episodes selected by `evaluation_mode`:
+  - `solo`: each genome gets its own private episode
+  - `shared`: the full population competes over one shared food field during scoring
+- Feeds controllers deterministic sensor vectors (core scalar cues plus separate food-eye and agent-eye channels).
 - Evolves generations using genetics operators.
 - Produces per-generation best/mean fitness metrics and final population genomes.
 - Provides `run_batch_to_dir` to persist metrics, fitness plot, summary, and snapshot artifacts.

@@ -13,6 +13,7 @@ mod bevy_viewer {
     use bevy::window::PrimaryWindow;
 
     use crate::brain::{ControllerFactory, ControllerKind, ControllerStepOutput, NeuralController};
+    use crate::config::EvaluationMode;
     use crate::experiment::{
         GenerationMetrics, continue_generations_from_population, world_state_for_population,
     };
@@ -72,6 +73,12 @@ mod bevy_viewer {
 
     #[derive(Component)]
     struct EvolveStatusText;
+
+    #[derive(Component)]
+    struct EvaluationModeButton;
+
+    #[derive(Component)]
+    struct EvaluationModeButtonLabel;
 
     #[derive(Component)]
     struct FitnessPlotSummaryText;
@@ -253,6 +260,7 @@ mod bevy_viewer {
                 (
                     keyboard_controls,
                     start_stop_button_interaction,
+                    evaluation_mode_button_interaction,
                     numeric_field_focus_interaction,
                     numeric_field_keyboard_input,
                     evolve_run_button_interaction,
@@ -310,6 +318,46 @@ mod bevy_viewer {
                 ..default()
             })
             .with_children(|parent| {
+                parent
+                    .spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(8.0),
+                        align_items: AlignItems::Center,
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        row.spawn((
+                            Text::new("Evaluation"),
+                            TextFont::from_font_size(15.0),
+                            TextColor(Color::srgb(0.88, 0.88, 0.88)),
+                            Node {
+                                width: Val::Px(150.0),
+                                ..default()
+                            },
+                        ));
+
+                        row.spawn((
+                            Button,
+                            Node {
+                                width: Val::Px(140.0),
+                                height: Val::Px(30.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.35, 0.35, 0.42)),
+                            EvaluationModeButton,
+                        ))
+                        .with_children(|button| {
+                            button.spawn((
+                                Text::new(format_evaluation_mode(runtime.config.evaluation_mode)),
+                                TextFont::from_font_size(15.0),
+                                TextColor(Color::srgb(0.95, 0.95, 0.95)),
+                                EvaluationModeButtonLabel,
+                            ));
+                        });
+                    });
+
                 parent
                     .spawn((
                         Button,
@@ -524,6 +572,32 @@ mod bevy_viewer {
             if matches!(*interaction, Interaction::Pressed) {
                 runtime.active_input = None;
                 runtime.paused = !runtime.paused;
+            }
+        }
+    }
+
+    fn evaluation_mode_button_interaction(
+        interactions: Query<
+            &Interaction,
+            (
+                Changed<Interaction>,
+                With<Button>,
+                With<EvaluationModeButton>,
+            ),
+        >,
+        mut runtime: ResMut<ViewerRuntime>,
+    ) {
+        if runtime.evolution_job.is_some() {
+            return;
+        }
+
+        for interaction in &interactions {
+            if matches!(*interaction, Interaction::Pressed) {
+                runtime.active_input = None;
+                runtime.config.evaluation_mode = match runtime.config.evaluation_mode {
+                    EvaluationMode::Solo => EvaluationMode::Shared,
+                    EvaluationMode::Shared => EvaluationMode::Solo,
+                };
             }
         }
     }
@@ -747,6 +821,7 @@ mod bevy_viewer {
                 &mut BackgroundColor,
                 Option<&NumericField>,
                 Option<&EvolveRunButton>,
+                Option<&EvaluationModeButton>,
             ),
             With<Button>,
         >,
@@ -754,10 +829,13 @@ mod bevy_viewer {
             &mut Text,
             Option<&NumericFieldValueText>,
             Option<&EvolveStatusText>,
+            Option<&EvaluationModeButtonLabel>,
         )>,
     ) {
         let is_evolving = runtime.evolution_job.is_some();
-        for (interaction, mut color, maybe_field, maybe_evolve) in &mut button_query {
+        for (interaction, mut color, maybe_field, maybe_evolve, maybe_eval_mode) in
+            &mut button_query
+        {
             if let Some(field) = maybe_field {
                 *color = numeric_field_color(
                     *interaction,
@@ -767,6 +845,8 @@ mod bevy_viewer {
                 );
             } else if maybe_evolve.is_some() {
                 *color = evolve_run_button_color(*interaction, is_evolving);
+            } else if maybe_eval_mode.is_some() {
+                *color = evaluation_mode_button_color(*interaction, runtime.config.evaluation_mode);
             }
         }
 
@@ -783,11 +863,13 @@ mod bevy_viewer {
             )
         };
 
-        for (mut text, value_marker, status_marker) in &mut text_query {
+        for (mut text, value_marker, status_marker, eval_mode_marker) in &mut text_query {
             if let Some(marker) = value_marker {
                 **text = runtime.field_buffers.get(marker.kind).to_string();
             } else if status_marker.is_some() {
                 **text = status.clone();
+            } else if eval_mode_marker.is_some() {
+                **text = format_evaluation_mode(runtime.config.evaluation_mode).to_string();
             }
         }
     }
@@ -858,6 +940,20 @@ mod bevy_viewer {
             Interaction::Pressed => BackgroundColor(Color::srgb(0.2, 0.65, 0.45)),
             Interaction::Hovered => BackgroundColor(Color::srgb(0.4, 0.5, 0.85)),
             Interaction::None => BackgroundColor(Color::srgb(0.35, 0.45, 0.8)),
+        }
+    }
+
+    fn evaluation_mode_button_color(
+        interaction: Interaction,
+        mode: EvaluationMode,
+    ) -> BackgroundColor {
+        if matches!(interaction, Interaction::Hovered) {
+            return BackgroundColor(Color::srgb(0.48, 0.48, 0.58));
+        }
+
+        match mode {
+            EvaluationMode::Solo => BackgroundColor(Color::srgb(0.24, 0.42, 0.62)),
+            EvaluationMode::Shared => BackgroundColor(Color::srgb(0.62, 0.38, 0.24)),
         }
     }
 
@@ -1068,7 +1164,7 @@ mod bevy_viewer {
         };
 
         window.title = format!(
-            "neural-survival | gen={} alive={} food={} bestE={:.1} meanE={:.1} MLP={} LTC={} speed={}x world={:.0}x{:.0} rules[s:{} n:{} p:{}]{}",
+            "neural-survival | gen={} alive={} food={} bestE={:.1} meanE={:.1} MLP={} LTC={} speed={}x eval={} world={:.0}x{:.0} rules[s:{} n:{} p:{}]{}",
             runtime.generation,
             alive,
             food,
@@ -1077,6 +1173,7 @@ mod bevy_viewer {
             mlp,
             ltc,
             runtime.speed_multiplier,
+            format_evaluation_mode(runtime.config.evaluation_mode),
             runtime.config.world_width,
             runtime.config.world_height,
             runtime.config.rule_toggles.energy_by_speed,
@@ -1508,7 +1605,7 @@ mod bevy_viewer {
             .fold(0.0_f32, f32::max);
 
         format!(
-            "agent #{} ({:?}) {}\nworld step: {}\nperception: radius={:.1} bins={} eye_angle={:.3} total_fov={:.3}\ncore sensors: x={:.3} y={:.3} energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eyes: food={:.3} agents={:.3}\nchart below: green=food, orange=agents, controller input=food-agents",
+            "agent #{} ({:?}) {}\nworld step: {}\nperception: radius={:.1} bins={} eye_angle={:.3} total_fov={:.3}\ncore sensors: x={:.3} y={:.3} energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eyes: food={:.3} agents={:.3}\nchart below: green=food, orange=agents, controller input channels are [food bins | agent bins]",
             snapshot.agent_id,
             snapshot.controller_kind,
             if snapshot.alive { "alive" } else { "dead" },
@@ -1539,6 +1636,13 @@ mod bevy_viewer {
             NumericFieldKind::FoodRespawnProbability => "Food Respawn",
             NumericFieldKind::EpisodeSteps => "Episode Steps",
             NumericFieldKind::MutationRate => "Mutation Rate",
+        }
+    }
+
+    fn format_evaluation_mode(mode: EvaluationMode) -> &'static str {
+        match mode {
+            EvaluationMode::Solo => "Solo",
+            EvaluationMode::Shared => "Shared",
         }
     }
 

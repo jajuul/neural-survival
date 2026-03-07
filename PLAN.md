@@ -37,6 +37,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-06 02:10Z) Replaced the prior LTC-inspired leaky RNN with a conductance-based LTC implementation (gated sensory/recurrent synapses, leak, capacitance, fixed internal ODE unfolds), added legacy snapshot/genome upgrade handling, and validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-06 22:01Z) Switched generation scoring from private single-agent episodes to deterministic shared-world population episodes with synchronous action collection, added a competition-focused unit test, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-06 22:20Z) Extended the eye model to sense nearby agents as well as food, kept controller input width stable by feeding signed `food-agent` eye bins, updated the GUI inspector to show decomposed food/agent activations, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
+- [x] (2026-03-07 00:10Z) Reworked eyes to use separate food and agent controller channels, added configurable `evaluation_mode` (`solo`/`shared`) with a GUI toggle for continuation runs, restored `solo` as the default evaluation regime, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 
 ## Surprises & Discoveries
 
@@ -95,7 +96,10 @@ The implementation is successful when three things are demonstrably true: headle
   Evidence: `experiment::runner::tests::shared_world_evaluation_introduces_food_competition` now proves two colocated agents can only claim one shared food item during evaluation.
 
 - Observation: Adding direct agent sensing did not require changing controller input width; feeding signed `food_bin - agent_bin` values preserves existing genome shapes and snapshot compatibility.
-  Evidence: The new `SensorObservation` carries separate `food_eye_bins` and `agent_eye_bins`, while `input.values` remains the same fixed width and all tests continue to pass.
+  Evidence: Initial implementation used a signed merge, but controller behavior regressed (LTC spinning) after shared evaluation + agent sensing were combined.
+
+- Observation: Separate food and agent eye channels are a better fit than a signed merge once the controller must reason about competition.
+  Evidence: The revised sensor layout preserves both modalities explicitly (`food_eye_bins` and `agent_eye_bins`) and expands controller input width to `24` (`4 + 10 + 10`), matching the new semantics without aliasing.
 
 ## Decision Log
 
@@ -160,8 +164,12 @@ The implementation is successful when three things are demonstrably true: headle
   Date/Author: 2026-03-06 / Codex
 
 - Decision: Represent direct agent sensing in the controller input as signed eye bins (`food - agents`) and keep the decomposed food/agent activations only in observability structures.
-  Rationale: This adds direct awareness of nearby agents without breaking the fixed 28-value controller input contract or invalidating saved genomes/snapshots that depend on the current input shape.
+  Rationale: This was the smallest backward-compatible experiment, but it aliased two different perceptual causes into one scalar and made controller behavior harder to interpret.
   Date/Author: 2026-03-06 / Codex
+
+- Decision: Replace the signed-merged eye input with separate food and agent channel stacks, and add `evaluation_mode` so `solo` remains the default while `shared` stays available for comparison.
+  Rationale: Backward compatibility is no longer a goal. Separate channels preserve information needed for future extensions such as edible/prey/predator distinctions, and a switchable evaluation regime makes behavior comparisons reproducible instead of conflating sensor and scoring changes.
+  Date/Author: 2026-03-07 / Codex
 
 - Decision: Enforce output-directory safety by rejecting existing non-empty `--out` directories at I/O layer entry.
   Rationale: Prevents accidental artifact mixing while preserving the existing CLI contract without extra overwrite flags.
@@ -259,7 +267,9 @@ Post-plan enhancement (v11): the LTC controller is now a conductance-based liqui
 
 Post-plan enhancement (v12): generation scoring now runs the full population in one shared controller-driven world per evaluation seed, introducing indirect competition through shared food depletion while preserving per-agent fitness reporting and species-isolated reproduction.
 
-Post-plan enhancement (v13): eyes now sense nearby agents directly in addition to food, with the GUI inspector showing separate food/agent activations while controllers receive a signed fixed-width combination that preserves existing genome shapes.
+Post-plan enhancement (v13): eyes now sense nearby agents directly in addition to food, with the GUI inspector showing separate food/agent activations.
+
+Post-plan enhancement (v14): controller input now uses separate fixed-width food and agent channel stacks (`24` inputs total), and GA evaluation mode is configurable between `solo` and `shared` from both TOML and the GUI continuation controls.
 
 ## Context and Orientation
 
@@ -593,3 +603,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after embedding generation history in snapshots and rendering GUI fitness plots from that history.
 2026-03-06: Plan updated after replacing single-agent evaluation with shared-world population evaluation to document the new competition semantics, synchronous action-collection design, and passing shared-food-competition test.
 2026-03-06: Plan updated after adding agent sensing to the eye model to document the signed fixed-width controller input, separate GUI food/agent observability channels, and passing sensor-model tests.
+2026-03-07: Plan updated after introducing separate food/agent controller channels and switchable `evaluation_mode` to document the new 24-input sensor layout, the GUI evaluation toggle, and the deliberate return to `solo` as the default regime.
