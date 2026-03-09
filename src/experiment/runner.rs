@@ -673,6 +673,7 @@ mod tests {
                 position: Vec2::new(10.0, 10.0),
                 radius: 1.5,
                 energy_value: 20.0,
+                motion_angle_radians: 0.0,
             }],
             step_count: 0,
         };

@@ -92,6 +92,13 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if config.food_motion_speed < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "food_motion_speed",
+            message: "must be >= 0".into(),
+        });
+    }
+
     if !(0.0..=1.0).contains(&config.elitism_fraction) || config.elitism_fraction == 0.0 {
         return Err(ConfigError::Invalid {
             field: "elitism_fraction",
@@ -249,6 +256,20 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if config.sensor_noise_stddev < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "sensor_noise_stddev",
+            message: "must be >= 0".into(),
+        });
+    }
+
+    if !(0.0..=1.0).contains(&config.sensor_dropout_probability) {
+        return Err(ConfigError::Invalid {
+            field: "sensor_dropout_probability",
+            message: "must be in [0, 1]".into(),
+        });
+    }
+
     if config.fitness_weight_survival < 0.0 {
         return Err(ConfigError::Invalid {
             field: "fitness_weight_survival",
@@ -300,6 +321,7 @@ mod tests {
         assert_eq!(parsed.population_size, 128);
         assert_eq!(parsed.food_count, 400);
         assert_eq!(parsed.food_respawn_probability, 1.0);
+        assert_eq!(parsed.food_motion_speed, 1.0);
         assert_eq!(parsed.elitism_fraction, 0.10);
         assert_eq!(parsed.tournament_size, 5);
         assert_eq!(parsed.mutation_rate, 0.15);
@@ -323,6 +345,22 @@ mod tests {
         assert_eq!(parsed.world_width, 512.0);
         assert_eq!(parsed.mutation_rate, 0.2);
         assert_eq!(parsed.population_size, 128);
+    }
+
+    #[test]
+    fn invalid_food_motion_speed_is_rejected() {
+        let raw = r#"
+            food_motion_speed = -0.1
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("negative food motion speed must fail");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                field: "food_motion_speed",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -377,6 +415,38 @@ mod tests {
             err,
             ConfigError::Invalid {
                 field: "food_respawn_probability",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_sensor_dropout_probability_is_rejected() {
+        let raw = r#"
+            sensor_dropout_probability = 1.1
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("dropout probability above 1 must fail");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                field: "sensor_dropout_probability",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_sensor_noise_stddev_is_rejected() {
+        let raw = r#"
+            sensor_noise_stddev = -0.01
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("negative sensor noise stddev must fail");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                field: "sensor_noise_stddev",
                 ..
             }
         ));

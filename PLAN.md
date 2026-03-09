@@ -39,6 +39,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-06 22:20Z) Extended the eye model to sense nearby agents as well as food, kept controller input width stable by feeding signed `food-agent` eye bins, updated the GUI inspector to show decomposed food/agent activations, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-07 00:10Z) Reworked eyes to use separate food and agent controller channels, added configurable `evaluation_mode` (`solo`/`shared`) with a GUI toggle for continuation runs, restored `solo` as the default evaluation regime, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-07 00:45Z) Added scheduled evaluation-mode switching (`evaluation_mode`, `evaluation_mode_after_switch`, `evaluation_mode_switch_after_generation`) to config, runner, and GUI so curricula such as `solo -> shared @ 100` are reproducible without manual toggling.
+- [x] (2026-03-07 01:15Z) Removed absolute position from controller inputs, added deterministic sensor noise/dropout plus moving food as configurable simulation parameters, exposed the new knobs in the GUI, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 
 ## Surprises & Discoveries
 
@@ -100,7 +101,7 @@ The implementation is successful when three things are demonstrably true: headle
   Evidence: Initial implementation used a signed merge, but controller behavior regressed (LTC spinning) after shared evaluation + agent sensing were combined.
 
 - Observation: Separate food and agent eye channels are a better fit than a signed merge once the controller must reason about competition.
-  Evidence: The revised sensor layout preserves both modalities explicitly (`food_eye_bins` and `agent_eye_bins`) and expands controller input width to `24` (`4 + 10 + 10`), matching the new semantics without aliasing.
+  Evidence: The revised sensor layout preserves both modalities explicitly (`food_eye_bins` and `agent_eye_bins`) and now uses a local-only `22`-input controller vector (`energy`, `speed`, `10` food bins, `10` agent bins), matching the new semantics without aliasing absolute position back into the task.
 
 ## Decision Log
 
@@ -274,7 +275,9 @@ Post-plan enhancement (v12): generation scoring now runs the full population in 
 
 Post-plan enhancement (v13): eyes now sense nearby agents directly in addition to food, with the GUI inspector showing separate food/agent activations.
 
-Post-plan enhancement (v14): controller input now uses separate fixed-width food and agent channel stacks (`24` inputs total), and GA evaluation mode is configurable between `solo` and `shared` from both TOML and the GUI continuation controls.
+Post-plan enhancement (v14): controller input now uses separate fixed-width food and agent channel stacks, and GA evaluation mode is configurable between `solo` and `shared` from both TOML and the GUI continuation controls.
+
+Post-plan enhancement (v15): controller input now uses only local core scalars (`energy`, `speed`) plus food/agent eye channels (`22` inputs total), while food motion and deterministic sensor noise/dropout are configurable from both TOML and the GUI continuation controls.
 
 ## Context and Orientation
 
@@ -608,4 +611,5 @@ Dependencies to add in `Cargo.toml`:
 2026-03-04: Plan updated after embedding generation history in snapshots and rendering GUI fitness plots from that history.
 2026-03-06: Plan updated after replacing single-agent evaluation with shared-world population evaluation to document the new competition semantics, synchronous action-collection design, and passing shared-food-competition test.
 2026-03-06: Plan updated after adding agent sensing to the eye model to document the signed fixed-width controller input, separate GUI food/agent observability channels, and passing sensor-model tests.
-2026-03-07: Plan updated after introducing separate food/agent controller channels and switchable `evaluation_mode` to document the new 24-input sensor layout, the GUI evaluation toggle, and the deliberate return to `solo` as the default regime.
+2026-03-07: Plan updated after introducing separate food/agent controller channels and switchable `evaluation_mode` to document the new fixed-width sensor layout, the GUI evaluation toggle, and the deliberate return to `solo` as the default regime.
+2026-03-07: Plan updated after removing absolute position from controller inputs and adding configurable food motion plus deterministic sensor noise/dropout to better reward temporal controllers.

@@ -9,7 +9,7 @@ use super::types::{
 };
 
 /// Number of non-vision scalar features included in controller input.
-pub const CORE_SENSOR_FEATURES: usize = 4;
+pub const CORE_SENSOR_FEATURES: usize = 2;
 /// Maximum number of bins in one vision channel.
 pub const MAX_VISION_CELLS: usize = crate::config::MAX_PERCEPTION_CHANNELS as usize;
 /// Number of distinct vision channels currently exposed to controllers.
@@ -60,6 +60,7 @@ pub fn initialize_world(config: &SimulationConfig, seed: u64) -> WorldState {
             ),
             radius: config.food_collision_radius,
             energy_value: config.food_energy_gain,
+            motion_angle_radians: rng.gen_range(0.0..std::f32::consts::TAU),
         })
         .collect();
 
@@ -167,6 +168,7 @@ pub fn step_world_with_actions_and_telemetry(
         };
     }
 
+    move_food(world, config, dt);
     world.step_count += 1;
     (outcome, telemetry)
 }
@@ -197,8 +199,8 @@ pub fn run_steps(world: &mut WorldState, config: &SimulationConfig, steps: u32) 
 ///
 /// Inputs: the current agent state, world dimensions, and config normalization constants.
 /// Output: fixed-width vector
-/// `[x_norm, y_norm, energy_norm, speed_norm, food_vision(10), agent_vision(10)]`, where active
-/// bins are bounded by the agent's `perception_channels` trait.
+/// `[energy_norm, speed_norm, food_vision(10), agent_vision(10)]`, where active bins are bounded
+/// by the agent's `perception_channels` trait.
 /// Side effects: none.
 pub fn basic_sensor_vector(
     agent: &AgentState,
@@ -220,20 +222,25 @@ pub fn sensor_observation(
     world: &WorldState,
     config: &SimulationConfig,
 ) -> SensorObservation {
-    let x_norm = (agent.position.x / world.width).clamp(0.0, 1.0);
-    let y_norm = (agent.position.y / world.height).clamp(0.0, 1.0);
     let energy_norm = (agent.energy / config.initial_agent_energy).clamp(0.0, 2.0);
     let speed_norm = (agent.velocity.length() / agent.max_speed.max(0.001)).clamp(0.0, 1.0);
-    let food_eye_bins = food_eye_cells(agent, world, config);
-    let agent_eye_bins = agent_eye_cells(agent, world, config);
-    let vision_cells = flatten_vision_channels([&food_eye_bins, &agent_eye_bins]);
+    let clean_food_eye_bins = food_eye_cells(agent, world, config);
+    let clean_agent_eye_bins = agent_eye_cells(agent, world, config);
+    let clean_vision_cells = flatten_vision_channels([&clean_food_eye_bins, &clean_agent_eye_bins]);
 
-    let mut values = Vec::with_capacity(CONTROLLER_SENSOR_INPUT_SIZE);
-    values.extend_from_slice(&[x_norm, y_norm, energy_norm, speed_norm]);
-    values.extend_from_slice(&vision_cells);
+    let mut clean_values = Vec::with_capacity(CONTROLLER_SENSOR_INPUT_SIZE);
+    clean_values.extend_from_slice(&[energy_norm, speed_norm]);
+    clean_values.extend_from_slice(&clean_vision_cells);
+
+    let values = apply_sensor_corruption(agent.id, world.step_count, clean_values, config);
+    let food_start = CORE_SENSOR_FEATURES;
+    let agent_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
+    let food_eye_bins = values[food_start..agent_start].to_vec();
+    let agent_eye_bins = values[agent_start..agent_start + MAX_VISION_CELLS].to_vec();
+    let vision_cells = values[CORE_SENSOR_FEATURES..].to_vec();
 
     SensorObservation {
-        core_values: [x_norm, y_norm, energy_norm, speed_norm],
+        core_values: [values[0], values[1]],
         food_eye_bins,
         agent_eye_bins,
         eye_bins: vision_cells,
@@ -312,8 +319,24 @@ fn maybe_respawn_food(
         ),
         radius: config.food_collision_radius,
         energy_value: config.food_energy_gain,
+        motion_angle_radians: rng.gen_range(0.0..std::f32::consts::TAU),
     });
     *next_food_id = (*next_food_id).saturating_add(1);
+}
+
+fn move_food(world: &mut WorldState, config: &SimulationConfig, dt: f32) {
+    if config.food_motion_speed <= 0.0 {
+        return;
+    }
+
+    for food in &mut world.food {
+        let velocity = Vec2::from_angle(food.motion_angle_radians).scale(config.food_motion_speed);
+        food.position = wrap_position(
+            food.position.add(velocity.scale(dt)),
+            world.width,
+            world.height,
+        );
+    }
 }
 
 fn food_eye_cells(agent: &AgentState, world: &WorldState, _config: &SimulationConfig) -> Vec<f32> {
@@ -392,6 +415,57 @@ where
         flat.extend_from_slice(channel);
     }
     flat
+}
+
+fn apply_sensor_corruption(
+    agent_id: u32,
+    step_count: u64,
+    mut values: Vec<f32>,
+    config: &SimulationConfig,
+) -> Vec<f32> {
+    if config.sensor_noise_stddev <= 0.0 && config.sensor_dropout_probability <= 0.0 {
+        return values;
+    }
+
+    let mut rng = ChaCha8Rng::seed_from_u64(
+        step_count
+            ^ ((agent_id as u64 + 1).wrapping_mul(0xD6E8_FEB8_6659_FD93))
+            ^ 0xA24B_AED4_0FBF_4C3D,
+    );
+
+    for (idx, value) in values.iter_mut().enumerate() {
+        if config.sensor_dropout_probability > 0.0
+            && rng.gen_bool(config.sensor_dropout_probability as f64)
+        {
+            *value = 0.0;
+            continue;
+        }
+
+        if config.sensor_noise_stddev > 0.0 {
+            *value = clamp_sensor_value(
+                idx,
+                *value + gaussian_sample(&mut rng) * config.sensor_noise_stddev,
+            );
+        } else {
+            *value = clamp_sensor_value(idx, *value);
+        }
+    }
+
+    values
+}
+
+fn gaussian_sample(rng: &mut ChaCha8Rng) -> f32 {
+    let u1 = (1.0_f32 - rng.gen_range(0.0..1.0)).max(f32::MIN_POSITIVE);
+    let u2 = rng.gen_range(0.0..1.0);
+    (-2.0 * u1.ln()).sqrt() * (std::f32::consts::TAU * u2).cos()
+}
+
+fn clamp_sensor_value(index: usize, value: f32) -> f32 {
+    match index {
+        0 => value.clamp(0.0, 2.0),
+        1 => value.clamp(0.0, 1.0),
+        _ => value.max(0.0),
+    }
 }
 
 fn toroidal_offset(from: Vec2, to: Vec2, width: f32, height: f32) -> Vec2 {
@@ -525,6 +599,15 @@ mod tests {
         }
     }
 
+    fn deterministic_sensor_config() -> SimulationConfig {
+        SimulationConfig {
+            food_motion_speed: 0.0,
+            sensor_noise_stddev: 0.0,
+            sensor_dropout_probability: 0.0,
+            ..SimulationConfig::default()
+        }
+    }
+
     #[test]
     fn toroidal_wrapping_wraps_coordinates() {
         let wrapped = wrap_position(Vec2::new(10.25, -0.75), 10.0, 10.0);
@@ -554,6 +637,7 @@ mod tests {
                 position: Vec2::new(10.0, 10.0),
                 radius: 5.0,
                 energy_value: 3.0,
+                motion_angle_radians: 0.0,
             }],
             step_count: 0,
         };
@@ -684,6 +768,7 @@ mod tests {
                 position: Vec2::new(10.0, 10.0),
                 radius: 5.0,
                 energy_value: 3.0,
+                motion_angle_radians: 0.0,
             }],
             step_count: 0,
         };
@@ -705,6 +790,7 @@ mod tests {
             network_energy_cost_factor: 0.0,
             perception_energy_cost_factor: 0.0,
             food_respawn_probability: 1.0,
+            food_motion_speed: 0.0,
             ..SimulationConfig::default()
         };
         let mut world = WorldState {
@@ -716,6 +802,7 @@ mod tests {
                 position: Vec2::new(10.0, 10.0),
                 radius: 5.0,
                 energy_value: 3.0,
+                motion_angle_radians: 0.0,
             }],
             step_count: 0,
         };
@@ -730,6 +817,37 @@ mod tests {
     }
 
     #[test]
+    fn moving_food_advances_with_configured_speed() {
+        let config = SimulationConfig {
+            timestep_seconds: 0.5,
+            food_motion_speed: 4.0,
+            base_energy_cost_per_second: 0.0,
+            speed_energy_cost_factor: 0.0,
+            network_energy_cost_factor: 0.0,
+            perception_energy_cost_factor: 0.0,
+            ..SimulationConfig::default()
+        };
+        let mut world = WorldState {
+            width: 20.0,
+            height: 20.0,
+            agents: vec![],
+            food: vec![FoodState {
+                id: 0,
+                position: Vec2::new(5.0, 5.0),
+                radius: 1.0,
+                energy_value: 1.0,
+                motion_angle_radians: 0.0,
+            }],
+            step_count: 0,
+        };
+
+        step_world(&mut world, &config);
+
+        assert!((world.food[0].position.x - 7.0).abs() < 1e-6);
+        assert!((world.food[0].position.y - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
     fn toroidal_distance_uses_shortest_wrapped_path() {
         let a = Vec2::new(9.0, 5.0);
         let b = Vec2::new(1.0, 5.0);
@@ -741,7 +859,7 @@ mod tests {
 
     #[test]
     fn basic_sensor_vector_places_food_in_forward_center_cell() {
-        let config = SimulationConfig::default();
+        let config = deterministic_sensor_config();
         let mut agent = test_agent(50.0);
         agent.position = Vec2::new(10.0, 10.0);
         agent.heading_radians = 0.0;
@@ -757,6 +875,7 @@ mod tests {
                 position: Vec2::new(15.0, 10.0),
                 radius: 1.0,
                 energy_value: 1.0,
+                motion_angle_radians: 0.0,
             }],
             step_count: 0,
         };
@@ -784,7 +903,7 @@ mod tests {
 
     #[test]
     fn basic_sensor_vector_ignores_food_outside_fov() {
-        let config = SimulationConfig::default();
+        let config = deterministic_sensor_config();
         let mut agent = test_agent(50.0);
         agent.position = Vec2::new(10.0, 10.0);
         agent.heading_radians = 0.0;
@@ -800,6 +919,7 @@ mod tests {
                 position: Vec2::new(10.0, 16.0),
                 radius: 1.0,
                 energy_value: 1.0,
+                motion_angle_radians: 0.0,
             }],
             step_count: 0,
         };
@@ -814,7 +934,7 @@ mod tests {
 
     #[test]
     fn basic_sensor_vector_zero_fills_inactive_vision_cells() {
-        let config = SimulationConfig::default();
+        let config = deterministic_sensor_config();
         let mut agent = test_agent(50.0);
         agent.position = Vec2::new(10.0, 10.0);
         agent.heading_radians = 0.0;
@@ -830,6 +950,7 @@ mod tests {
                 position: Vec2::new(15.0, 10.0),
                 radius: 1.0,
                 energy_value: 1.0,
+                motion_angle_radians: 0.0,
             }],
             step_count: 0,
         };
@@ -848,7 +969,7 @@ mod tests {
 
     #[test]
     fn eye_cell_angle_and_channel_count_expand_visible_fov() {
-        let config = SimulationConfig::default();
+        let config = deterministic_sensor_config();
         let mut narrow = test_agent(50.0);
         narrow.position = Vec2::new(10.0, 10.0);
         narrow.heading_radians = 0.0;
@@ -869,6 +990,7 @@ mod tests {
                 position: Vec2::new(10.0, 18.0),
                 radius: 1.0,
                 energy_value: 1.0,
+                motion_angle_radians: 0.0,
             }],
             step_count: 0,
         };
@@ -890,7 +1012,7 @@ mod tests {
 
     #[test]
     fn sensor_observation_places_other_agent_in_forward_center_cell() {
-        let config = SimulationConfig::default();
+        let config = deterministic_sensor_config();
         let mut agent = test_agent(50.0);
         agent.position = Vec2::new(10.0, 10.0);
         agent.heading_radians = 0.0;
@@ -924,7 +1046,7 @@ mod tests {
 
     #[test]
     fn sensor_observation_ignores_self_when_building_agent_bins() {
-        let config = SimulationConfig::default();
+        let config = deterministic_sensor_config();
         let mut agent = test_agent(50.0);
         agent.position = Vec2::new(10.0, 10.0);
         agent.heading_radians = 0.0;
@@ -944,5 +1066,51 @@ mod tests {
 
         assert!(sensor.agent_eye_bins.iter().all(|value| value.abs() < 1e-6));
         assert!(sensor.eye_bins.iter().all(|value| value.abs() < 1e-6));
+    }
+
+    #[test]
+    fn sensor_dropout_can_zero_controller_inputs() {
+        let config = SimulationConfig {
+            sensor_noise_stddev: 0.0,
+            sensor_dropout_probability: 1.0,
+            food_motion_speed: 0.0,
+            ..SimulationConfig::default()
+        };
+        let agent = test_agent(50.0);
+        let world = WorldState {
+            width: 40.0,
+            height: 40.0,
+            agents: vec![agent.clone()],
+            food: vec![],
+            step_count: 0,
+        };
+
+        let sensor = sensor_observation(&agent, &world, &config);
+
+        assert!(sensor.input.values.iter().all(|value| value.abs() < 1e-6));
+    }
+
+    #[test]
+    fn sensor_noise_is_deterministic_for_same_step() {
+        let config = SimulationConfig {
+            sensor_noise_stddev: 0.2,
+            sensor_dropout_probability: 0.0,
+            food_motion_speed: 0.0,
+            ..SimulationConfig::default()
+        };
+        let mut agent = test_agent(50.0);
+        agent.velocity = Vec2::new(1.5, 0.0);
+        let world = WorldState {
+            width: 40.0,
+            height: 40.0,
+            agents: vec![agent.clone()],
+            food: vec![],
+            step_count: 11,
+        };
+
+        let sensor_a = sensor_observation(&agent, &world, &config);
+        let sensor_b = sensor_observation(&agent, &world, &config);
+
+        assert_eq!(sensor_a, sensor_b);
     }
 }

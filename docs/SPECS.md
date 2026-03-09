@@ -80,7 +80,7 @@ Version 1 focuses on:
 1. User opens saved snapshot in GUI.
 2. User inspects movement, survival, and top-level statistics.
 3. User can pause/resume, adjust simulation speed, and toggle active world rules.
-4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `food respawn`, `episode steps`, `mutation rate`) and a selectable evaluation mode (`solo` or `shared`).
+4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `food motion`, `food respawn`, `sensor noise`, `sensor dropout`, `episode steps`, `mutation rate`) and a selectable evaluation schedule (`solo`, `shared`, or `solo -> shared @ N`).
 5. User can click an agent in the GUI to inspect its current food/agent eye-bin activations, controller outputs, and last-step energy-cost breakdown.
 
 ## Public Interfaces and Types
@@ -163,21 +163,22 @@ pub struct RuleToggles {
 ## Simulation Specification
 
 ### World and Entities
-- Food entities are stationary points with collision radius.
+- Food entities are points with collision radius and optional drift motion controlled by `food_motion_speed`.
 - Consumed food can respawn immediately at a new random position, controlled by `food_respawn_probability` in `[0, 1]`.
 - Agents have position, heading, velocity, energy, controller state, and trait values.
 - World wraps in both axes.
 
 ### Sensors and Actions
 - Sensor vector includes:
-  - Core normalized scalar cues (`x`, `y`, `energy`, `speed`).
+  - Core normalized scalar cues (`energy`, `speed`).
   - Shorelark-inspired "eye" bins: angular perception cells within a configurable field-of-view and perception range.
   - Eye bins sense both food and other agents.
+  - Optional deterministic sensor corruption controlled by `sensor_noise_stddev` and `sensor_dropout_probability`.
   - Controller input uses separate channel stacks for food bins and agent bins, preserving type information for future extensions such as edible-agent versus predator-agent channels.
   - Per-agent channel count trait controls active eye bin count.
   - Per-agent `eye_cell_angle_radians` trait controls how much angle each eye/bin covers.
   - Total visible field of view is derived from evolved eye count and evolved per-eye angle.
-  - Fixed controller input width where inactive eye bins are zero-filled (current width: `4 + 10 food + 10 agent = 24` values).
+  - Fixed controller input width where inactive eye bins are zero-filled (current width: `2 + 10 food + 10 agent = 22` values).
 - Action vector controls:
   - Steering direction change.
   - Throttle/drive magnitude.
@@ -235,7 +236,7 @@ Weights are config-driven and exported in run metadata.
 - Selected-agent inspector:
   - click-to-select agent inspection
   - live eye-bin chart for active perception channels, split into food and nearby-agent activations
-  - core sensor values (`x`, `y`, `energy`, `speed`)
+  - core sensor values (`energy`, `speed`)
   - raw controller outputs (`steering`, `throttle_raw`) and applied throttle
   - last-step energy breakdown (`base`, `speed`, `network`, `perception`, `food`, `net`)
   - selected agent remains inspectable after death using the last captured telemetry
@@ -255,10 +256,12 @@ Weights are config-driven and exported in run metadata.
   - generations to evolve
   - world width / world height
   - food count
+  - food motion speed
   - food respawn probability
+  - sensor noise standard deviation
+  - sensor dropout probability
   - episode steps
   - mutation rate
-  - evaluation mode (`solo`/`shared`)
 - Run continuation evolution from GUI controls.
 - Click an agent to select it; click empty world space to clear selection.
 

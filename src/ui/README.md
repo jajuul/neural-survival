@@ -8,7 +8,7 @@ This module provides viewer entrypoints for loading and inspecting simulation sn
 - In `--features gui` builds, renders a Bevy viewer with:
   - directional agent rendering, so heading is visible directly in the scene (`LTC` triangles rotate with heading; `MLP` circles include a forward marker)
   - start/stop simulation control
-  - typed numeric fields for evolution continuation (`generations`, `world size`, `food count`, `food respawn`, `episode steps`, `mutation rate`)
+  - typed numeric fields for evolution continuation (`generations`, `world size`, `food count`, `food motion`, `food respawn`, `sensor noise`, `sensor dropout`, `episode steps`, `mutation rate`)
   - evaluation schedule controls for GUI-triggered continuation runs:
     - initial evaluation mode (`Solo`/`Shared`)
     - post-switch mode (`Solo`/`Shared`)
@@ -16,7 +16,7 @@ This module provides viewer entrypoints for loading and inspecting simulation sn
   - continue-evolution action that applies edited parameters to in-GUI evolution
   - live evolution progress visibility (`current/total generations`) during GUI-triggered continuation, updated every 10 generations (plus completion)
   - an in-viewer fitness-history plot showing best and mean fitness over generations from snapshot history and GUI-triggered continuation runs
-  - click-to-select agent inspection with a live eye-bin chart for both food and agent sensing, core sensor values, controller outputs, and last-step energy-cost breakdown
+  - click-to-select agent inspection with a live eye-bin chart for both food and agent sensing, local core sensor values (`energy`, `speed`), controller outputs, and last-step energy-cost breakdown
   - controller-driven viewer stepping, so GUI movement and observability use the same neural controllers rather than stub actions
   - speed/rule toggles and restart from loaded snapshot state
 - In non-GUI builds, keeps a viewer stub so CLI workflows remain testable in headless environments.

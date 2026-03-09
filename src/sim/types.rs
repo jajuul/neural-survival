@@ -52,7 +52,7 @@ pub struct SensorVector {
 /// Decomposed sensor inputs used for controller observability.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct SensorObservation {
-    pub core_values: [f32; 4],
+    pub core_values: [f32; 2],
     pub food_eye_bins: Vec<f32>,
     pub agent_eye_bins: Vec<f32>,
     pub eye_bins: Vec<f32>,
@@ -97,6 +97,8 @@ pub struct FoodState {
     pub position: Vec2,
     pub radius: f32,
     pub energy_value: f32,
+    #[serde(default)]
+    pub motion_angle_radians: f32,
 }
 
 /// Entire mutable simulation world at a given step.

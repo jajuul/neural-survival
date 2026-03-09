@@ -30,8 +30,10 @@ mod bevy_viewer {
     const WORLD_SIZE_MAX: f32 = 5000.0;
     const FOOD_COUNT_MIN: usize = 1;
     const FOOD_COUNT_MAX: usize = 10000;
+    const FOOD_MOTION_SPEED_MAX: f32 = 50.0;
     const EPISODE_STEPS_MIN: u32 = 10;
     const EPISODE_STEPS_MAX: u32 = 20000;
+    const SENSOR_NOISE_STDDEV_MAX: f32 = 2.0;
     const FITNESS_PANEL_WIDTH: f32 = 420.0;
     const FITNESS_PANEL_HEIGHT: f32 = 240.0;
     const FITNESS_PANEL_MARGIN: f32 = 12.0;
@@ -99,18 +101,24 @@ mod bevy_viewer {
         WorldWidth,
         WorldHeight,
         FoodCount,
+        FoodMotionSpeed,
         FoodRespawnProbability,
+        SensorNoiseStddev,
+        SensorDropoutProbability,
         EpisodeSteps,
         MutationRate,
     }
 
-    const NUMERIC_FIELDS: [NumericFieldKind; 8] = [
+    const NUMERIC_FIELDS: [NumericFieldKind; 11] = [
         NumericFieldKind::EvolveGenerations,
         NumericFieldKind::EvaluationSwitchAfterGeneration,
         NumericFieldKind::WorldWidth,
         NumericFieldKind::WorldHeight,
         NumericFieldKind::FoodCount,
+        NumericFieldKind::FoodMotionSpeed,
         NumericFieldKind::FoodRespawnProbability,
+        NumericFieldKind::SensorNoiseStddev,
+        NumericFieldKind::SensorDropoutProbability,
         NumericFieldKind::EpisodeSteps,
         NumericFieldKind::MutationRate,
     ];
@@ -132,7 +140,10 @@ mod bevy_viewer {
         world_width: String,
         world_height: String,
         food_count: String,
+        food_motion_speed: String,
         food_respawn_probability: String,
+        sensor_noise_stddev: String,
+        sensor_dropout_probability: String,
         episode_steps: String,
         mutation_rate: String,
     }
@@ -147,7 +158,10 @@ mod bevy_viewer {
                 world_width: format!("{:.1}", config.world_width),
                 world_height: format!("{:.1}", config.world_height),
                 food_count: config.food_count.to_string(),
+                food_motion_speed: format!("{:.2}", config.food_motion_speed),
                 food_respawn_probability: format!("{:.3}", config.food_respawn_probability),
+                sensor_noise_stddev: format!("{:.3}", config.sensor_noise_stddev),
+                sensor_dropout_probability: format!("{:.3}", config.sensor_dropout_probability),
                 episode_steps: config.episode_steps.to_string(),
                 mutation_rate: format!("{:.3}", config.mutation_rate),
             }
@@ -162,7 +176,10 @@ mod bevy_viewer {
                 NumericFieldKind::WorldWidth => &self.world_width,
                 NumericFieldKind::WorldHeight => &self.world_height,
                 NumericFieldKind::FoodCount => &self.food_count,
+                NumericFieldKind::FoodMotionSpeed => &self.food_motion_speed,
                 NumericFieldKind::FoodRespawnProbability => &self.food_respawn_probability,
+                NumericFieldKind::SensorNoiseStddev => &self.sensor_noise_stddev,
+                NumericFieldKind::SensorDropoutProbability => &self.sensor_dropout_probability,
                 NumericFieldKind::EpisodeSteps => &self.episode_steps,
                 NumericFieldKind::MutationRate => &self.mutation_rate,
             }
@@ -177,7 +194,10 @@ mod bevy_viewer {
                 NumericFieldKind::WorldWidth => &mut self.world_width,
                 NumericFieldKind::WorldHeight => &mut self.world_height,
                 NumericFieldKind::FoodCount => &mut self.food_count,
+                NumericFieldKind::FoodMotionSpeed => &mut self.food_motion_speed,
                 NumericFieldKind::FoodRespawnProbability => &mut self.food_respawn_probability,
+                NumericFieldKind::SensorNoiseStddev => &mut self.sensor_noise_stddev,
+                NumericFieldKind::SensorDropoutProbability => &mut self.sensor_dropout_probability,
                 NumericFieldKind::EpisodeSteps => &mut self.episode_steps,
                 NumericFieldKind::MutationRate => &mut self.mutation_rate,
             }
@@ -1666,7 +1686,7 @@ mod bevy_viewer {
                 .to_string();
         };
 
-        let [x_norm, y_norm, energy_norm, speed_norm] = snapshot.sensor.core_values;
+        let [energy_norm, speed_norm] = snapshot.sensor.core_values;
         let output_text = if snapshot.has_live_step {
             format!(
                 "last action: steer={:.3} throttle_raw={:.3} throttle={:.3}",
@@ -1706,7 +1726,7 @@ mod bevy_viewer {
             .fold(0.0_f32, f32::max);
 
         format!(
-            "agent #{} ({:?}) {}\nworld step: {}\nperception: radius={:.1} bins={} eye_angle={:.3} total_fov={:.3}\ncore sensors: x={:.3} y={:.3} energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eyes: food={:.3} agents={:.3}\nchart below: green=food, orange=agents, controller input channels are [food bins | agent bins]",
+            "agent #{} ({:?}) {}\nworld step: {}\nperception: radius={:.1} bins={} eye_angle={:.3} total_fov={:.3}\ncore sensors: energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eyes: food={:.3} agents={:.3}\nchart below: green=food, orange=agents, controller input channels are [food bins | agent bins]",
             snapshot.agent_id,
             snapshot.controller_kind,
             if snapshot.alive { "alive" } else { "dead" },
@@ -1716,8 +1736,6 @@ mod bevy_viewer {
             snapshot.eye_cell_angle_radians,
             (snapshot.eye_cell_angle_radians * snapshot.perception_channels.max(1) as f32)
                 .min(std::f32::consts::TAU),
-            x_norm,
-            y_norm,
             energy_norm,
             speed_norm,
             output_text,
@@ -1735,7 +1753,10 @@ mod bevy_viewer {
             NumericFieldKind::WorldWidth => "World Width",
             NumericFieldKind::WorldHeight => "World Height",
             NumericFieldKind::FoodCount => "Food Count",
+            NumericFieldKind::FoodMotionSpeed => "Food Motion",
             NumericFieldKind::FoodRespawnProbability => "Food Respawn",
+            NumericFieldKind::SensorNoiseStddev => "Sensor Noise",
+            NumericFieldKind::SensorDropoutProbability => "Sensor Dropout",
             NumericFieldKind::EpisodeSteps => "Episode Steps",
             NumericFieldKind::MutationRate => "Mutation Rate",
         }
@@ -1785,7 +1806,10 @@ mod bevy_viewer {
             kind,
             NumericFieldKind::WorldWidth
                 | NumericFieldKind::WorldHeight
+                | NumericFieldKind::FoodMotionSpeed
                 | NumericFieldKind::FoodRespawnProbability
+                | NumericFieldKind::SensorNoiseStddev
+                | NumericFieldKind::SensorDropoutProbability
                 | NumericFieldKind::MutationRate
         ) && ch == '.'
             && !current.contains('.')
@@ -1830,9 +1854,24 @@ mod bevy_viewer {
                     runtime.config.food_count = value.clamp(FOOD_COUNT_MIN, FOOD_COUNT_MAX);
                 }
             }
+            NumericFieldKind::FoodMotionSpeed => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.food_motion_speed = value.clamp(0.0, FOOD_MOTION_SPEED_MAX);
+                }
+            }
             NumericFieldKind::FoodRespawnProbability => {
                 if let Ok(value) = raw.parse::<f32>() {
                     runtime.config.food_respawn_probability = value.clamp(0.0, 1.0);
+                }
+            }
+            NumericFieldKind::SensorNoiseStddev => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.sensor_noise_stddev = value.clamp(0.0, SENSOR_NOISE_STDDEV_MAX);
+                }
+            }
+            NumericFieldKind::SensorDropoutProbability => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.sensor_dropout_probability = value.clamp(0.0, 1.0);
                 }
             }
             NumericFieldKind::EpisodeSteps => {
@@ -1869,9 +1908,21 @@ mod bevy_viewer {
             NumericFieldKind::FoodCount => {
                 runtime.field_buffers.food_count = runtime.config.food_count.to_string();
             }
+            NumericFieldKind::FoodMotionSpeed => {
+                runtime.field_buffers.food_motion_speed =
+                    format!("{:.2}", runtime.config.food_motion_speed);
+            }
             NumericFieldKind::FoodRespawnProbability => {
                 runtime.field_buffers.food_respawn_probability =
                     format!("{:.3}", runtime.config.food_respawn_probability);
+            }
+            NumericFieldKind::SensorNoiseStddev => {
+                runtime.field_buffers.sensor_noise_stddev =
+                    format!("{:.3}", runtime.config.sensor_noise_stddev);
+            }
+            NumericFieldKind::SensorDropoutProbability => {
+                runtime.field_buffers.sensor_dropout_probability =
+                    format!("{:.3}", runtime.config.sensor_dropout_probability);
             }
             NumericFieldKind::EpisodeSteps => {
                 runtime.field_buffers.episode_steps = runtime.config.episode_steps.to_string();
