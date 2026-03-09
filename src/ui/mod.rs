@@ -2070,21 +2070,31 @@ mod bevy_viewer {
 
         match &snapshot.network {
             ControllerNetworkSnapshot::Mlp(mlp) => format!(
-                "MLP topology: {} -> {} -> {}\nnode color = activation, line color = weight sign, line intensity = |weight|",
+                "MLP topology: {} -> {} -> {}\ncolumns: left=input [{}], middle=hidden tanh, right=output [steer throttle]\ncurrent output: steer={:.3} throttle={:.3}\ncolors: teal=positive activation/weight, orange-red=negative, brighter=stronger magnitude",
                 mlp.input_values.len(),
                 mlp.hidden_values.len(),
-                mlp.output_values.len()
+                mlp.output_values.len(),
+                controller_input_legend(),
+                mlp.output_values.first().copied().unwrap_or_default(),
+                mlp.output_values.get(1).copied().unwrap_or_default(),
             ),
             ControllerNetworkSnapshot::Ltc(ltc) => format!(
-                "LTC topology: {} input, {} recurrent state, {} output\nstate column is recurrent; node color = activation, line intensity = |weight|",
+                "LTC topology: {} input, {} recurrent state, {} output\ncolumns: left=input [{}], middle=state (recurrent), right=output [steer throttle]\ncurrent output: steer={:.3} throttle={:.3}\ncolors: teal=positive activation/weight, orange-red=negative, brighter=stronger magnitude",
                 ltc.input_values.len(),
                 ltc.state_values.len(),
-                ltc.output_values.len()
+                ltc.output_values.len(),
+                controller_input_legend(),
+                ltc.output_values.first().copied().unwrap_or_default(),
+                ltc.output_values.get(1).copied().unwrap_or_default(),
             ),
             ControllerNetworkSnapshot::Unavailable => {
                 "Network topology is not available for this controller.".to_string()
             }
         }
+    }
+
+    fn controller_input_legend() -> &'static str {
+        "energy speed food0..9 agent0..9"
     }
 
     fn field_label(kind: NumericFieldKind) -> &'static str {

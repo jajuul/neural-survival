@@ -20,6 +20,7 @@ This module provides viewer entrypoints for loading and inspecting simulation sn
   - a selected-agent network inspector that renders controller topology and live activations:
     - MLP: input, hidden, and output layers
     - LTC: input, recurrent state, output, plus recurrent edges
+    - textual legend for input channels, output meanings, and activation/weight colors so the plot is readable without guessing the column semantics
   - controller-driven viewer stepping, so GUI movement and observability use the same neural controllers rather than stub actions
   - speed/rule toggles and restart from loaded snapshot state
 - In non-GUI builds, keeps a viewer stub so CLI workflows remain testable in headless environments.

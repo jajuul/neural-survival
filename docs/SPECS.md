@@ -253,6 +253,7 @@ Weights are config-driven and exported in run metadata.
   - live network inspector panel showing the selected controller topology and current node activations
     - MLP: input -> hidden -> output layers
     - LTC: input -> recurrent state -> output, including recurrent connections
+    - panel text identifies input-channel layout, output meanings, and color semantics
   - selected agent remains inspectable after death using the last captured telemetry
 
 ### Controls
