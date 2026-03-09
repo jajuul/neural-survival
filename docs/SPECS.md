@@ -81,7 +81,7 @@ Version 1 focuses on:
 2. User inspects movement, survival, and top-level statistics.
 3. User can pause/resume, adjust simulation speed, and toggle active world rules.
 4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `food motion`, `food respawn`, `sensor noise`, `sensor dropout`, `episode steps`, `mutation rate`) and a selectable evaluation schedule (`solo`, `shared`, or `solo -> shared @ N`).
-5. User can click an agent in the GUI to inspect its current food/agent eye-bin activations, controller outputs, and last-step energy-cost breakdown.
+5. User can click an agent in the GUI to inspect its current food/agent eye-bin activations, controller outputs, last-step energy-cost breakdown, and live neural-network topology/activations.
 
 ## Public Interfaces and Types
 
@@ -95,6 +95,12 @@ pub trait NeuralController {
         input: &SensorVector,
         dt: f32,
     ) -> ControllerStepOutput;
+    fn inspect_network(&self, input: &SensorVector) -> ControllerNetworkSnapshot;
+    fn step_with_diagnostics(
+        &mut self,
+        input: &SensorVector,
+        dt: f32,
+    ) -> ControllerDiagnostics;
     fn parameter_count(&self) -> usize;
     fn controller_kind(&self) -> ControllerKind;
 }
@@ -109,6 +115,11 @@ pub struct ControllerStepOutput {
     pub steering_raw: f32,
     pub throttle_raw: f32,
     pub throttle_applied: f32,
+}
+
+pub struct ControllerDiagnostics {
+    pub output: ControllerStepOutput,
+    pub network: ControllerNetworkSnapshot,
 }
 
 pub trait ControllerFactory {
@@ -239,10 +250,15 @@ Weights are config-driven and exported in run metadata.
   - core sensor values (`energy`, `speed`)
   - raw controller outputs (`steering`, `throttle_raw`) and applied throttle
   - last-step energy breakdown (`base`, `speed`, `network`, `perception`, `food`, `net`)
+  - live network inspector panel showing the selected controller topology and current node activations
+    - MLP: input -> hidden -> output layers
+    - LTC: input -> recurrent state -> output, including recurrent connections
   - selected agent remains inspectable after death using the last captured telemetry
 
 ### Controls
-- Start/stop simulation (pause/resume).
+- Pause simulation.
+- Single-step one simulation tick while paused.
+- Continue simulation (resume).
 - Simulation speed multiplier.
 - Toggle energy rule flags.
 - Restart from seed/config.
@@ -252,6 +268,7 @@ Weights are config-driven and exported in run metadata.
   - post-switch evaluation mode
   - switch generation (`0` disables the schedule)
 - View in-GUI fitness trend plot for best and mean fitness across generations.
+- View live network topology/activation plot for the selected agent.
 - Typed continuation controls:
   - generations to evolve
   - world width / world height

@@ -35,6 +35,43 @@ pub struct ControllerStepOutput {
     pub throttle_applied: f32,
 }
 
+/// Per-step controller diagnostics used by the GUI inspector.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ControllerDiagnostics {
+    pub output: ControllerStepOutput,
+    pub network: ControllerNetworkSnapshot,
+}
+
+/// Family-specific network topology and activation snapshot.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum ControllerNetworkSnapshot {
+    Mlp(MlpNetworkSnapshot),
+    Ltc(LtcNetworkSnapshot),
+    #[default]
+    Unavailable,
+}
+
+/// Feed-forward network activations and weights for one MLP step.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MlpNetworkSnapshot {
+    pub input_values: Vec<f32>,
+    pub hidden_values: Vec<f32>,
+    pub output_values: Vec<f32>,
+    pub weights_input_hidden: Vec<f32>,
+    pub weights_hidden_output: Vec<f32>,
+}
+
+/// Recurrent network activations and weights for one LTC step.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LtcNetworkSnapshot {
+    pub input_values: Vec<f32>,
+    pub state_values: Vec<f32>,
+    pub output_values: Vec<f32>,
+    pub sensory_weights: Vec<f32>,
+    pub recurrent_weights: Vec<f32>,
+    pub readout_weights: Vec<f32>,
+}
+
 /// Runtime controller behavior shared across controller families.
 pub trait NeuralController: Send + Sync {
     /// Reset controller internal state to episode-initial values.
@@ -52,6 +89,18 @@ pub trait NeuralController: Send + Sync {
             throttle_raw: (action.throttle * 2.0 - 1.0).clamp(-1.0, 1.0),
             throttle_applied: action.throttle,
         }
+    }
+
+    /// Inspect the controller's current topology and activation state for a given input.
+    fn inspect_network(&self, _input: &SensorVector) -> ControllerNetworkSnapshot {
+        ControllerNetworkSnapshot::Unavailable
+    }
+
+    /// Compute one action and expose both raw signals and network activations.
+    fn step_with_diagnostics(&mut self, input: &SensorVector, dt: f32) -> ControllerDiagnostics {
+        let output = self.step_with_observability(input, dt);
+        let network = self.inspect_network(input);
+        ControllerDiagnostics { output, network }
     }
 
     /// Number of scalar parameters used by this controller instance.

@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::brain::{
-    BrainGenome, ControllerFactory, ControllerKind, ControllerStepOutput, NeuralController,
+    BrainGenome, ControllerDiagnostics, ControllerFactory, ControllerKind,
+    ControllerNetworkSnapshot, ControllerStepOutput, MlpNetworkSnapshot, NeuralController,
 };
 use crate::sim::{ActionVector, SensorVector};
 
@@ -200,7 +201,7 @@ impl MlpController {
         Ok(Self { genome })
     }
 
-    fn forward_outputs(&self, input: &SensorVector) -> Vec<f32> {
+    fn forward_snapshot(&self, input: &SensorVector) -> MlpNetworkSnapshot {
         let shape = self.genome.shape;
 
         let mut input_buffer = vec![0.0; shape.input_size];
@@ -234,7 +235,13 @@ impl MlpController {
             *output_value = (weighted_sum + self.genome.bias_output[output_idx]).tanh();
         }
 
-        outputs
+        MlpNetworkSnapshot {
+            input_values: input_buffer,
+            hidden_values: hidden,
+            output_values: outputs,
+            weights_input_hidden: self.genome.weights_input_hidden.clone(),
+            weights_hidden_output: self.genome.weights_hidden_output.clone(),
+        }
     }
 
     fn step_output_from_signals(outputs: &[f32]) -> ControllerStepOutput {
@@ -264,8 +271,20 @@ impl NeuralController for MlpController {
     }
 
     fn step_with_observability(&mut self, input: &SensorVector, _dt: f32) -> ControllerStepOutput {
-        let outputs = self.forward_outputs(input);
-        Self::step_output_from_signals(&outputs)
+        let snapshot = self.forward_snapshot(input);
+        Self::step_output_from_signals(&snapshot.output_values)
+    }
+
+    fn inspect_network(&self, input: &SensorVector) -> ControllerNetworkSnapshot {
+        ControllerNetworkSnapshot::Mlp(self.forward_snapshot(input))
+    }
+
+    fn step_with_diagnostics(&mut self, input: &SensorVector, _dt: f32) -> ControllerDiagnostics {
+        let snapshot = self.forward_snapshot(input);
+        ControllerDiagnostics {
+            output: Self::step_output_from_signals(&snapshot.output_values),
+            network: ControllerNetworkSnapshot::Mlp(snapshot),
+        }
     }
 
     fn parameter_count(&self) -> usize {
@@ -323,7 +342,9 @@ impl ControllerFactory for MlpControllerFactory {
 mod tests {
     use rand::{SeedableRng, rngs::StdRng};
 
-    use crate::brain::{ControllerFactory, ControllerKind, NeuralController};
+    use crate::brain::{
+        ControllerFactory, ControllerKind, ControllerNetworkSnapshot, NeuralController,
+    };
     use crate::sim::SensorVector;
 
     use super::{MlpController, MlpControllerFactory, MlpGenome, MlpGenomeError, MlpShape};
@@ -436,5 +457,39 @@ mod tests {
         assert!((output.action.steering - output.steering_raw).abs() < 1e-6);
         assert!((output.action.throttle - output.throttle_applied).abs() < 1e-6);
         assert!((output.throttle_applied - 0.2969760).abs() < 1e-5);
+    }
+
+    #[test]
+    fn step_with_diagnostics_exposes_layer_shapes() {
+        let shape = MlpShape {
+            input_size: 2,
+            hidden_size: 2,
+            output_size: 2,
+        };
+        let genome = MlpGenome::from_flat_parameters(
+            shape,
+            &[
+                0.5, -0.25, -0.75, 0.1, 0.1, -0.2, 0.3, -0.4, 0.2, 0.6, 0.05, -0.1,
+            ],
+        )
+        .expect("parameter vector should match MLP shape");
+        let mut controller = MlpController::new(genome).expect("genome should construct");
+
+        let diagnostics = controller.step_with_diagnostics(
+            &SensorVector {
+                values: vec![1.0, -1.0],
+            },
+            0.1,
+        );
+
+        let ControllerNetworkSnapshot::Mlp(network) = diagnostics.network else {
+            panic!("expected MLP network snapshot");
+        };
+
+        assert_eq!(network.input_values.len(), 2);
+        assert_eq!(network.hidden_values.len(), 2);
+        assert_eq!(network.output_values.len(), 2);
+        assert_eq!(network.weights_input_hidden.len(), 4);
+        assert_eq!(network.weights_hidden_output.len(), 4);
     }
 }

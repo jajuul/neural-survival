@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::brain::{
-    BrainGenome, ControllerFactory, ControllerKind, ControllerStepOutput, NeuralController,
+    BrainGenome, ControllerDiagnostics, ControllerFactory, ControllerKind,
+    ControllerNetworkSnapshot, ControllerStepOutput, LtcNetworkSnapshot, NeuralController,
 };
 use crate::sim::{ActionVector, SensorVector};
 
@@ -494,6 +495,47 @@ impl LtcController {
         outputs
     }
 
+    fn input_buffer(&self, input: &SensorVector) -> Vec<f32> {
+        let shape = self.genome.shape;
+        let mut input_buffer = vec![0.0; shape.input_size];
+        for (dst, src) in input_buffer.iter_mut().zip(input.values.iter().copied()) {
+            *dst = src;
+        }
+        input_buffer
+    }
+
+    fn readout_outputs(&self) -> Vec<f32> {
+        let shape = self.genome.shape;
+        let mut outputs = vec![0.0; shape.output_size];
+        for (output_idx, output_value) in outputs.iter_mut().enumerate() {
+            let row_start = output_idx * shape.state_size;
+            let weighted_sum = self.genome.weights_state_output
+                [row_start..row_start + shape.state_size]
+                .iter()
+                .zip(self.state.iter())
+                .map(|(w, s)| w * s.tanh())
+                .sum::<f32>();
+
+            *output_value = (weighted_sum + self.genome.bias_output[output_idx]).tanh();
+        }
+        outputs
+    }
+
+    fn network_snapshot(
+        &self,
+        input: &SensorVector,
+        output_values: Vec<f32>,
+    ) -> LtcNetworkSnapshot {
+        LtcNetworkSnapshot {
+            input_values: self.input_buffer(input),
+            state_values: self.state.clone(),
+            output_values,
+            sensory_weights: self.genome.sensory_weight.clone(),
+            recurrent_weights: self.genome.recurrent_weight.clone(),
+            readout_weights: self.genome.weights_state_output.clone(),
+        }
+    }
+
     fn compute_sensory_drive(&self, input: &[f32]) -> SynapseDrive {
         let shape = self.genome.shape;
         let mut numerator = vec![0.0; shape.state_size];
@@ -556,6 +598,18 @@ impl NeuralController for LtcController {
         Self::step_output_from_signals(&outputs)
     }
 
+    fn inspect_network(&self, input: &SensorVector) -> ControllerNetworkSnapshot {
+        ControllerNetworkSnapshot::Ltc(self.network_snapshot(input, self.readout_outputs()))
+    }
+
+    fn step_with_diagnostics(&mut self, input: &SensorVector, dt: f32) -> ControllerDiagnostics {
+        let outputs = self.forward_outputs(input, dt);
+        ControllerDiagnostics {
+            output: Self::step_output_from_signals(&outputs),
+            network: ControllerNetworkSnapshot::Ltc(self.network_snapshot(input, outputs)),
+        }
+    }
+
     fn parameter_count(&self) -> usize {
         self.genome.parameter_count()
     }
@@ -600,7 +654,9 @@ impl ControllerFactory for LtcControllerFactory {
 mod tests {
     use rand::{SeedableRng, rngs::StdRng};
 
-    use crate::brain::{ControllerFactory, ControllerKind, NeuralController};
+    use crate::brain::{
+        ControllerFactory, ControllerKind, ControllerNetworkSnapshot, NeuralController,
+    };
     use crate::sim::SensorVector;
 
     use super::{LtcController, LtcControllerFactory, LtcGenome, LtcGenomeError, LtcShape};
@@ -754,5 +810,36 @@ mod tests {
         assert!((output.action.throttle - output.throttle_applied).abs() < 1e-6);
         assert!((output.steering_raw - 0.2365018).abs() < 1e-5);
         assert!((output.throttle_applied - 0.3817491).abs() < 1e-5);
+    }
+
+    #[test]
+    fn step_with_diagnostics_exposes_state_snapshot() {
+        let shape = LtcShape {
+            input_size: 1,
+            state_size: 1,
+            output_size: 2,
+        };
+        let genome = LtcGenome::from_flat_parameters(
+            shape,
+            &[
+                1.0, 0.0, 1.0, 1.0, 0.001, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, -1.0, 0.0, 0.0,
+            ],
+        )
+        .expect("parameter vector should match LTC shape");
+        let mut controller = LtcController::new(genome).expect("genome should construct");
+
+        let diagnostics =
+            controller.step_with_diagnostics(&SensorVector { values: vec![0.0] }, 1.0);
+
+        let ControllerNetworkSnapshot::Ltc(network) = diagnostics.network else {
+            panic!("expected LTC network snapshot");
+        };
+
+        assert_eq!(network.input_values.len(), 1);
+        assert_eq!(network.state_values.len(), 1);
+        assert_eq!(network.output_values.len(), 2);
+        assert_eq!(network.sensory_weights.len(), 1);
+        assert_eq!(network.recurrent_weights.len(), 1);
+        assert_eq!(network.readout_weights.len(), 2);
     }
 }

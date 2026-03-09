@@ -12,7 +12,10 @@ mod bevy_viewer {
     use bevy::prelude::{Mesh2d, MeshMaterial2d};
     use bevy::window::PrimaryWindow;
 
-    use crate::brain::{ControllerFactory, ControllerKind, ControllerStepOutput, NeuralController};
+    use crate::brain::{
+        ControllerDiagnostics, ControllerFactory, ControllerKind, ControllerNetworkSnapshot,
+        ControllerStepOutput, NeuralController,
+    };
     use crate::config::EvaluationMode;
     use crate::experiment::{
         GenerationMetrics, continue_generations_from_population, world_state_for_population,
@@ -49,7 +52,23 @@ mod bevy_viewer {
     const OBSERVABILITY_EYE_PLOT_INSET_RIGHT: f32 = 14.0;
     const OBSERVABILITY_EYE_PLOT_INSET_TOP: f32 = 240.0;
     const OBSERVABILITY_EYE_PLOT_INSET_BOTTOM: f32 = 18.0;
+    const NETWORK_PANEL_WIDTH: f32 = 420.0;
+    const NETWORK_PANEL_HEIGHT: f32 = 220.0;
+    const NETWORK_PANEL_GAP: f32 = 12.0;
+    const NETWORK_PLOT_INSET_LEFT: f32 = 18.0;
+    const NETWORK_PLOT_INSET_RIGHT: f32 = 18.0;
+    const NETWORK_PLOT_INSET_TOP: f32 = 52.0;
+    const NETWORK_PLOT_INSET_BOTTOM: f32 = 18.0;
     const SELECTION_PICK_RADIUS: f32 = 12.0;
+
+    #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
+    enum ViewerUpdateSet {
+        ControlsPrimary,
+        ControlsSecondary,
+        StatePrimary,
+        StateSecondary,
+        Draw,
+    }
 
     #[derive(Component)]
     struct AgentVisual {
@@ -65,10 +84,13 @@ mod bevy_viewer {
     }
 
     #[derive(Component)]
-    struct StartStopButton;
+    struct PauseButton;
 
     #[derive(Component)]
-    struct StartStopButtonLabel;
+    struct ContinueButton;
+
+    #[derive(Component)]
+    struct StepButton;
 
     #[derive(Component)]
     struct EvolveRunButton;
@@ -93,6 +115,9 @@ mod bevy_viewer {
 
     #[derive(Component)]
     struct SelectedAgentSummaryText;
+
+    #[derive(Component)]
+    struct SelectedAgentNetworkSummaryText;
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum NumericFieldKind {
@@ -220,6 +245,7 @@ mod bevy_viewer {
         eye_cell_angle_radians: f32,
         sensor: SensorObservation,
         controller_output: ControllerStepOutput,
+        network: ControllerNetworkSnapshot,
         energy: EnergyBreakdown,
         consumed_food: bool,
         has_live_step: bool,
@@ -287,37 +313,80 @@ mod bevy_viewer {
             .add_plugins(DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "neural-survival viewer".into(),
-                    resolution: (1280.0, 860.0).into(),
+                    resolution: (1280.0, 980.0).into(),
                     ..default()
                 }),
                 ..default()
             }))
+            .configure_sets(
+                Update,
+                (
+                    ViewerUpdateSet::ControlsPrimary,
+                    ViewerUpdateSet::ControlsSecondary,
+                    ViewerUpdateSet::StatePrimary,
+                    ViewerUpdateSet::StateSecondary,
+                    ViewerUpdateSet::Draw,
+                )
+                    .chain(),
+            )
             .add_systems(Startup, setup_scene)
             .add_systems(
                 Update,
-                (
+                ((
                     keyboard_controls,
-                    start_stop_button_interaction,
+                    pause_button_interaction,
+                    continue_button_interaction,
+                    step_button_interaction,
                     evaluation_mode_button_interaction,
                     evaluation_mode_after_switch_button_interaction,
+                )
+                    .chain()
+                    .in_set(ViewerUpdateSet::ControlsPrimary),),
+            )
+            .add_systems(
+                Update,
+                (
                     numeric_field_focus_interaction,
                     numeric_field_keyboard_input,
                     evolve_run_button_interaction,
                     agent_selection_input,
                     advance_evolution_job,
-                    sync_start_stop_button_state,
+                )
+                    .chain()
+                    .in_set(ViewerUpdateSet::ControlsSecondary),
+            )
+            .add_systems(
+                Update,
+                ((
+                    sync_simulation_control_state,
                     sync_control_panel_state,
                     sync_fitness_plot_summary,
+                    sync_selected_agent_network_summary,
                     rebuild_world_visuals_if_requested,
+                )
+                    .chain()
+                    .in_set(ViewerUpdateSet::StatePrimary),),
+            )
+            .add_systems(
+                Update,
+                ((
                     advance_simulation,
                     sync_selected_agent_summary,
                     sync_agent_visuals,
                     sync_food_visuals,
-                    draw_fitness_plot,
-                    draw_selected_agent_eye_bins,
                     update_window_title,
                 )
-                    .chain(),
+                    .chain()
+                    .in_set(ViewerUpdateSet::StateSecondary),),
+            )
+            .add_systems(
+                Update,
+                ((
+                    draw_fitness_plot,
+                    draw_selected_agent_eye_bins,
+                    draw_selected_agent_network,
+                )
+                    .in_set(ViewerUpdateSet::Draw),),
             )
             .run();
 
@@ -440,25 +509,72 @@ mod bevy_viewer {
                     });
 
                 parent
-                    .spawn((
-                        Button,
-                        Node {
-                            width: Val::Px(180.0),
-                            height: Val::Px(42.0),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgb(0.2, 0.7, 0.3)),
-                        StartStopButton,
-                    ))
-                    .with_children(|button| {
-                        button.spawn((
-                            Text::new("Start"),
-                            TextFont::from_font_size(18.0),
-                            TextColor(Color::srgb(0.06, 0.06, 0.06)),
-                            StartStopButtonLabel,
-                        ));
+                    .spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(8.0),
+                        align_items: AlignItems::Center,
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        row.spawn((
+                            Button,
+                            Node {
+                                width: Val::Px(56.0),
+                                height: Val::Px(36.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.7, 0.3, 0.25)),
+                            PauseButton,
+                        ))
+                        .with_children(|button| {
+                            button.spawn((
+                                Text::new("Pause"),
+                                TextFont::from_font_size(14.0),
+                                TextColor(Color::srgb(0.95, 0.95, 0.95)),
+                            ));
+                        });
+
+                        row.spawn((
+                            Button,
+                            Node {
+                                width: Val::Px(56.0),
+                                height: Val::Px(36.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.22, 0.65, 0.35)),
+                            StepButton,
+                        ))
+                        .with_children(|button| {
+                            button.spawn((
+                                Text::new("Step"),
+                                TextFont::from_font_size(14.0),
+                                TextColor(Color::srgb(0.95, 0.95, 0.95)),
+                            ));
+                        });
+
+                        row.spawn((
+                            Button,
+                            Node {
+                                width: Val::Px(68.0),
+                                height: Val::Px(36.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.2, 0.45, 0.78)),
+                            ContinueButton,
+                        ))
+                        .with_children(|button| {
+                            button.spawn((
+                                Text::new("Continue"),
+                                TextFont::from_font_size(14.0),
+                                TextColor(Color::srgb(0.95, 0.95, 0.95)),
+                            ));
+                        });
                     });
 
                 parent.spawn((
@@ -599,6 +715,41 @@ mod bevy_viewer {
                     SelectedAgentSummaryText,
                 ));
             });
+
+        commands
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(FITNESS_PANEL_MARGIN),
+                    top: Val::Px(
+                        FITNESS_PANEL_MARGIN * 3.0
+                            + FITNESS_PANEL_HEIGHT
+                            + OBSERVABILITY_PANEL_HEIGHT
+                            + OBSERVABILITY_PANEL_GAP
+                            + NETWORK_PANEL_GAP,
+                    ),
+                    width: Val::Px(NETWORK_PANEL_WIDTH),
+                    height: Val::Px(NETWORK_PANEL_HEIGHT),
+                    padding: UiRect::all(Val::Px(12.0)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(6.0),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.08, 0.10, 0.13, 0.95)),
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    Text::new("Network Inspector"),
+                    TextFont::from_font_size(17.0),
+                    TextColor(Color::srgb(0.95, 0.95, 0.95)),
+                ));
+                parent.spawn((
+                    Text::new("Select an agent to view topology and real-time activations."),
+                    TextFont::from_font_size(12.0),
+                    TextColor(Color::srgb(0.82, 0.86, 0.9)),
+                    SelectedAgentNetworkSummaryText,
+                ));
+            });
     }
 
     fn keyboard_controls(keys: Res<ButtonInput<KeyCode>>, mut runtime: ResMut<ViewerRuntime>) {
@@ -608,6 +759,10 @@ mod bevy_viewer {
 
         if keys.just_pressed(KeyCode::Space) {
             runtime.paused = !runtime.paused;
+        }
+
+        if keys.just_pressed(KeyCode::Period) {
+            run_simulation_steps(&mut runtime, 1);
         }
 
         if keys.just_pressed(KeyCode::Equal) {
@@ -638,10 +793,26 @@ mod bevy_viewer {
         }
     }
 
-    fn start_stop_button_interaction(
+    fn pause_button_interaction(
+        interactions: Query<&Interaction, (Changed<Interaction>, With<Button>, With<PauseButton>)>,
+        mut runtime: ResMut<ViewerRuntime>,
+    ) {
+        if runtime.evolution_job.is_some() {
+            return;
+        }
+
+        for interaction in &interactions {
+            if matches!(*interaction, Interaction::Pressed) {
+                runtime.active_input = None;
+                runtime.paused = true;
+            }
+        }
+    }
+
+    fn continue_button_interaction(
         interactions: Query<
             &Interaction,
-            (Changed<Interaction>, With<Button>, With<StartStopButton>),
+            (Changed<Interaction>, With<Button>, With<ContinueButton>),
         >,
         mut runtime: ResMut<ViewerRuntime>,
     ) {
@@ -652,7 +823,24 @@ mod bevy_viewer {
         for interaction in &interactions {
             if matches!(*interaction, Interaction::Pressed) {
                 runtime.active_input = None;
-                runtime.paused = !runtime.paused;
+                runtime.paused = false;
+            }
+        }
+    }
+
+    fn step_button_interaction(
+        interactions: Query<&Interaction, (Changed<Interaction>, With<Button>, With<StepButton>)>,
+        mut runtime: ResMut<ViewerRuntime>,
+    ) {
+        if runtime.evolution_job.is_some() {
+            return;
+        }
+
+        for interaction in &interactions {
+            if matches!(*interaction, Interaction::Pressed) {
+                runtime.active_input = None;
+                runtime.paused = true;
+                run_simulation_steps(&mut runtime, 1);
             }
         }
     }
@@ -895,23 +1083,40 @@ mod bevy_viewer {
         }
     }
 
-    fn sync_start_stop_button_state(
+    fn sync_simulation_control_state(
         runtime: Res<ViewerRuntime>,
         mut button_query: Query<
-            (&Interaction, &mut BackgroundColor),
-            (With<Button>, With<StartStopButton>),
+            (
+                &Interaction,
+                &mut BackgroundColor,
+                Option<&PauseButton>,
+                Option<&StepButton>,
+                Option<&ContinueButton>,
+            ),
+            With<Button>,
         >,
-        mut label_query: Query<&mut Text, With<StartStopButtonLabel>>,
     ) {
-        for (interaction, mut color) in &mut button_query {
-            *color = start_stop_button_color(runtime.paused, *interaction);
-        }
-
-        for mut label in &mut label_query {
-            **label = if runtime.paused {
-                "Start".to_string()
+        for (interaction, mut color, pause, step, cont) in &mut button_query {
+            let base = if pause.is_some() {
+                Color::srgb(0.70, 0.30, 0.25)
+            } else if step.is_some() {
+                Color::srgb(0.22, 0.65, 0.35)
+            } else if cont.is_some() {
+                Color::srgb(0.20, 0.45, 0.78)
             } else {
-                "Stop".to_string()
+                continue;
+            };
+
+            *color = match *interaction {
+                Interaction::Pressed => BackgroundColor(Color::srgb(0.84, 0.84, 0.84)),
+                Interaction::Hovered => BackgroundColor(lighten_color(base, 0.12)),
+                Interaction::None => BackgroundColor(if pause.is_some() && runtime.paused {
+                    lighten_color(base, 0.08)
+                } else if cont.is_some() && !runtime.paused {
+                    lighten_color(base, 0.08)
+                } else {
+                    base
+                }),
             };
         }
     }
@@ -1028,15 +1233,14 @@ mod bevy_viewer {
         }
     }
 
-    fn start_stop_button_color(paused: bool, interaction: Interaction) -> BackgroundColor {
-        if matches!(interaction, Interaction::Hovered) {
-            return BackgroundColor(Color::srgb(0.35, 0.55, 0.85));
-        }
+    fn sync_selected_agent_network_summary(
+        runtime: Res<ViewerRuntime>,
+        mut query: Query<&mut Text, With<SelectedAgentNetworkSummaryText>>,
+    ) {
+        let summary = selected_agent_network_summary_text(&runtime);
 
-        if paused {
-            BackgroundColor(Color::srgb(0.2, 0.7, 0.3))
-        } else {
-            BackgroundColor(Color::srgb(0.8, 0.35, 0.3))
+        for mut text in &mut query {
+            **text = summary.clone();
         }
     }
 
@@ -1118,12 +1322,16 @@ mod bevy_viewer {
         }
 
         let steps = runtime.speed_multiplier.round().max(1.0) as u32;
+        run_simulation_steps(&mut runtime, steps);
+    }
+
+    fn run_simulation_steps(runtime: &mut ViewerRuntime, steps: u32) {
         let config = runtime.config.clone();
         for _ in 0..steps {
             let world_snapshot = runtime.world.clone();
             let mut actions = Vec::with_capacity(world_snapshot.agents.len());
             let mut selected_sensor = None;
-            let mut selected_output = None;
+            let mut selected_diagnostics: Option<ControllerDiagnostics> = None;
 
             for (idx, agent) in world_snapshot.agents.iter().enumerate() {
                 if !agent.alive {
@@ -1132,18 +1340,27 @@ mod bevy_viewer {
                 }
 
                 let sensor = sensor_observation(agent, &world_snapshot, &config);
-                let output = runtime
-                    .controllers
-                    .get_mut(idx)
-                    .map(|controller| {
-                        controller.step_with_observability(&sensor.input, config.timestep_seconds)
-                    })
-                    .unwrap_or_default();
-                actions.push(output.action);
-
                 if runtime.selected_agent_index == Some(idx) {
+                    let diagnostics = runtime
+                        .controllers
+                        .get_mut(idx)
+                        .map(|controller| {
+                            controller.step_with_diagnostics(&sensor.input, config.timestep_seconds)
+                        })
+                        .unwrap_or_default();
+                    actions.push(diagnostics.output.action);
                     selected_sensor = Some(sensor);
-                    selected_output = Some(output);
+                    selected_diagnostics = Some(diagnostics);
+                } else {
+                    let output = runtime
+                        .controllers
+                        .get_mut(idx)
+                        .map(|controller| {
+                            controller
+                                .step_with_observability(&sensor.input, config.timestep_seconds)
+                        })
+                        .unwrap_or_default();
+                    actions.push(output.action);
                 }
             }
 
@@ -1151,10 +1368,10 @@ mod bevy_viewer {
                 step_world_with_actions_and_telemetry(&mut runtime.world, &config, &actions);
 
             if let Some(selected_idx) = runtime.selected_agent_index {
-                if let (Some(agent), Some(sensor), Some(controller_output), Some(step_data)) = (
+                if let (Some(agent), Some(sensor), Some(diagnostics), Some(step_data)) = (
                     runtime.world.agents.get(selected_idx),
                     selected_sensor,
-                    selected_output,
+                    selected_diagnostics,
                     step_telemetry.get(selected_idx).copied(),
                 ) {
                     runtime.selected_agent_snapshot = Some(SelectedAgentSnapshot {
@@ -1170,7 +1387,8 @@ mod bevy_viewer {
                         perception_channels: agent.perception_channels,
                         eye_cell_angle_radians: agent.eye_cell_angle_radians,
                         sensor,
-                        controller_output,
+                        controller_output: diagnostics.output,
+                        network: diagnostics.network,
                         energy: step_data.energy,
                         consumed_food: step_data.consumed_food,
                         has_live_step: true,
@@ -1540,6 +1758,84 @@ mod bevy_viewer {
         }
     }
 
+    fn draw_selected_agent_network(
+        runtime: Res<ViewerRuntime>,
+        window_query: Query<&Window, With<PrimaryWindow>>,
+        mut gizmos: Gizmos,
+    ) {
+        let Some(snapshot) = &runtime.selected_agent_snapshot else {
+            return;
+        };
+        let Ok(window) = window_query.get_single() else {
+            return;
+        };
+
+        let panel_left = window.width() - FITNESS_PANEL_MARGIN - NETWORK_PANEL_WIDTH;
+        let panel_top = FITNESS_PANEL_MARGIN * 3.0
+            + FITNESS_PANEL_HEIGHT
+            + OBSERVABILITY_PANEL_HEIGHT
+            + OBSERVABILITY_PANEL_GAP
+            + NETWORK_PANEL_GAP;
+        let plot_left = panel_left + NETWORK_PLOT_INSET_LEFT;
+        let plot_right = panel_left + NETWORK_PANEL_WIDTH - NETWORK_PLOT_INSET_RIGHT;
+        let plot_top = panel_top + NETWORK_PLOT_INSET_TOP;
+        let plot_bottom = panel_top + NETWORK_PANEL_HEIGHT - NETWORK_PLOT_INSET_BOTTOM;
+
+        draw_screen_line(
+            &mut gizmos,
+            window,
+            plot_left,
+            plot_top,
+            plot_right,
+            plot_top,
+            Color::srgba(0.72, 0.78, 0.86, 0.45),
+        );
+        draw_screen_line(
+            &mut gizmos,
+            window,
+            plot_left,
+            plot_bottom,
+            plot_right,
+            plot_bottom,
+            Color::srgba(0.72, 0.78, 0.86, 0.45),
+        );
+
+        match &snapshot.network {
+            ControllerNetworkSnapshot::Mlp(mlp) => draw_layered_network(
+                &mut gizmos,
+                window,
+                plot_left,
+                plot_right,
+                plot_top,
+                plot_bottom,
+                &mlp.input_values,
+                &mlp.hidden_values,
+                &mlp.output_values,
+                &mlp.weights_input_hidden,
+                &mlp.weights_hidden_output,
+                None,
+            ),
+            ControllerNetworkSnapshot::Ltc(ltc) => draw_layered_network(
+                &mut gizmos,
+                window,
+                plot_left,
+                plot_right,
+                plot_top,
+                plot_bottom,
+                &ltc.input_values,
+                &ltc.state_values
+                    .iter()
+                    .map(|value| value.tanh())
+                    .collect::<Vec<_>>(),
+                &ltc.output_values,
+                &ltc.sensory_weights,
+                &ltc.readout_weights,
+                Some(&ltc.recurrent_weights),
+            ),
+            ControllerNetworkSnapshot::Unavailable => {}
+        }
+    }
+
     fn spawn_food_entities(commands: &mut Commands, food: &[FoodState], width: f32, height: f32) {
         for item in food {
             spawn_one_food(commands, item, width, height);
@@ -1641,6 +1937,11 @@ mod bevy_viewer {
         };
 
         let sensor = sensor_observation(agent, &runtime.world, &runtime.config);
+        let network = runtime
+            .controllers
+            .get(selected_idx)
+            .map(|controller| controller.inspect_network(&sensor.input))
+            .unwrap_or_default();
         runtime.selected_agent_snapshot = Some(SelectedAgentSnapshot {
             agent_id: agent.id,
             controller_kind: runtime
@@ -1655,6 +1956,7 @@ mod bevy_viewer {
             eye_cell_angle_radians: agent.eye_cell_angle_radians,
             sensor,
             controller_output: ControllerStepOutput::default(),
+            network,
             energy: EnergyBreakdown::default(),
             consumed_food: false,
             has_live_step: false,
@@ -1680,17 +1982,19 @@ mod bevy_viewer {
 
     fn cursor_over_ui_panel(cursor: bevy::math::Vec2, window: &Window) -> bool {
         let left_panel_right = 220.0;
-        if cursor.x <= left_panel_right && cursor.y <= 520.0 {
+        if cursor.x <= left_panel_right && cursor.y <= 700.0 {
             return true;
         }
 
         let right_panel_left = window.width() - FITNESS_PANEL_MARGIN - OBSERVABILITY_PANEL_WIDTH;
         cursor.x >= right_panel_left
             && cursor.y
-                <= FITNESS_PANEL_MARGIN * 3.0
+                <= FITNESS_PANEL_MARGIN * 4.0
                     + FITNESS_PANEL_HEIGHT
                     + OBSERVABILITY_PANEL_GAP
                     + OBSERVABILITY_PANEL_HEIGHT
+                    + NETWORK_PANEL_GAP
+                    + NETWORK_PANEL_HEIGHT
     }
 
     fn selected_agent_summary_text(runtime: &ViewerRuntime) -> String {
@@ -1757,6 +2061,30 @@ mod bevy_viewer {
             food_eye_max,
             agent_eye_max
         )
+    }
+
+    fn selected_agent_network_summary_text(runtime: &ViewerRuntime) -> String {
+        let Some(snapshot) = &runtime.selected_agent_snapshot else {
+            return "Select an agent to view topology and real-time activations.".to_string();
+        };
+
+        match &snapshot.network {
+            ControllerNetworkSnapshot::Mlp(mlp) => format!(
+                "MLP topology: {} -> {} -> {}\nnode color = activation, line color = weight sign, line intensity = |weight|",
+                mlp.input_values.len(),
+                mlp.hidden_values.len(),
+                mlp.output_values.len()
+            ),
+            ControllerNetworkSnapshot::Ltc(ltc) => format!(
+                "LTC topology: {} input, {} recurrent state, {} output\nstate column is recurrent; node color = activation, line intensity = |weight|",
+                ltc.input_values.len(),
+                ltc.state_values.len(),
+                ltc.output_values.len()
+            ),
+            ControllerNetworkSnapshot::Unavailable => {
+                "Network topology is not available for this controller.".to_string()
+            }
+        }
     }
 
     fn field_label(kind: NumericFieldKind) -> &'static str {
@@ -2034,6 +2362,173 @@ mod bevy_viewer {
             screen_to_world(window, x1, y1),
             color,
         );
+    }
+
+    fn draw_layered_network(
+        gizmos: &mut Gizmos,
+        window: &Window,
+        left: f32,
+        right: f32,
+        top: f32,
+        bottom: f32,
+        input_values: &[f32],
+        middle_values: &[f32],
+        output_values: &[f32],
+        input_middle_weights: &[f32],
+        middle_output_weights: &[f32],
+        recurrent_weights: Option<&[f32]>,
+    ) {
+        let columns = [
+            left + (right - left) * 0.10,
+            left + (right - left) * 0.50,
+            left + (right - left) * 0.90,
+        ];
+        let input_positions = layer_node_positions(columns[0], top, bottom, input_values.len());
+        let middle_positions = layer_node_positions(columns[1], top, bottom, middle_values.len());
+        let output_positions = layer_node_positions(columns[2], top, bottom, output_values.len());
+
+        draw_weight_matrix(
+            gizmos,
+            window,
+            &input_positions,
+            &middle_positions,
+            input_middle_weights,
+            input_values.len(),
+        );
+        draw_weight_matrix(
+            gizmos,
+            window,
+            &middle_positions,
+            &output_positions,
+            middle_output_weights,
+            middle_values.len(),
+        );
+
+        if let Some(recurrent) = recurrent_weights {
+            for (from_idx, from) in middle_positions.iter().enumerate() {
+                for (to_idx, to) in middle_positions.iter().enumerate() {
+                    let weight = recurrent[from_idx * middle_positions.len() + to_idx];
+                    if weight.abs() < 0.2 {
+                        continue;
+                    }
+
+                    let x_mid = from.x + (to.x - from.x) * 0.5 + 12.0;
+                    let y_mid = from.y + (to.y - from.y) * 0.5;
+                    let color = weight_color(weight, 0.08);
+                    draw_screen_line(gizmos, window, from.x, from.y, x_mid, y_mid, color);
+                    draw_screen_line(gizmos, window, x_mid, y_mid, to.x, to.y, color);
+                }
+            }
+        }
+
+        draw_node_layer(gizmos, window, &input_positions, input_values);
+        draw_node_layer(gizmos, window, &middle_positions, middle_values);
+        draw_node_layer(gizmos, window, &output_positions, output_values);
+    }
+
+    fn layer_node_positions(x: f32, top: f32, bottom: f32, count: usize) -> Vec<bevy::math::Vec2> {
+        if count == 0 {
+            return Vec::new();
+        }
+
+        let span = (bottom - top).max(1.0);
+        let step = if count == 1 {
+            0.0
+        } else {
+            span / (count - 1) as f32
+        };
+
+        (0..count)
+            .map(|idx| bevy::math::Vec2::new(x, top + idx as f32 * step))
+            .collect()
+    }
+
+    fn draw_weight_matrix(
+        gizmos: &mut Gizmos,
+        window: &Window,
+        from_positions: &[bevy::math::Vec2],
+        to_positions: &[bevy::math::Vec2],
+        weights: &[f32],
+        row_width: usize,
+    ) {
+        if row_width == 0 || from_positions.is_empty() || to_positions.is_empty() {
+            return;
+        }
+
+        for (to_idx, to) in to_positions.iter().enumerate() {
+            for (from_idx, from) in from_positions.iter().enumerate() {
+                let weight = weights[to_idx * row_width + from_idx];
+                if weight.abs() < 0.15 {
+                    continue;
+                }
+
+                draw_screen_line(
+                    gizmos,
+                    window,
+                    from.x,
+                    from.y,
+                    to.x,
+                    to.y,
+                    weight_color(weight, 0.06),
+                );
+            }
+        }
+    }
+
+    fn draw_node_layer(
+        gizmos: &mut Gizmos,
+        window: &Window,
+        positions: &[bevy::math::Vec2],
+        values: &[f32],
+    ) {
+        for (position, value) in positions.iter().zip(values.iter()) {
+            let color = activation_color(*value);
+            draw_screen_line(
+                gizmos,
+                window,
+                position.x - 3.0,
+                position.y,
+                position.x + 3.0,
+                position.y,
+                color,
+            );
+            draw_screen_line(
+                gizmos,
+                window,
+                position.x,
+                position.y - 3.0,
+                position.x,
+                position.y + 3.0,
+                color,
+            );
+        }
+    }
+
+    fn activation_color(value: f32) -> Color {
+        let magnitude = value.abs().clamp(0.0, 1.0);
+        if value >= 0.0 {
+            Color::srgba(0.26, 0.88, 0.72, 0.35 + magnitude * 0.65)
+        } else {
+            Color::srgba(0.98, 0.46, 0.28, 0.35 + magnitude * 0.65)
+        }
+    }
+
+    fn weight_color(weight: f32, min_alpha: f32) -> Color {
+        let magnitude = weight.abs().clamp(0.0, 1.0);
+        if weight >= 0.0 {
+            Color::srgba(0.28, 0.72, 1.0, min_alpha + magnitude * 0.28)
+        } else {
+            Color::srgba(1.0, 0.42, 0.32, min_alpha + magnitude * 0.28)
+        }
+    }
+
+    fn lighten_color(color: Color, amount: f32) -> Color {
+        let srgba = color.to_srgba();
+        Color::srgb(
+            (srgba.red + amount).clamp(0.0, 1.0),
+            (srgba.green + amount).clamp(0.0, 1.0),
+            (srgba.blue + amount).clamp(0.0, 1.0),
+        )
     }
 
     fn draw_species_series<Fv, Fx, Fy>(

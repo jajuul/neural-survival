@@ -40,6 +40,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-07 00:10Z) Reworked eyes to use separate food and agent controller channels, added configurable `evaluation_mode` (`solo`/`shared`) with a GUI toggle for continuation runs, restored `solo` as the default evaluation regime, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-07 00:45Z) Added scheduled evaluation-mode switching (`evaluation_mode`, `evaluation_mode_after_switch`, `evaluation_mode_switch_after_generation`) to config, runner, and GUI so curricula such as `solo -> shared @ 100` are reproducible without manual toggling.
 - [x] (2026-03-07 01:15Z) Removed absolute position from controller inputs, added deterministic sensor noise/dropout plus moving food as configurable simulation parameters, exposed the new knobs in the GUI, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
+- [x] (2026-03-09 00:00Z) Added explicit `Pause`, `Step`, and `Continue` GUI controls, plus a selected-agent network inspector that renders real-time MLP/LTC topology activations from live controller diagnostics; validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 
 ## Surprises & Discoveries
 
@@ -102,6 +103,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: Separate food and agent eye channels are a better fit than a signed merge once the controller must reason about competition.
   Evidence: The revised sensor layout preserves both modalities explicitly (`food_eye_bins` and `agent_eye_bins`) and now uses a local-only `22`-input controller vector (`energy`, `speed`, `10` food bins, `10` agent bins), matching the new semantics without aliasing absolute position back into the task.
+
+- Observation: Live network visualization in the GUI requires controller-specific activation snapshots captured during stepping; action outputs alone are not enough to reconstruct hidden/state activations after the fact.
+  Evidence: The new viewer inspector only became possible after extending `NeuralController` with `inspect_network`/`step_with_diagnostics` and storing the selected agent's latest network snapshot in `ViewerRuntime`.
 
 ## Decision Log
 
@@ -229,6 +233,10 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: The user explicitly asked for a real LTC. A conductance-based implementation with gated sensory/recurrent synapses, leak, capacitance, and fixed internal unfolds matches LTC behavior materially better, while a custom integrator keeps per-agent stepping deterministic, dependency-light, and fast for tiny state vectors.
   Date/Author: 2026-03-06 / Codex
 
+- Decision: Extend the controller interface with explicit network-diagnostics hooks and render only the selected agent's topology/activations in the GUI.
+  Rationale: Full-population network snapshots every frame would add unnecessary overhead and UI noise. The selected-agent path keeps observability focused and cheap while still exposing the exact hidden/state activity that produced the visible action.
+  Date/Author: 2026-03-09 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -258,6 +266,8 @@ Post-plan enhancement (v3): generation-progress reporting is now visible during 
 Post-plan enhancement (v4): MLP and LTC species now evolve independently without cross-species mating, and user-facing generation feedback is throttled to every 10 generations to reduce progress noise on long runs.
 
 Post-plan enhancement (v5): controllers now receive Shorelark-inspired eye inputs (food intensity binned by relative angle and perception range), with fixed-width sensor vectors, new FOV configuration, and trait-driven active eye channel counts.
+
+Post-plan enhancement (v6): the viewer now includes explicit `Pause`, `Step`, and `Continue` controls plus a selected-agent network inspector that visualizes MLP hidden/output activations or LTC recurrent-state/output activations live during simulation.
 
 Post-plan enhancement (v6): model-capacity knobs for `MLP` and `LTC` are now runtime-configurable through TOML (`mlp_hidden_size`, `ltc_state_size`) with validation and factory wiring.
 
