@@ -41,6 +41,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-07 00:45Z) Added scheduled evaluation-mode switching (`evaluation_mode`, `evaluation_mode_after_switch`, `evaluation_mode_switch_after_generation`) to config, runner, and GUI so curricula such as `solo -> shared @ 100` are reproducible without manual toggling.
 - [x] (2026-03-07 01:15Z) Removed absolute position from controller inputs, added deterministic sensor noise/dropout plus moving food as configurable simulation parameters, exposed the new knobs in the GUI, and revalidated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-09 00:00Z) Added explicit `Pause`, `Step`, and `Continue` GUI controls, plus a selected-agent network inspector that renders real-time MLP/LTC topology activations from live controller diagnostics; validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
+- [x] (2026-03-09 00:30Z) Optimized evolution throughput by switching controller inputs to fixed-width sensor arrays, adding per-step spatial indexing for food/agent sensing, reusing shared-evaluation action/sensor buffers, and parallelizing deterministic `solo` evaluation with `rayon`; validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 
 ## Surprises & Discoveries
 
@@ -106,6 +107,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: Live network visualization in the GUI requires controller-specific activation snapshots captured during stepping; action outputs alone are not enough to reconstruct hidden/state activations after the fact.
   Evidence: The new viewer inspector only became possible after extending `NeuralController` with `inspect_network`/`step_with_diagnostics` and storing the selected agent's latest network snapshot in `ViewerRuntime`.
+
+- Observation: Shared-world sensing cost was dominated by repeated full-world food/agent scans and per-call sensor `Vec` allocations.
+  Evidence: Prior to the refactor, `basic_sensor_vector` rebuilt decomposed `Vec`s via `sensor_observation` for every agent step, and shared evaluation re-scanned all food/agents once per alive controller each tick.
 
 ## Decision Log
 
@@ -237,6 +241,10 @@ The implementation is successful when three things are demonstrably true: headle
   Rationale: Full-population network snapshots every frame would add unnecessary overhead and UI noise. The selected-agent path keeps observability focused and cheap while still exposing the exact hidden/state activity that produced the visible action.
   Date/Author: 2026-03-09 / Codex
 
+- Decision: Keep GUI observability on the richer `SensorObservation` path, but move evaluation/controller stepping onto fixed-width `SensorVector` arrays backed by a per-step spatial index and deterministic parallel `solo` evaluation.
+  Rationale: This preserves the detailed UI data model while cutting the main headless overheads without changing controller behavior or output determinism.
+  Date/Author: 2026-03-09 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete. The repository now has module scaffolding across planned domains, CLI subcommands (`run`, `batch`, `view`) with required seed flags on headless modes, validated TOML configuration types with spec defaults, and module-level README documentation. Acceptance commands were executed successfully: unit tests pass and CLI help output shows expected command surface.
@@ -268,6 +276,8 @@ Post-plan enhancement (v4): MLP and LTC species now evolve independently without
 Post-plan enhancement (v5): controllers now receive Shorelark-inspired eye inputs (food intensity binned by relative angle and perception range), with fixed-width sensor vectors, new FOV configuration, and trait-driven active eye channel counts.
 
 Post-plan enhancement (v6): the viewer now includes explicit `Pause`, `Step`, and `Continue` controls plus a selected-agent network inspector that visualizes MLP hidden/output activations or LTC recurrent-state/output activations live during simulation.
+
+Post-plan enhancement (v7): headless evolution now runs faster by using fixed-width sensor arrays, a coarse toroidal spatial index for eye queries, reusable per-step action/sensor buffers in shared evaluation, and deterministic parallelism for `solo` scoring.
 
 Post-plan enhancement (v6): model-capacity knobs for `MLP` and `LTC` are now runtime-configurable through TOML (`mlp_hidden_size`, `ltc_state_size`) with validation and factory wiring.
 

@@ -4,22 +4,110 @@ use rand_chacha::ChaCha8Rng;
 use crate::config::SimulationConfig;
 
 use super::types::{
-    ActionVector, AgentState, EnergyBreakdown, EpisodeSummary, FoodState, SensorObservation,
-    SensorVector, StepAgentTelemetry, StepOutcome, Vec2, WorldState,
+    ActionVector, AgentState, CONTROLLER_SENSOR_INPUT_SIZE, CORE_SENSOR_FEATURES, EnergyBreakdown,
+    EpisodeSummary, FoodState, MAX_VISION_CELLS, SensorObservation, SensorVector,
+    StepAgentTelemetry, StepOutcome, Vec2, WorldState,
 };
 
-/// Number of non-vision scalar features included in controller input.
-pub const CORE_SENSOR_FEATURES: usize = 2;
-/// Maximum number of bins in one vision channel.
-pub const MAX_VISION_CELLS: usize = crate::config::MAX_PERCEPTION_CHANNELS as usize;
-/// Number of distinct vision channels currently exposed to controllers.
-///
-/// Keeping this as a constant makes it straightforward to add future channels such as
-/// `edible_agents` or `predators` without reworking the flattening logic again.
-pub const VISION_CHANNEL_COUNT: usize = 2;
-/// Fixed controller input width used by MLP/LTC genomes.
-pub const CONTROLLER_SENSOR_INPUT_SIZE: usize =
-    CORE_SENSOR_FEATURES + MAX_VISION_CELLS * VISION_CHANNEL_COUNT;
+/// Coarse toroidal spatial index used to prune food/agent sensor queries.
+struct SpatialIndex {
+    cell_size: f32,
+    cols: usize,
+    rows: usize,
+    food_cells: Vec<Vec<usize>>,
+    agent_cells: Vec<Vec<usize>>,
+}
+
+impl SpatialIndex {
+    fn build(world: &WorldState) -> Self {
+        let cell_size = world
+            .agents
+            .iter()
+            .map(|agent| agent.perception_radius.max(0.001))
+            .fold(1.0_f32, f32::max);
+        let cols = ((world.width / cell_size).ceil() as usize).max(1);
+        let rows = ((world.height / cell_size).ceil() as usize).max(1);
+        let mut food_cells = vec![Vec::new(); cols * rows];
+        let mut agent_cells = vec![Vec::new(); cols * rows];
+
+        for (food_idx, food) in world.food.iter().enumerate() {
+            let cell_idx = Self::flat_index_for_position(food.position, cell_size, cols, rows);
+            food_cells[cell_idx].push(food_idx);
+        }
+
+        for (agent_idx, agent) in world.agents.iter().enumerate() {
+            if !agent.alive {
+                continue;
+            }
+
+            let cell_idx = Self::flat_index_for_position(agent.position, cell_size, cols, rows);
+            agent_cells[cell_idx].push(agent_idx);
+        }
+
+        Self {
+            cell_size,
+            cols,
+            rows,
+            food_cells,
+            agent_cells,
+        }
+    }
+
+    fn with_candidate_foods<F>(&self, position: Vec2, radius: f32, mut visit: F)
+    where
+        F: FnMut(usize),
+    {
+        self.with_candidate_indices(position, radius, &self.food_cells, &mut visit);
+    }
+
+    fn with_candidate_agents<F>(&self, position: Vec2, radius: f32, mut visit: F)
+    where
+        F: FnMut(usize),
+    {
+        self.with_candidate_indices(position, radius, &self.agent_cells, &mut visit);
+    }
+
+    fn with_candidate_indices<F>(
+        &self,
+        position: Vec2,
+        radius: f32,
+        cells: &[Vec<usize>],
+        visit: &mut F,
+    ) where
+        F: FnMut(usize),
+    {
+        let (cell_x, cell_y) = self.cell_coords(position);
+        let cell_radius = ((radius.max(0.0) / self.cell_size).ceil() as isize).max(0);
+
+        for dy in -cell_radius..=cell_radius {
+            let y = wrap_cell_index(cell_y as isize + dy, self.rows);
+            for dx in -cell_radius..=cell_radius {
+                let x = wrap_cell_index(cell_x as isize + dx, self.cols);
+                let flat_idx = self.flat_index(x, y);
+                for &entry in &cells[flat_idx] {
+                    visit(entry);
+                }
+            }
+        }
+    }
+
+    fn cell_coords(&self, position: Vec2) -> (usize, usize) {
+        (
+            ((position.x / self.cell_size).floor() as usize).min(self.cols - 1),
+            ((position.y / self.cell_size).floor() as usize).min(self.rows - 1),
+        )
+    }
+
+    fn flat_index(&self, x: usize, y: usize) -> usize {
+        y * self.cols + x
+    }
+
+    fn flat_index_for_position(position: Vec2, cell_size: f32, cols: usize, rows: usize) -> usize {
+        let x = ((position.x / cell_size).floor() as usize).min(cols - 1);
+        let y = ((position.y / cell_size).floor() as usize).min(rows - 1);
+        y * cols + x
+    }
+}
 
 /// Build a deterministic world state from config defaults and a seed.
 ///
@@ -207,7 +295,31 @@ pub fn basic_sensor_vector(
     world: &WorldState,
     config: &SimulationConfig,
 ) -> SensorVector {
-    sensor_observation(agent, world, config).input
+    let spatial = SpatialIndex::build(world);
+    basic_sensor_vector_with_index(agent, world, &spatial, config)
+}
+
+/// Fill one fixed-width controller sensor vector per agent using a shared spatial index for the
+/// current world snapshot.
+///
+/// Inputs: immutable world, validated config, and one output slot per world agent.
+/// Output: none.
+/// Side effects: overwrites `output` in place.
+pub fn fill_population_sensor_vectors(
+    world: &WorldState,
+    config: &SimulationConfig,
+    output: &mut [SensorVector],
+) {
+    debug_assert_eq!(output.len(), world.agents.len());
+
+    let spatial = SpatialIndex::build(world);
+    for (agent_idx, agent) in world.agents.iter().enumerate() {
+        output[agent_idx] = if agent.alive {
+            basic_sensor_vector_with_index(agent, world, &spatial, config)
+        } else {
+            SensorVector::default()
+        };
+    }
 }
 
 /// Build decomposed controller inputs for one agent so UI code can inspect core scalars and eye
@@ -222,17 +334,8 @@ pub fn sensor_observation(
     world: &WorldState,
     config: &SimulationConfig,
 ) -> SensorObservation {
-    let energy_norm = (agent.energy / config.initial_agent_energy).clamp(0.0, 2.0);
-    let speed_norm = (agent.velocity.length() / agent.max_speed.max(0.001)).clamp(0.0, 1.0);
-    let clean_food_eye_bins = food_eye_cells(agent, world, config);
-    let clean_agent_eye_bins = agent_eye_cells(agent, world, config);
-    let clean_vision_cells = flatten_vision_channels([&clean_food_eye_bins, &clean_agent_eye_bins]);
-
-    let mut clean_values = Vec::with_capacity(CONTROLLER_SENSOR_INPUT_SIZE);
-    clean_values.extend_from_slice(&[energy_norm, speed_norm]);
-    clean_values.extend_from_slice(&clean_vision_cells);
-
-    let values = apply_sensor_corruption(agent.id, world.step_count, clean_values, config);
+    let spatial = SpatialIndex::build(world);
+    let values = compute_sensor_values(agent, world, &spatial, config);
     let food_start = CORE_SENSOR_FEATURES;
     let agent_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
     let food_eye_bins = values[food_start..agent_start].to_vec();
@@ -246,6 +349,40 @@ pub fn sensor_observation(
         eye_bins: vision_cells,
         input: SensorVector { values },
     }
+}
+
+fn basic_sensor_vector_with_index(
+    agent: &AgentState,
+    world: &WorldState,
+    spatial: &SpatialIndex,
+    config: &SimulationConfig,
+) -> SensorVector {
+    SensorVector {
+        values: compute_sensor_values(agent, world, spatial, config),
+    }
+}
+
+fn compute_sensor_values(
+    agent: &AgentState,
+    world: &WorldState,
+    spatial: &SpatialIndex,
+    config: &SimulationConfig,
+) -> [f32; CONTROLLER_SENSOR_INPUT_SIZE] {
+    let mut values = [0.0; CONTROLLER_SENSOR_INPUT_SIZE];
+    values[0] = (agent.energy / config.initial_agent_energy).clamp(0.0, 2.0);
+    values[1] = (agent.velocity.length() / agent.max_speed.max(0.001)).clamp(0.0, 1.0);
+
+    let food_start = CORE_SENSOR_FEATURES;
+    let agent_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
+    fill_food_eye_cells(agent, world, spatial, &mut values[food_start..agent_start]);
+    fill_agent_eye_cells(
+        agent,
+        world,
+        spatial,
+        &mut values[agent_start..agent_start + MAX_VISION_CELLS],
+    );
+    apply_sensor_corruption_in_place(agent.id, world.step_count, &mut values, config);
+    values
 }
 
 /// Build deterministic aggregate metrics from world state.
@@ -339,92 +476,80 @@ fn move_food(world: &mut WorldState, config: &SimulationConfig, dt: f32) {
     }
 }
 
-fn food_eye_cells(agent: &AgentState, world: &WorldState, _config: &SimulationConfig) -> Vec<f32> {
-    let mut cells = empty_eye_cells(agent);
-    accumulate_eye_cells(
-        agent,
-        &mut cells,
-        world.food.iter().map(|food| food.position),
-        world.width,
-        world.height,
-    );
-    cells
+fn fill_food_eye_cells(
+    agent: &AgentState,
+    world: &WorldState,
+    spatial: &SpatialIndex,
+    cells: &mut [f32],
+) {
+    cells.fill(0.0);
+    spatial.with_candidate_foods(agent.position, agent.perception_radius, |food_idx| {
+        accumulate_eye_target(
+            agent,
+            cells,
+            world.food[food_idx].position,
+            world.width,
+            world.height,
+        );
+    });
 }
 
-fn agent_eye_cells(agent: &AgentState, world: &WorldState, _config: &SimulationConfig) -> Vec<f32> {
-    let mut cells = empty_eye_cells(agent);
-    accumulate_eye_cells(
-        agent,
-        &mut cells,
-        world
-            .agents
-            .iter()
-            .filter(|other| other.alive && other.id != agent.id)
-            .map(|other| other.position),
-        world.width,
-        world.height,
-    );
-    cells
+fn fill_agent_eye_cells(
+    agent: &AgentState,
+    world: &WorldState,
+    spatial: &SpatialIndex,
+    cells: &mut [f32],
+) {
+    cells.fill(0.0);
+    spatial.with_candidate_agents(agent.position, agent.perception_radius, |other_idx| {
+        let other = &world.agents[other_idx];
+        if other.id == agent.id || !other.alive {
+            return;
+        }
+
+        accumulate_eye_target(agent, cells, other.position, world.width, world.height);
+    });
 }
 
-fn empty_eye_cells(_agent: &AgentState) -> Vec<f32> {
-    vec![0.0; MAX_VISION_CELLS]
-}
-
-fn accumulate_eye_cells<I>(
+fn accumulate_eye_target(
     agent: &AgentState,
     cells: &mut [f32],
-    targets: I,
+    target_position: Vec2,
     world_width: f32,
     world_height: f32,
-) where
-    I: IntoIterator<Item = Vec2>,
-{
+) {
     let active_cells = agent.perception_channels.clamp(1, MAX_VISION_CELLS as u16) as usize;
     let fov = (agent.eye_cell_angle_radians.max(0.001) * active_cells as f32)
         .clamp(0.001, std::f32::consts::TAU);
     let half_fov = fov * 0.5;
     let max_range = agent.perception_radius.max(0.001);
 
-    for target_position in targets {
-        let offset = toroidal_offset(agent.position, target_position, world_width, world_height);
-        let distance = offset.length();
+    let offset = toroidal_offset(agent.position, target_position, world_width, world_height);
+    let distance = offset.length();
 
-        if distance > max_range {
-            continue;
-        }
-
-        let heading_to_food = offset.y.atan2(offset.x);
-        let relative_angle = wrap_signed_angle(heading_to_food - agent.heading_radians);
-        if relative_angle < -half_fov || relative_angle > half_fov {
-            continue;
-        }
-
-        let normalized = (relative_angle + half_fov) / fov;
-        let cell = ((normalized * active_cells as f32).floor() as usize).min(active_cells - 1);
-        cells[cell] += (max_range - distance) / max_range;
+    if distance > max_range {
+        return;
     }
+
+    let heading_to_target = offset.y.atan2(offset.x);
+    let relative_angle = wrap_signed_angle(heading_to_target - agent.heading_radians);
+    if relative_angle < -half_fov || relative_angle > half_fov {
+        return;
+    }
+
+    let normalized = (relative_angle + half_fov) / fov;
+    let cell = ((normalized * active_cells as f32).floor() as usize).min(active_cells - 1);
+    cells[cell] += (max_range - distance) / max_range;
 }
 
-fn flatten_vision_channels<'a, I>(channels: I) -> Vec<f32>
-where
-    I: IntoIterator<Item = &'a Vec<f32>>,
-{
-    let mut flat = Vec::with_capacity(MAX_VISION_CELLS * VISION_CHANNEL_COUNT);
-    for channel in channels {
-        flat.extend_from_slice(channel);
-    }
-    flat
-}
-
-fn apply_sensor_corruption(
+fn apply_sensor_corruption_in_place(
     agent_id: u32,
     step_count: u64,
-    mut values: Vec<f32>,
+    values: &mut [f32; CONTROLLER_SENSOR_INPUT_SIZE],
     config: &SimulationConfig,
-) -> Vec<f32> {
+) {
     if config.sensor_noise_stddev <= 0.0 && config.sensor_dropout_probability <= 0.0 {
-        return values;
+        return;
     }
 
     let mut rng = ChaCha8Rng::seed_from_u64(
@@ -450,8 +575,6 @@ fn apply_sensor_corruption(
             *value = clamp_sensor_value(idx, *value);
         }
     }
-
-    values
 }
 
 fn gaussian_sample(rng: &mut ChaCha8Rng) -> f32 {
@@ -487,6 +610,10 @@ fn toroidal_offset(from: Vec2, to: Vec2, width: f32, height: f32) -> Vec2 {
     }
 
     Vec2::new(dx, dy)
+}
+
+fn wrap_cell_index(index: isize, max: usize) -> usize {
+    index.rem_euclid(max as isize) as usize
 }
 
 fn wrap_signed_angle(angle: f32) -> f32 {
@@ -577,8 +704,9 @@ mod tests {
 
     use super::{
         AgentState, CORE_SENSOR_FEATURES, FoodState, MAX_VISION_CELLS, Vec2, WorldState,
-        basic_sensor_vector, energy_breakdown_for_step, sensor_observation, step_world,
-        step_world_with_actions_and_telemetry, toroidal_distance, wrap_position,
+        basic_sensor_vector, energy_breakdown_for_step, fill_population_sensor_vectors,
+        sensor_observation, step_world, step_world_with_actions_and_telemetry, toroidal_distance,
+        wrap_position,
     };
 
     fn test_agent(energy: f32) -> AgentState {
@@ -1066,6 +1194,75 @@ mod tests {
 
         assert!(sensor.agent_eye_bins.iter().all(|value| value.abs() < 1e-6));
         assert!(sensor.eye_bins.iter().all(|value| value.abs() < 1e-6));
+    }
+
+    #[test]
+    fn basic_sensor_vector_matches_observation_input() {
+        let config = deterministic_sensor_config();
+        let mut agent = test_agent(50.0);
+        agent.position = Vec2::new(10.0, 10.0);
+        agent.heading_radians = 0.0;
+        agent.perception_radius = 20.0;
+        agent.perception_channels = 5;
+        agent.eye_cell_angle_radians = std::f32::consts::FRAC_PI_2 / 5.0;
+        let world = WorldState {
+            width: 40.0,
+            height: 40.0,
+            agents: vec![agent.clone()],
+            food: vec![FoodState {
+                id: 0,
+                position: Vec2::new(15.0, 10.0),
+                radius: 1.0,
+                energy_value: 1.0,
+                motion_angle_radians: 0.0,
+            }],
+            step_count: 0,
+        };
+
+        let fast = basic_sensor_vector(&agent, &world, &config);
+        let observed = sensor_observation(&agent, &world, &config);
+
+        assert_eq!(fast, observed.input);
+    }
+
+    #[test]
+    fn fill_population_sensor_vectors_matches_individual_queries() {
+        let config = deterministic_sensor_config();
+        let mut first = test_agent(50.0);
+        first.position = Vec2::new(10.0, 10.0);
+        first.heading_radians = 0.0;
+        let mut second = test_agent(45.0);
+        second.id = 1;
+        second.position = Vec2::new(20.0, 20.0);
+        second.heading_radians = std::f32::consts::PI;
+        let world = WorldState {
+            width: 40.0,
+            height: 40.0,
+            agents: vec![first.clone(), second.clone()],
+            food: vec![
+                FoodState {
+                    id: 0,
+                    position: Vec2::new(15.0, 10.0),
+                    radius: 1.0,
+                    energy_value: 1.0,
+                    motion_angle_radians: 0.0,
+                },
+                FoodState {
+                    id: 1,
+                    position: Vec2::new(16.0, 20.0),
+                    radius: 1.0,
+                    energy_value: 1.0,
+                    motion_angle_radians: 0.0,
+                },
+            ],
+            step_count: 0,
+        };
+
+        let mut batch = vec![super::SensorVector::default(); world.agents.len()];
+        fill_population_sensor_vectors(&world, &config, &mut batch);
+
+        assert_eq!(batch[0], basic_sensor_vector(&first, &world, &config));
+        assert_eq!(batch[1], basic_sensor_vector(&second, &world, &config));
     }
 
     #[test]

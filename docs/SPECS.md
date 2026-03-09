@@ -59,6 +59,9 @@ Version 1 focuses on:
 - Fitness evaluation mode is configurable:
   - `solo`: each genome is scored in a private deterministic episode
   - `shared`: the current generation is scored inside a shared controller-driven world, so agents compete indirectly through food depletion
+- Implementation targets fast headless throughput:
+  - `solo` evaluation may run in deterministic parallel across genomes
+  - sensing uses fixed-width controller inputs and a coarse toroidal spatial index to avoid repeated full-world scans
 - Controller families evolve in separate pools (MLP and LTC do not interbreed).
 - Reproducibility: strict seeded determinism for same seed/config/platform assumptions.
 

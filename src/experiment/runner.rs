@@ -1,4 +1,5 @@
 use rand::{SeedableRng, rngs::StdRng};
+use rayon::prelude::*;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,8 @@ use crate::io::plots::write_fitness_svg;
 use crate::io::snapshot::{SnapshotFile, write_snapshot};
 use crate::io::summary::{RunSummary, config_hash, write_run_summary};
 use crate::sim::{
-    ActionVector, WorldState, basic_sensor_vector, initialize_world, step_world_with_actions,
+    ActionVector, SensorVector, WorldState, basic_sensor_vector, fill_population_sensor_vectors,
+    initialize_world, step_world_with_actions,
 };
 
 /// Per-generation aggregate metrics used for experiment reporting.
@@ -208,16 +210,19 @@ where
     Ok(run)
 }
 
-fn evaluate_population(
+fn evaluate_population<F>(
     config: &SimulationConfig,
     run_seed: u64,
     generation_index: u32,
     population: &[AgentGenome],
-    factory: &impl ControllerFactory,
-) -> Vec<EvaluatedGenome> {
+    factory: &F,
+) -> Vec<EvaluatedGenome>
+where
+    F: ControllerFactory + Sync,
+{
     match evaluation_mode_for_generation(config, generation_index) {
         EvaluationMode::Solo => population
-            .iter()
+            .par_iter()
             .enumerate()
             .map(|(agent_index, genome)| {
                 let eval_seed = per_agent_eval_seed(run_seed, generation_index, agent_index);
@@ -262,12 +267,15 @@ fn evaluation_mode_for_generation(
     }
 }
 
-fn evaluate_population_shared_episode(
+fn evaluate_population_shared_episode<F>(
     config: &SimulationConfig,
     eval_seed: u64,
     population: &[AgentGenome],
-    factory: &impl ControllerFactory,
-) -> Vec<FitnessComponents> {
+    factory: &F,
+) -> Vec<FitnessComponents>
+where
+    F: ControllerFactory,
+{
     let world = evaluation_world_for_population(config, eval_seed, population);
     let mut controllers = population
         .iter()
@@ -281,12 +289,15 @@ fn evaluate_population_shared_episode(
     evaluate_population_in_world(config, world, &mut controllers)
 }
 
-fn evaluate_genome_solo(
+fn evaluate_genome_solo<F>(
     config: &SimulationConfig,
     eval_seed: u64,
     genome: &AgentGenome,
-    factory: &impl ControllerFactory,
-) -> FitnessComponents {
+    factory: &F,
+) -> FitnessComponents
+where
+    F: ControllerFactory,
+{
     let mut world = initialize_world(config, eval_seed);
     world.agents.truncate(1);
 
@@ -350,13 +361,15 @@ fn evaluate_population_in_world(
     controllers: &mut [Box<dyn NeuralController>],
 ) -> Vec<FitnessComponents> {
     let mut survival_steps = vec![0_u32; world.agents.len()];
+    let mut actions = vec![ActionVector::default(); world.agents.len()];
+    let mut sensors = vec![SensorVector::default(); world.agents.len()];
 
     for _ in 0..config.episode_steps {
         if world.agents.iter().all(|agent| !agent.alive) {
             break;
         }
 
-        let actions = collect_population_actions(&world, config, controllers);
+        collect_population_actions(&world, config, controllers, &mut sensors, &mut actions);
         step_world_with_actions(&mut world, config, &actions);
 
         for (agent_idx, agent) in world.agents.iter().enumerate() {
@@ -382,20 +395,23 @@ fn collect_population_actions(
     world: &WorldState,
     config: &SimulationConfig,
     controllers: &mut [Box<dyn NeuralController>],
-) -> Vec<ActionVector> {
-    let mut actions = Vec::with_capacity(world.agents.len());
+    sensors: &mut [SensorVector],
+    actions: &mut [ActionVector],
+) {
+    debug_assert_eq!(controllers.len(), world.agents.len());
+    debug_assert_eq!(sensors.len(), world.agents.len());
+    debug_assert_eq!(actions.len(), world.agents.len());
+    fill_population_sensor_vectors(world, config, sensors);
 
     for (agent_idx, agent) in world.agents.iter().enumerate() {
         if !agent.alive {
-            actions.push(ActionVector::default());
+            actions[agent_idx] = ActionVector::default();
             continue;
         }
 
-        let sensor = basic_sensor_vector(agent, world, config);
-        actions.push(controllers[agent_idx].step(&sensor, config.timestep_seconds));
+        actions[agent_idx] =
+            controllers[agent_idx].step(&sensors[agent_idx], config.timestep_seconds);
     }
-
-    actions
 }
 
 fn shared_eval_seed(run_seed: u64, generation_index: u32) -> u64 {

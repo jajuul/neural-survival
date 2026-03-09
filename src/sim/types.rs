@@ -1,5 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+/// Number of non-vision scalar features included in controller input.
+pub const CORE_SENSOR_FEATURES: usize = 2;
+/// Maximum number of bins in one vision channel.
+pub const MAX_VISION_CELLS: usize = crate::config::MAX_PERCEPTION_CHANNELS as usize;
+/// Number of distinct vision channels currently exposed to controllers.
+pub const VISION_CHANNEL_COUNT: usize = 2;
+/// Fixed controller input width used by MLP/LTC genomes.
+pub const CONTROLLER_SENSOR_INPUT_SIZE: usize =
+    CORE_SENSOR_FEATURES + MAX_VISION_CELLS * VISION_CHANNEL_COUNT;
+
 /// 2D vector type used for world-space positions and velocities.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct Vec2 {
@@ -44,9 +54,21 @@ impl Vec2 {
 }
 
 /// Neural input vector placeholder for the controller API.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct SensorVector {
-    pub values: Vec<f32>,
+    pub values: [f32; CONTROLLER_SENSOR_INPUT_SIZE],
+}
+
+impl SensorVector {
+    /// Build a fixed-width sensor vector by copying values into the front of the array and
+    /// zero-filling the remainder.
+    pub fn from_slice(values: &[f32]) -> Self {
+        let mut output = [0.0; CONTROLLER_SENSOR_INPUT_SIZE];
+        for (dst, src) in output.iter_mut().zip(values.iter().copied()) {
+            *dst = src;
+        }
+        Self { values: output }
+    }
 }
 
 /// Decomposed sensor inputs used for controller observability.

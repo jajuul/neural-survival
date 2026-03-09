@@ -2514,6 +2514,7 @@ dependencies = [
  "csv",
  "rand",
  "rand_chacha",
+ "rayon",
  "serde",
  "serde_json",
  "thiserror",

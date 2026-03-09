@@ -403,12 +403,7 @@ mod tests {
         let mut controller =
             MlpController::new(genome).expect("known genome must construct controller");
 
-        let action = controller.step(
-            &SensorVector {
-                values: vec![1.0, -1.0],
-            },
-            0.1,
-        );
+        let action = controller.step(&SensorVector::from_slice(&[1.0, -1.0]), 0.1);
 
         assert!((action.steering - 0.5153911).abs() < 1e-5);
         assert!((action.throttle - 0.2969760).abs() < 1e-5);
@@ -447,12 +442,8 @@ mod tests {
         .expect("parameter vector should match MLP shape");
         let mut controller = MlpController::new(genome).expect("genome should construct");
 
-        let output = controller.step_with_observability(
-            &SensorVector {
-                values: vec![1.0, -1.0],
-            },
-            0.1,
-        );
+        let output =
+            controller.step_with_observability(&SensorVector::from_slice(&[1.0, -1.0]), 0.1);
 
         assert!((output.action.steering - output.steering_raw).abs() < 1e-6);
         assert!((output.action.throttle - output.throttle_applied).abs() < 1e-6);
@@ -475,12 +466,8 @@ mod tests {
         .expect("parameter vector should match MLP shape");
         let mut controller = MlpController::new(genome).expect("genome should construct");
 
-        let diagnostics = controller.step_with_diagnostics(
-            &SensorVector {
-                values: vec![1.0, -1.0],
-            },
-            0.1,
-        );
+        let diagnostics =
+            controller.step_with_diagnostics(&SensorVector::from_slice(&[1.0, -1.0]), 0.1);
 
         let ControllerNetworkSnapshot::Mlp(network) = diagnostics.network else {
             panic!("expected MLP network snapshot");

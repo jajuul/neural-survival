@@ -690,8 +690,8 @@ mod tests {
         let mut controller =
             LtcController::new(genome).expect("known genome must construct controller");
 
-        let action_1 = controller.step(&SensorVector { values: vec![0.0] }, 1.0);
-        let action_2 = controller.step(&SensorVector { values: vec![0.0] }, 1.0);
+        let action_1 = controller.step(&SensorVector::from_slice(&[0.0]), 1.0);
+        let action_2 = controller.step(&SensorVector::from_slice(&[0.0]), 1.0);
 
         assert!((action_1.steering - 0.2365018).abs() < 1e-5);
         assert!((action_1.throttle - 0.3817491).abs() < 1e-5);
@@ -782,7 +782,7 @@ mod tests {
             serde_json::from_str(legacy_json).expect("legacy genome should deserialize");
         let mut controller = LtcController::new(genome).expect("legacy genome should upgrade");
 
-        let output = controller.step_with_observability(&SensorVector { values: vec![0.5] }, 0.1);
+        let output = controller.step_with_observability(&SensorVector::from_slice(&[0.5]), 0.1);
 
         assert!(output.steering_raw.is_finite());
         assert!(output.throttle_applied.is_finite());
@@ -804,7 +804,7 @@ mod tests {
         .expect("parameter vector should match LTC shape");
         let mut controller = LtcController::new(genome).expect("genome should construct");
 
-        let output = controller.step_with_observability(&SensorVector { values: vec![0.0] }, 1.0);
+        let output = controller.step_with_observability(&SensorVector::from_slice(&[0.0]), 1.0);
 
         assert!((output.action.steering - output.steering_raw).abs() < 1e-6);
         assert!((output.action.throttle - output.throttle_applied).abs() < 1e-6);
@@ -828,8 +828,7 @@ mod tests {
         .expect("parameter vector should match LTC shape");
         let mut controller = LtcController::new(genome).expect("genome should construct");
 
-        let diagnostics =
-            controller.step_with_diagnostics(&SensorVector { values: vec![0.0] }, 1.0);
+        let diagnostics = controller.step_with_diagnostics(&SensorVector::from_slice(&[0.0]), 1.0);
 
         let ControllerNetworkSnapshot::Ltc(network) = diagnostics.network else {
             panic!("expected LTC network snapshot");

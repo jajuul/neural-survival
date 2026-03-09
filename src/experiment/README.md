@@ -12,6 +12,8 @@ This module orchestrates deterministic multi-generation evolution runs.
   `evaluation_mode_switch_after_generation`, so runs can follow curricula such as
   `solo -> shared @ 100`.
 - Feeds controllers deterministic sensor vectors (core scalar cues plus separate food-eye and agent-eye channels).
+- Parallelizes `solo` evaluation deterministically across genomes, since each episode already has its own derived seed and no shared mutable world state.
+- Reuses shared-world action/sensor buffers and consumes per-step sensor data from the simulation's spatially indexed fast path.
 - Evolves generations using genetics operators.
 - Produces per-generation best/mean fitness metrics and final population genomes.
 - Provides `run_batch_to_dir` to persist metrics, fitness plot, summary, and snapshot artifacts.
