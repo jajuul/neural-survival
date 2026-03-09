@@ -37,7 +37,7 @@ mod bevy_viewer {
     const EPISODE_STEPS_MIN: u32 = 10;
     const EPISODE_STEPS_MAX: u32 = 20000;
     const SENSOR_NOISE_STDDEV_MAX: f32 = 2.0;
-    const FITNESS_PANEL_WIDTH: f32 = 420.0;
+    const FITNESS_PANEL_WIDTH: f32 = 460.0;
     const FITNESS_PANEL_HEIGHT: f32 = 240.0;
     const FITNESS_PANEL_MARGIN: f32 = 12.0;
     const FITNESS_PLOT_INSET_LEFT: f32 = 18.0;
@@ -45,20 +45,20 @@ mod bevy_viewer {
     const FITNESS_PLOT_INSET_TOP: f32 = 64.0;
     const FITNESS_PLOT_INSET_BOTTOM: f32 = 22.0;
     const FITNESS_PLOT_MAX_POINTS: usize = 240;
-    const OBSERVABILITY_PANEL_WIDTH: f32 = 420.0;
+    const OBSERVABILITY_PANEL_WIDTH: f32 = 460.0;
     const OBSERVABILITY_PANEL_HEIGHT: f32 = 330.0;
     const OBSERVABILITY_PANEL_GAP: f32 = 12.0;
     const OBSERVABILITY_EYE_PLOT_INSET_LEFT: f32 = 14.0;
     const OBSERVABILITY_EYE_PLOT_INSET_RIGHT: f32 = 14.0;
     const OBSERVABILITY_EYE_PLOT_INSET_TOP: f32 = 240.0;
     const OBSERVABILITY_EYE_PLOT_INSET_BOTTOM: f32 = 18.0;
-    const NETWORK_PANEL_WIDTH: f32 = 420.0;
-    const NETWORK_PANEL_HEIGHT: f32 = 220.0;
+    const NETWORK_PANEL_WIDTH: f32 = 620.0;
+    const NETWORK_PANEL_HEIGHT: f32 = 320.0;
     const NETWORK_PANEL_GAP: f32 = 12.0;
-    const NETWORK_PLOT_INSET_LEFT: f32 = 18.0;
-    const NETWORK_PLOT_INSET_RIGHT: f32 = 18.0;
-    const NETWORK_PLOT_INSET_TOP: f32 = 52.0;
-    const NETWORK_PLOT_INSET_BOTTOM: f32 = 18.0;
+    const NETWORK_PLOT_INSET_LEFT: f32 = 28.0;
+    const NETWORK_PLOT_INSET_RIGHT: f32 = 28.0;
+    const NETWORK_PLOT_INSET_TOP: f32 = 86.0;
+    const NETWORK_PLOT_INSET_BOTTOM: f32 = 28.0;
     const SELECTION_PICK_RADIUS: f32 = 12.0;
 
     #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
@@ -313,7 +313,7 @@ mod bevy_viewer {
             .add_plugins(DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "neural-survival viewer".into(),
-                    resolution: (1280.0, 980.0).into(),
+                    resolution: (1520.0, 1100.0).into(),
                     ..default()
                 }),
                 ..default()
@@ -1986,7 +1986,11 @@ mod bevy_viewer {
             return true;
         }
 
-        let right_panel_left = window.width() - FITNESS_PANEL_MARGIN - OBSERVABILITY_PANEL_WIDTH;
+        let right_panel_left = window.width()
+            - FITNESS_PANEL_MARGIN
+            - FITNESS_PANEL_WIDTH
+                .max(OBSERVABILITY_PANEL_WIDTH)
+                .max(NETWORK_PANEL_WIDTH);
         cursor.x >= right_panel_left
             && cursor.y
                 <= FITNESS_PANEL_MARGIN * 4.0
@@ -2476,9 +2480,18 @@ mod bevy_viewer {
                     gizmos,
                     window,
                     from.x,
-                    from.y,
+                    from.y - 0.7,
                     to.x,
-                    to.y,
+                    to.y - 0.7,
+                    weight_color(weight, 0.16),
+                );
+                draw_screen_line(
+                    gizmos,
+                    window,
+                    from.x,
+                    from.y + 0.7,
+                    to.x,
+                    to.y + 0.7,
                     weight_color(weight, 0.06),
                 );
             }
@@ -2496,9 +2509,18 @@ mod bevy_viewer {
             draw_screen_line(
                 gizmos,
                 window,
-                position.x - 3.0,
+                position.x - 5.0,
                 position.y,
-                position.x + 3.0,
+                position.x + 5.0,
+                position.y,
+                Color::srgba(0.96, 0.98, 1.0, 0.28),
+            );
+            draw_screen_line(
+                gizmos,
+                window,
+                position.x - 4.0,
+                position.y,
+                position.x + 4.0,
                 position.y,
                 color,
             );
@@ -2506,9 +2528,18 @@ mod bevy_viewer {
                 gizmos,
                 window,
                 position.x,
-                position.y - 3.0,
+                position.y - 5.0,
                 position.x,
-                position.y + 3.0,
+                position.y + 5.0,
+                Color::srgba(0.96, 0.98, 1.0, 0.28),
+            );
+            draw_screen_line(
+                gizmos,
+                window,
+                position.x,
+                position.y - 4.0,
+                position.x,
+                position.y + 4.0,
                 color,
             );
         }
@@ -2517,18 +2548,18 @@ mod bevy_viewer {
     fn activation_color(value: f32) -> Color {
         let magnitude = value.abs().clamp(0.0, 1.0);
         if value >= 0.0 {
-            Color::srgba(0.26, 0.88, 0.72, 0.35 + magnitude * 0.65)
+            Color::srgba(0.42, 1.0, 0.84, 0.55 + magnitude * 0.45)
         } else {
-            Color::srgba(0.98, 0.46, 0.28, 0.35 + magnitude * 0.65)
+            Color::srgba(1.0, 0.54, 0.34, 0.55 + magnitude * 0.45)
         }
     }
 
     fn weight_color(weight: f32, min_alpha: f32) -> Color {
         let magnitude = weight.abs().clamp(0.0, 1.0);
         if weight >= 0.0 {
-            Color::srgba(0.28, 0.72, 1.0, min_alpha + magnitude * 0.28)
+            Color::srgba(0.52, 0.86, 1.0, min_alpha + magnitude * 0.44)
         } else {
-            Color::srgba(1.0, 0.42, 0.32, min_alpha + magnitude * 0.28)
+            Color::srgba(1.0, 0.60, 0.46, min_alpha + magnitude * 0.44)
         }
     }
 
