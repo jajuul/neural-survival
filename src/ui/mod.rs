@@ -1214,7 +1214,7 @@ mod bevy_viewer {
     fn sync_food_visuals(
         mut commands: Commands,
         runtime: Res<ViewerRuntime>,
-        existing_food: Query<(Entity, &FoodVisual)>,
+        mut existing_food: Query<(Entity, &FoodVisual, &mut Transform)>,
     ) {
         let world_food_ids = runtime
             .world
@@ -1223,15 +1223,28 @@ mod bevy_viewer {
             .map(|food| food.id)
             .collect::<Vec<_>>();
 
-        for (entity, food_visual) in &existing_food {
+        for (entity, food_visual, _) in &existing_food {
             if !world_food_ids.contains(&food_visual.id) {
                 commands.entity(entity).despawn_recursive();
             }
         }
 
         for food in &runtime.world.food {
-            let exists = existing_food.iter().any(|(_, marker)| marker.id == food.id);
-            if !exists {
+            let mut found = false;
+            for (_, marker, mut transform) in &mut existing_food {
+                if marker.id == food.id {
+                    transform.translation = world_to_screen(
+                        food.position,
+                        runtime.world.width,
+                        runtime.world.height,
+                        0.0,
+                    );
+                    found = true;
+                    break;
+                }
+            }
+
+            if !found {
                 spawn_one_food(
                     &mut commands,
                     food,
