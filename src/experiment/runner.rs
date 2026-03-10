@@ -699,7 +699,12 @@ mod tests {
                 radius: 1.5,
                 energy_value: 20.0,
                 motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
             }],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
         let mut controllers: Vec<Box<dyn NeuralController>> =
@@ -769,6 +774,8 @@ mod tests {
                 },
             ],
             food: vec![],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
         let mut controllers: Vec<Box<dyn NeuralController>> =

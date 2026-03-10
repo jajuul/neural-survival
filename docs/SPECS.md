@@ -1,5 +1,14 @@
 # Neural Survival v1 Specification
 
+## Companion Documents
+This document remains the consolidated specification for the project.
+
+Two focused companion documents also exist:
+- `docs/BEHAVIOR_SPEC.md` for user-visible behavior and acceptance scenarios
+- `docs/TECH_SPEC.md` for implementation-oriented technical details
+
+The three documents should stay aligned. The companion documents are intended to make review easier, not to replace this file yet.
+
 ## Summary
 `neural-survival` is a native Rust desktop application for evolving neural-network-controlled agents ("animals") in a simulated world.
 
@@ -37,6 +46,12 @@ Version 1 focuses on:
 - World geometry: 2D continuous toroidal (wrap-around edges).
 - Time model: fixed-step simulation.
 - Initial food model: stationary food points spawned uniformly at random and optionally respawned on consumption according to configurable probability.
+- Optional food-cluster model:
+  - `food_cluster_enabled` switches food placement from uniform particles to moving resource regions
+  - `food_cluster_count` controls the number of moving centers
+  - `food_cluster_radius` controls the nominal region size
+  - `food_cluster_motion_speed` controls center drift speed
+  - `food_cluster_productivity_bias` controls how strongly day/night phase changes cluster concentration
 - Optional predator/prey ecology:
   - initialized/evolved role mix controlled by `predator_fraction`
   - predators capture prey within `predator_capture_radius`
@@ -95,6 +110,7 @@ Version 1 focuses on:
 3. User can pause/resume, adjust simulation speed, and toggle active world rules.
 4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `food motion`, `food respawn`, `sensor noise`, `sensor dropout`, `episode steps`, `mutation rate`) and a selectable evaluation schedule (`solo`, `shared`, or `solo -> shared @ N`).
 5. User can click an agent in the GUI to inspect its current food/prey/predator eye-bin activations, controller outputs, last-step energy-cost breakdown, and live neural-network topology/activations.
+6. If food clusters are enabled, the GUI shows faint moving region markers and cluster-colored food so resource-region motion is visible.
 
 ## Public Interfaces and Types
 
@@ -188,6 +204,7 @@ pub struct RuleToggles {
 
 ### World and Entities
 - Food entities are points with collision radius and optional drift motion controlled by `food_motion_speed`.
+- When food clusters are enabled, each food item is attached to a moving cluster center and its distance from the center expands/contracts deterministically with cluster productivity over the day/night cycle.
 - Consumed food can respawn immediately at a new random position, controlled by `food_respawn_probability` in `[0, 1]`.
 - Agents have position, heading, velocity, energy, controller state, and trait values.
 - World wraps in both axes.

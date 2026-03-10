@@ -135,6 +135,22 @@ pub struct FoodState {
     pub energy_value: f32,
     #[serde(default)]
     pub motion_angle_radians: f32,
+    #[serde(default)]
+    pub cluster_id: Option<u32>,
+    #[serde(default)]
+    pub cluster_angle_radians: f32,
+    #[serde(default)]
+    pub cluster_distance_factor: f32,
+}
+
+/// Moving resource cluster that owns a region of food items.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct FoodClusterState {
+    pub id: u32,
+    pub position: Vec2,
+    pub motion_angle_radians: f32,
+    #[serde(default)]
+    pub phase_offset: f32,
 }
 
 /// Entire mutable simulation world at a given step.
@@ -144,6 +160,10 @@ pub struct WorldState {
     pub height: f32,
     pub agents: Vec<AgentState>,
     pub food: Vec<FoodState>,
+    #[serde(default)]
+    pub food_clusters: Vec<FoodClusterState>,
+    #[serde(default)]
+    pub world_seed: u64,
     pub step_count: u64,
 }
 

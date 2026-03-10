@@ -5,8 +5,8 @@ use crate::config::SimulationConfig;
 
 use super::types::{
     ActionVector, AgentRole, AgentState, CONTROLLER_SENSOR_INPUT_SIZE, CORE_SENSOR_FEATURES,
-    DayNightState, EnergyBreakdown, EpisodeSummary, FoodState, MAX_VISION_CELLS, SensorObservation,
-    SensorVector, StepAgentTelemetry, StepOutcome, Vec2, WorldState,
+    DayNightState, EnergyBreakdown, EpisodeSummary, FoodClusterState, FoodState, MAX_VISION_CELLS,
+    SensorObservation, SensorVector, StepAgentTelemetry, StepOutcome, Vec2, WorldState,
 };
 
 /// Coarse toroidal spatial index used to prune food/agent sensor queries.
@@ -145,9 +145,63 @@ pub fn initialize_world(config: &SimulationConfig, seed: u64) -> WorldState {
         })
         .collect();
 
-    let food = (0..config.food_count)
-        .map(|id| FoodState {
+    let food_clusters = initialize_food_clusters(config, &mut rng);
+    let mut world = WorldState {
+        width: config.world_width,
+        height: config.world_height,
+        agents,
+        food: (0..config.food_count)
+            .map(|id| initialize_food_item(id as u32, config, &food_clusters, &mut rng))
+            .collect(),
+        food_clusters,
+        world_seed: seed,
+        step_count: 0,
+    };
+    apply_cluster_food_layout(&mut world, config);
+    world
+}
+
+fn initialize_food_clusters(
+    config: &SimulationConfig,
+    rng: &mut ChaCha8Rng,
+) -> Vec<FoodClusterState> {
+    if !config.food_cluster_enabled {
+        return Vec::new();
+    }
+
+    (0..config.food_cluster_count)
+        .map(|id| FoodClusterState {
             id: id as u32,
+            position: Vec2::new(
+                rng.gen_range(0.0..config.world_width),
+                rng.gen_range(0.0..config.world_height),
+            ),
+            motion_angle_radians: rng.gen_range(0.0..std::f32::consts::TAU),
+            phase_offset: rng.gen_range(0.0..1.0),
+        })
+        .collect()
+}
+
+fn initialize_food_item(
+    id: u32,
+    config: &SimulationConfig,
+    clusters: &[FoodClusterState],
+    rng: &mut ChaCha8Rng,
+) -> FoodState {
+    if let Some(cluster) = clusters.get(id as usize % clusters.len().max(1)) {
+        FoodState {
+            id,
+            position: cluster.position,
+            radius: config.food_collision_radius,
+            energy_value: config.food_energy_gain,
+            motion_angle_radians: rng.gen_range(0.0..std::f32::consts::TAU),
+            cluster_id: Some(cluster.id),
+            cluster_angle_radians: rng.gen_range(0.0..std::f32::consts::TAU),
+            cluster_distance_factor: rng.gen_range(0.0..1.0),
+        }
+    } else {
+        FoodState {
+            id,
             position: Vec2::new(
                 rng.gen_range(0.0..config.world_width),
                 rng.gen_range(0.0..config.world_height),
@@ -155,15 +209,10 @@ pub fn initialize_world(config: &SimulationConfig, seed: u64) -> WorldState {
             radius: config.food_collision_radius,
             energy_value: config.food_energy_gain,
             motion_angle_radians: rng.gen_range(0.0..std::f32::consts::TAU),
-        })
-        .collect();
-
-    WorldState {
-        width: config.world_width,
-        height: config.world_height,
-        agents,
-        food,
-        step_count: 0,
+            cluster_id: None,
+            cluster_angle_radians: 0.0,
+            cluster_distance_factor: 0.0,
+        }
     }
 }
 
@@ -286,7 +335,9 @@ pub fn step_world_with_actions_and_telemetry(
     }
 
     move_food(world, config, dt);
+    move_food_clusters(world, config, dt);
     world.step_count += 1;
+    apply_cluster_food_layout(world, config);
     (outcome, telemetry)
 }
 
@@ -527,20 +578,35 @@ fn maybe_respawn_food(
         return;
     }
 
-    world.food.push(FoodState {
-        id: *next_food_id,
-        position: Vec2::new(
+    let cluster_id = assign_food_cluster(world, config, *next_food_id, &mut rng);
+    let position = if cluster_id.is_some() {
+        Vec2::new(0.0, 0.0)
+    } else {
+        Vec2::new(
             rng.gen_range(0.0..world.width),
             rng.gen_range(0.0..world.height),
-        ),
+        )
+    };
+
+    world.food.push(FoodState {
+        id: *next_food_id,
+        position,
         radius: config.food_collision_radius,
         energy_value: config.food_energy_gain,
         motion_angle_radians: rng.gen_range(0.0..std::f32::consts::TAU),
+        cluster_id,
+        cluster_angle_radians: rng.gen_range(0.0..std::f32::consts::TAU),
+        cluster_distance_factor: rng.gen_range(0.0..1.0),
     });
     *next_food_id = (*next_food_id).saturating_add(1);
+    apply_cluster_food_layout(world, config);
 }
 
 fn move_food(world: &mut WorldState, config: &SimulationConfig, dt: f32) {
+    if config.food_cluster_enabled {
+        return;
+    }
+
     if config.food_motion_speed <= 0.0 {
         return;
     }
@@ -553,6 +619,109 @@ fn move_food(world: &mut WorldState, config: &SimulationConfig, dt: f32) {
             world.height,
         );
     }
+}
+
+fn move_food_clusters(world: &mut WorldState, config: &SimulationConfig, dt: f32) {
+    if !config.food_cluster_enabled || config.food_cluster_motion_speed <= 0.0 {
+        return;
+    }
+
+    for cluster in &mut world.food_clusters {
+        let velocity =
+            Vec2::from_angle(cluster.motion_angle_radians).scale(config.food_cluster_motion_speed);
+        cluster.position = wrap_position(
+            cluster.position.add(velocity.scale(dt)),
+            world.width,
+            world.height,
+        );
+    }
+}
+
+fn apply_cluster_food_layout(world: &mut WorldState, config: &SimulationConfig) {
+    if !config.food_cluster_enabled || world.food_clusters.is_empty() {
+        return;
+    }
+
+    let cluster_by_id = |cluster_id: u32| -> Option<&FoodClusterState> {
+        world
+            .food_clusters
+            .iter()
+            .find(|cluster| cluster.id == cluster_id)
+    };
+
+    for food in &mut world.food {
+        let Some(cluster_id) = food.cluster_id else {
+            continue;
+        };
+        let Some(cluster) = cluster_by_id(cluster_id) else {
+            continue;
+        };
+        let local_radius = config.food_cluster_radius
+            * cluster_density_radius_scale(cluster, world.step_count, config)
+            * food.cluster_distance_factor.sqrt();
+        let local_offset = Vec2::from_angle(food.cluster_angle_radians).scale(local_radius);
+        food.position = wrap_position(
+            cluster.position.add(local_offset),
+            world.width,
+            world.height,
+        );
+    }
+}
+
+pub fn cluster_productivity(
+    cluster: &FoodClusterState,
+    step_count: u64,
+    config: &SimulationConfig,
+) -> f32 {
+    if !config.food_cluster_enabled || world_is_cluster_phase_static(config) {
+        return 1.0;
+    }
+
+    let day_night = current_day_night_state(step_count, config);
+    let shifted_phase = (day_night.phase + cluster.phase_offset).fract();
+    let oscillation = ((shifted_phase * std::f32::consts::TAU).cos() * 0.5 + 0.5).clamp(0.0, 1.0);
+    (1.0 - config.food_cluster_productivity_bias)
+        + config.food_cluster_productivity_bias * oscillation
+}
+
+pub fn cluster_density_radius_scale(
+    cluster: &FoodClusterState,
+    step_count: u64,
+    config: &SimulationConfig,
+) -> f32 {
+    let productivity = cluster_productivity(cluster, step_count, config);
+    1.25 - 0.9 * productivity
+}
+
+fn assign_food_cluster(
+    world: &WorldState,
+    config: &SimulationConfig,
+    food_id: u32,
+    rng: &mut ChaCha8Rng,
+) -> Option<u32> {
+    if !config.food_cluster_enabled || world.food_clusters.is_empty() {
+        return None;
+    }
+
+    let total_weight = world
+        .food_clusters
+        .iter()
+        .map(|cluster| cluster_productivity(cluster, world.step_count, config))
+        .sum::<f32>()
+        .max(1e-6);
+    let mut draw = rng.gen_range(0.0..total_weight);
+    for cluster in &world.food_clusters {
+        draw -= cluster_productivity(cluster, world.step_count, config);
+        if draw <= 0.0 {
+            return Some(cluster.id);
+        }
+    }
+
+    Some(world.food_clusters[food_id as usize % world.food_clusters.len()].id)
+}
+
+fn world_is_cluster_phase_static(config: &SimulationConfig) -> bool {
+    !config.day_night_cycle_enabled || config.food_cluster_productivity_bias <= 0.0
 }
 
 fn fill_food_eye_cells(
@@ -864,8 +1033,9 @@ mod tests {
     use crate::config::{RuleToggles, SimulationConfig};
 
     use super::{
-        ActionVector, AgentRole, AgentState, CORE_SENSOR_FEATURES, FoodState, MAX_VISION_CELLS,
-        Vec2, WorldState, basic_sensor_vector, current_day_night_state, energy_breakdown_for_step,
+        ActionVector, AgentRole, AgentState, CORE_SENSOR_FEATURES, FoodClusterState, FoodState,
+        MAX_VISION_CELLS, Vec2, WorldState, apply_cluster_food_layout, basic_sensor_vector,
+        cluster_density_radius_scale, current_day_night_state, energy_breakdown_for_step,
         fill_population_sensor_vectors, sensor_observation, step_world, step_world_with_actions,
         step_world_with_actions_and_telemetry, toroidal_distance, wrap_position,
     };
@@ -900,6 +1070,19 @@ mod tests {
         }
     }
 
+    fn test_food(id: u32, position: Vec2) -> FoodState {
+        FoodState {
+            id,
+            position,
+            radius: 1.0,
+            energy_value: 1.0,
+            motion_angle_radians: 0.0,
+            cluster_id: None,
+            cluster_angle_radians: 0.0,
+            cluster_distance_factor: 0.0,
+        }
+    }
+
     #[test]
     fn toroidal_wrapping_wraps_coordinates() {
         let wrapped = wrap_position(Vec2::new(10.25, -0.75), 10.0, 10.0);
@@ -930,7 +1113,12 @@ mod tests {
                 radius: 5.0,
                 energy_value: 3.0,
                 motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
             }],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -974,7 +1162,12 @@ mod tests {
                 radius: 5.0,
                 energy_value: 3.0,
                 motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
             }],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1010,6 +1203,8 @@ mod tests {
             height: 20.0,
             agents: vec![test_agent(100.0)],
             food: vec![],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1115,7 +1310,12 @@ mod tests {
                 radius: 5.0,
                 energy_value: 3.0,
                 motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
             }],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1149,7 +1349,12 @@ mod tests {
                 radius: 5.0,
                 energy_value: 3.0,
                 motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
             }],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1183,7 +1388,12 @@ mod tests {
                 radius: 1.0,
                 energy_value: 1.0,
                 motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
             }],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1191,6 +1401,110 @@ mod tests {
 
         assert!((world.food[0].position.x - 7.0).abs() < 1e-6);
         assert!((world.food[0].position.y - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn food_clusters_move_with_configured_speed() {
+        let config = SimulationConfig {
+            timestep_seconds: 0.5,
+            food_motion_speed: 0.0,
+            food_cluster_enabled: true,
+            food_cluster_motion_speed: 4.0,
+            food_cluster_radius: 10.0,
+            ..SimulationConfig::default()
+        };
+        let mut world = WorldState {
+            width: 20.0,
+            height: 20.0,
+            agents: vec![],
+            food: vec![FoodState {
+                cluster_id: Some(0),
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
+                ..test_food(0, Vec2::new(5.0, 5.0))
+            }],
+            food_clusters: vec![FoodClusterState {
+                id: 0,
+                position: Vec2::new(5.0, 5.0),
+                motion_angle_radians: 0.0,
+                phase_offset: 0.0,
+            }],
+            world_seed: 0,
+            step_count: 0,
+        };
+
+        step_world(&mut world, &config);
+
+        assert!((world.food_clusters[0].position.x - 7.0).abs() < 1e-6);
+        assert!((world.food_clusters[0].position.y - 5.0).abs() < 1e-6);
+        assert!((world.food[0].position.x - 7.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn cluster_density_changes_with_phase() {
+        let config = SimulationConfig {
+            food_cluster_enabled: true,
+            food_cluster_radius: 20.0,
+            food_cluster_productivity_bias: 1.0,
+            day_night_cycle_enabled: true,
+            day_night_cycle_steps: 240,
+            food_motion_speed: 0.0,
+            ..SimulationConfig::default()
+        };
+        let cluster = FoodClusterState {
+            id: 0,
+            position: Vec2::new(20.0, 20.0),
+            motion_angle_radians: 0.0,
+            phase_offset: 0.0,
+        };
+        let mut day_world = WorldState {
+            width: 40.0,
+            height: 40.0,
+            agents: vec![],
+            food: vec![
+                FoodState {
+                    cluster_id: Some(0),
+                    cluster_angle_radians: 0.0,
+                    cluster_distance_factor: 1.0,
+                    ..test_food(0, cluster.position)
+                },
+                FoodState {
+                    cluster_id: Some(0),
+                    cluster_angle_radians: std::f32::consts::FRAC_PI_2,
+                    cluster_distance_factor: 0.25,
+                    ..test_food(1, cluster.position)
+                },
+            ],
+            food_clusters: vec![cluster.clone()],
+            world_seed: 0,
+            step_count: 0,
+        };
+        apply_cluster_food_layout(&mut day_world, &config);
+        let mut night_world = day_world.clone();
+        night_world.step_count = 120;
+        apply_cluster_food_layout(&mut night_world, &config);
+
+        let mean_distance = |world: &WorldState| -> f32 {
+            world
+                .food
+                .iter()
+                .map(|food| {
+                    toroidal_distance(
+                        food.position,
+                        world.food_clusters[0].position,
+                        world.width,
+                        world.height,
+                    )
+                })
+                .sum::<f32>()
+                / world.food.len() as f32
+        };
+
+        assert!(
+            cluster_density_radius_scale(&cluster, 0, &config)
+                < cluster_density_radius_scale(&cluster, 120, &config)
+        );
+        assert!(mean_distance(&day_world) < mean_distance(&night_world));
     }
 
     #[test]
@@ -1222,7 +1536,12 @@ mod tests {
                 radius: 1.0,
                 energy_value: 1.0,
                 motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
             }],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1272,7 +1591,12 @@ mod tests {
                 radius: 1.0,
                 energy_value: 1.0,
                 motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
             }],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1303,7 +1627,12 @@ mod tests {
                 radius: 1.0,
                 energy_value: 1.0,
                 motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
             }],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1343,7 +1672,12 @@ mod tests {
                 radius: 1.0,
                 energy_value: 1.0,
                 motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
             }],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1382,6 +1716,8 @@ mod tests {
             height: 40.0,
             agents: vec![agent.clone(), other_agent],
             food: vec![],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1413,6 +1749,8 @@ mod tests {
             height: 40.0,
             agents: vec![agent.clone()],
             food: vec![],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1447,7 +1785,12 @@ mod tests {
                 radius: 1.0,
                 energy_value: 1.0,
                 motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
             }],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1478,6 +1821,9 @@ mod tests {
                     radius: 1.0,
                     energy_value: 1.0,
                     motion_angle_radians: 0.0,
+                    cluster_id: None,
+                    cluster_angle_radians: 0.0,
+                    cluster_distance_factor: 0.0,
                 },
                 FoodState {
                     id: 1,
@@ -1485,8 +1831,13 @@ mod tests {
                     radius: 1.0,
                     energy_value: 1.0,
                     motion_angle_radians: 0.0,
+                    cluster_id: None,
+                    cluster_angle_radians: 0.0,
+                    cluster_distance_factor: 0.0,
                 },
             ],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1540,7 +1891,12 @@ mod tests {
                 radius: 1.0,
                 energy_value: 1.0,
                 motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
             }],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
         let mut night_world = day_world.clone();
@@ -1569,6 +1925,8 @@ mod tests {
             height: 40.0,
             agents: vec![agent.clone()],
             food: vec![],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 0,
         };
 
@@ -1592,6 +1950,8 @@ mod tests {
             height: 40.0,
             agents: vec![agent.clone()],
             food: vec![],
+            food_clusters: vec![],
+            world_seed: 0,
             step_count: 11,
         };
 

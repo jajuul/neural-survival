@@ -23,8 +23,9 @@ mod bevy_viewer {
     use crate::genetics::{AgentGenome, default_mixed_factory};
     use crate::io::snapshot::SnapshotFile;
     use crate::sim::{
-        EnergyBreakdown, FoodState, SensorObservation, Vec2, WorldState, current_day_night_state,
-        sensor_observation, step_world_with_actions_and_telemetry,
+        EnergyBreakdown, FoodState, SensorObservation, Vec2, WorldState,
+        cluster_density_radius_scale, cluster_productivity, current_day_night_state,
+        sensor_observation, step_world_with_actions_and_telemetry, wrap_position,
     };
 
     const EVOLVE_GENERATIONS_MIN: u32 = 1;
@@ -383,6 +384,7 @@ mod bevy_viewer {
             .add_systems(
                 Update,
                 ((
+                    draw_food_clusters,
                     draw_fitness_plot,
                     draw_selected_agent_eye_bins,
                     draw_selected_agent_network,
@@ -1434,7 +1436,7 @@ mod bevy_viewer {
     fn sync_food_visuals(
         mut commands: Commands,
         runtime: Res<ViewerRuntime>,
-        mut existing_food: Query<(Entity, &FoodVisual, &mut Transform)>,
+        mut existing_food: Query<(Entity, &FoodVisual, &mut Transform, &mut Sprite)>,
     ) {
         let world_food_ids = runtime
             .world
@@ -1443,7 +1445,7 @@ mod bevy_viewer {
             .map(|food| food.id)
             .collect::<Vec<_>>();
 
-        for (entity, food_visual, _) in &existing_food {
+        for (entity, food_visual, _, _) in &existing_food {
             if !world_food_ids.contains(&food_visual.id) {
                 commands.entity(entity).despawn_recursive();
             }
@@ -1451,7 +1453,7 @@ mod bevy_viewer {
 
         for food in &runtime.world.food {
             let mut found = false;
-            for (_, marker, mut transform) in &mut existing_food {
+            for (_, marker, mut transform, mut sprite) in &mut existing_food {
                 if marker.id == food.id {
                     transform.translation = world_to_screen(
                         food.position,
@@ -1459,6 +1461,7 @@ mod bevy_viewer {
                         runtime.world.height,
                         0.0,
                     );
+                    sprite.color = food_visual_color(food);
                     found = true;
                     break;
                 }
@@ -1543,6 +1546,29 @@ mod bevy_viewer {
             runtime.config.rule_toggles.energy_by_perception_size,
             evolution_progress
         );
+    }
+
+    fn draw_food_clusters(runtime: Res<ViewerRuntime>, mut gizmos: Gizmos) {
+        if !runtime.config.food_cluster_enabled {
+            return;
+        }
+
+        for cluster in &runtime.world.food_clusters {
+            let radius = runtime.config.food_cluster_radius
+                * cluster_density_radius_scale(cluster, runtime.world.step_count, &runtime.config);
+            let productivity =
+                cluster_productivity(cluster, runtime.world.step_count, &runtime.config)
+                    .clamp(0.0, 1.0);
+            let color = cluster_visual_color(cluster.id, productivity);
+            draw_world_circle(
+                &mut gizmos,
+                cluster.position,
+                radius.max(4.0),
+                runtime.world.width,
+                runtime.world.height,
+                color,
+            );
+        }
     }
 
     fn draw_fitness_plot(
@@ -1926,7 +1952,7 @@ mod bevy_viewer {
     fn spawn_one_food(commands: &mut Commands, food: &FoodState, width: f32, height: f32) {
         commands.spawn((
             Sprite {
-                color: Color::srgb(0.1, 0.9, 0.3),
+                color: food_visual_color(food),
                 custom_size: Some(bevy::math::Vec2::new(4.0, 4.0)),
                 ..default()
             },
@@ -2420,6 +2446,57 @@ mod bevy_viewer {
             screen_to_world(window, x1, y1),
             color,
         );
+    }
+
+    fn draw_world_circle(
+        gizmos: &mut Gizmos,
+        center: Vec2,
+        radius: f32,
+        width: f32,
+        height: f32,
+        color: Color,
+    ) {
+        const SEGMENTS: usize = 40;
+        let mut previous = None;
+
+        for segment in 0..=SEGMENTS {
+            let theta = segment as f32 / SEGMENTS as f32 * std::f32::consts::TAU;
+            let point = wrap_position(
+                center.add(Vec2::from_angle(theta).scale(radius)),
+                width,
+                height,
+            );
+            let point = world_to_screen(point, width, height, -0.1).truncate();
+            if let Some(prev) = previous {
+                gizmos.line_2d(prev, point, color);
+            }
+            previous = Some(point);
+        }
+    }
+
+    fn food_visual_color(food: &FoodState) -> Color {
+        match food.cluster_id {
+            Some(cluster_id) => {
+                let (r, g, b) = cluster_palette(cluster_id);
+                Color::srgb(r, g, b)
+            }
+            None => Color::srgb(0.10, 0.90, 0.30),
+        }
+    }
+
+    fn cluster_visual_color(cluster_id: u32, productivity: f32) -> Color {
+        let (r, g, b) = cluster_palette(cluster_id);
+        Color::srgba(r, g, b, 0.16 + 0.18 * productivity)
+    }
+
+    fn cluster_palette(cluster_id: u32) -> (f32, f32, f32) {
+        match cluster_id % 5 {
+            0 => (0.20, 0.88, 0.48),
+            1 => (0.34, 0.72, 1.00),
+            2 => (1.00, 0.73, 0.25),
+            3 => (0.98, 0.48, 0.40),
+            _ => (0.78, 0.56, 1.00),
+        }
     }
 
     fn draw_layered_network(

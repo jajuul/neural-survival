@@ -44,6 +44,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-09 00:30Z) Optimized evolution throughput by switching controller inputs to fixed-width sensor arrays, adding per-step spatial indexing for food/agent sensing, reusing shared-evaluation action/sensor buffers, and parallelizing deterministic `solo` evaluation with `rayon`; validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-10 00:20Z) Implemented milestone 1 of temporal ecology pressure: added a deterministic day/night cycle with configurable night visibility, applied light-level scaling to sensing, surfaced current light state in the GUI title/inspector, and validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-10 01:10Z) Implemented milestone 2 of temporal ecology pressure: added prey/predator roles to genomes and runtime state, upgraded eyes to typed `food`/`prey`/`predator` channels, preserved `(ControllerKind, AgentRole)` pools during evolution, added predator capture rules plus role-aware fitness scoring, and validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
+- [x] (2026-03-10 02:00Z) Implemented milestone 3 of temporal ecology pressure: added deterministic moving food clusters with per-cluster phase offsets, phase-driven spatial concentration, cluster-aware respawn/layout, and GUI cluster overlays plus food coloring; validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 
 ## Surprises & Discoveries
 
@@ -106,6 +107,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: Separate typed food/prey/predator eye channels are a better fit than a generic agent channel once ecological roles become explicit.
   Evidence: The revised sensor layout preserves all three modalities explicitly and now uses a local-only `32`-input controller vector (`energy`, `speed`, `10` food bins, `10` prey bins, `10` predator bins), matching the role-aware world rules without aliasing semantics.
+
+- Observation: Phase-sensitive food clusters are easier to keep deterministic when productivity changes spatial concentration rather than teleporting food counts between clusters.
+  Evidence: The implemented model keeps food assigned to moving cluster centers and varies cluster radius by phase, which satisfied the density-change proof tests while preserving stable resource-region identities and snapshot compatibility.
 
 - Observation: Live network visualization in the GUI requires controller-specific activation snapshots captured during stepping; action outputs alone are not enough to reconstruct hidden/state activations after the fact.
   Evidence: The new viewer inspector only became possible after extending `NeuralController` with `inspect_network`/`step_with_diagnostics` and storing the selected agent's latest network snapshot in `ViewerRuntime`.
@@ -317,7 +321,7 @@ Validation should remain end-to-end. After implementation, run `cargo fmt`, `car
 - [x] Extend runtime and genome state with ecological role and any cluster state required for deterministic food-region motion.
 - [x] Replace generic agent-eye sensing with typed `food`, `prey`, and `predator` channels and update the GUI inspector accordingly.
 - [x] Implement predator/prey collision rules and role-aware fitness accounting in shared evaluation.
-- [ ] Add deterministic moving food clusters with phase-dependent productivity and a visible debug representation in the GUI.
+- [x] Add deterministic moving food clusters with phase-dependent productivity and a visible debug representation in the GUI.
 - [ ] Replace direct-speed kinematics with persistent acceleration/momentum and add unit tests for inertia/drag behavior.
 - [x] Re-run `cargo fmt`, `cargo check --features gui`, and `cargo test`, then record outcomes and any design adjustments in this plan.
 

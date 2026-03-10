@@ -99,6 +99,34 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if config.food_cluster_enabled && config.food_cluster_count == 0 {
+        return Err(ConfigError::Invalid {
+            field: "food_cluster_count",
+            message: "must be >= 1 when food_cluster_enabled = true".into(),
+        });
+    }
+
+    if config.food_cluster_radius <= 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "food_cluster_radius",
+            message: "must be > 0".into(),
+        });
+    }
+
+    if config.food_cluster_motion_speed < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "food_cluster_motion_speed",
+            message: "must be >= 0".into(),
+        });
+    }
+
+    if !(0.0..=1.0).contains(&config.food_cluster_productivity_bias) {
+        return Err(ConfigError::Invalid {
+            field: "food_cluster_productivity_bias",
+            message: "must be in [0, 1]".into(),
+        });
+    }
+
     if !(0.0..=1.0).contains(&config.elitism_fraction) || config.elitism_fraction == 0.0 {
         return Err(ConfigError::Invalid {
             field: "elitism_fraction",
@@ -367,6 +395,11 @@ mod tests {
         assert_eq!(parsed.food_count, 400);
         assert_eq!(parsed.food_respawn_probability, 1.0);
         assert_eq!(parsed.food_motion_speed, 1.0);
+        assert!(!parsed.food_cluster_enabled);
+        assert_eq!(parsed.food_cluster_count, 4);
+        assert_eq!(parsed.food_cluster_radius, 28.0);
+        assert_eq!(parsed.food_cluster_motion_speed, 0.8);
+        assert_eq!(parsed.food_cluster_productivity_bias, 0.65);
         assert_eq!(parsed.elitism_fraction, 0.10);
         assert_eq!(parsed.tournament_size, 5);
         assert_eq!(parsed.mutation_rate, 0.15);
@@ -410,6 +443,25 @@ mod tests {
             err,
             ConfigError::Invalid {
                 field: "food_motion_speed",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_food_cluster_count_is_rejected_when_enabled() {
+        let raw = r#"
+            food_cluster_enabled = true
+            food_cluster_count = 0
+        "#;
+
+        let err =
+            parse_config_toml(raw).expect_err("cluster count zero should be invalid when enabled");
+
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                field: "food_cluster_count",
                 ..
             }
         ));
