@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use rand::random;
 use std::io::{self, Write};
 
 use crate::cli::{BatchArgs, Commands, RunArgs, ViewArgs};
@@ -23,10 +24,12 @@ pub fn execute_command(command: Commands) -> Result<()> {
 fn run_command(args: RunArgs) -> Result<()> {
     let config = load_config(&args.config)
         .with_context(|| format!("failed to load config at {}", args.config.display()))?;
+    let seed = resolve_seed(args.seed);
+    print_seed_message(seed, args.seed.is_none(), "run");
 
     run_batch_to_dir_with_progress(
         &config,
-        args.seed,
+        seed,
         args.headless_generations,
         &args.out,
         |completed, total| {
@@ -59,10 +62,12 @@ fn run_command(args: RunArgs) -> Result<()> {
 fn batch_command(args: BatchArgs) -> Result<()> {
     let config = load_config(&args.config)
         .with_context(|| format!("failed to load config at {}", args.config.display()))?;
+    let seed = resolve_seed(args.seed);
+    print_seed_message(seed, args.seed.is_none(), "batch");
 
     run_batch_to_dir_with_progress(
         &config,
-        args.seed,
+        seed,
         args.generations,
         &args.out,
         |completed, total| {
@@ -90,4 +95,16 @@ fn view_command(args: ViewArgs) -> Result<()> {
         .with_context(|| format!("failed to load snapshot {}", args.snapshot.display()))?;
 
     launch_snapshot_viewer(&snapshot)
+}
+
+fn resolve_seed(seed: Option<u64>) -> u64 {
+    seed.unwrap_or_else(random)
+}
+
+fn print_seed_message(seed: u64, generated: bool, mode: &str) {
+    if generated {
+        println!("{mode} using generated seed: {seed}");
+    } else {
+        println!("{mode} using seed: {seed}");
+    }
 }

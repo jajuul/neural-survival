@@ -31,9 +31,9 @@ pub struct RunArgs {
     /// Path to TOML simulation configuration.
     #[arg(long)]
     pub config: PathBuf,
-    /// Deterministic run seed.
+    /// Deterministic run seed. If omitted, a random seed is generated.
     #[arg(long)]
-    pub seed: u64,
+    pub seed: Option<u64>,
     /// Number of generations to evolve before opening the GUI.
     #[arg(long = "headless-generations")]
     pub headless_generations: u32,
@@ -48,9 +48,9 @@ pub struct BatchArgs {
     /// Path to TOML simulation configuration.
     #[arg(long)]
     pub config: PathBuf,
-    /// Deterministic run seed.
+    /// Deterministic run seed. If omitted, a random seed is generated.
     #[arg(long)]
-    pub seed: u64,
+    pub seed: Option<u64>,
     /// Number of generations to evolve.
     #[arg(long)]
     pub generations: u32,
@@ -74,7 +74,7 @@ mod tests {
     use super::Cli;
 
     #[test]
-    fn run_requires_seed() {
+    fn run_parses_without_seed() {
         let parsed = Cli::try_parse_from([
             "neural-survival",
             "run",
@@ -86,7 +86,7 @@ mod tests {
             "/tmp/ns",
         ]);
 
-        assert!(parsed.is_err());
+        assert!(parsed.is_ok());
     }
 
     #[test]

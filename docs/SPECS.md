@@ -93,7 +93,7 @@ Version 1 focuses on:
 ## User Workflows
 
 ### 1) Train then visualize
-1. User runs `run` command with config, seed, and `headless_generations = N`.
+1. User runs `run` command with config, optional seed, and `headless_generations = N`.
 2. Application evolves population headlessly for N generations.
 3. Application launches GUI with generation-N population snapshot.
 4. GUI shows the historical best/mean fitness plot carried in the snapshot and updates it if the user continues evolution from the viewer.
@@ -196,8 +196,8 @@ pub struct RuleToggles {
 ```
 
 ### CLI Surface
-- `neural-survival run --config <path> --seed <u64> --headless-generations <u32> --out <dir>`
-- `neural-survival batch --config <path> --seed <u64> --generations <u32> --out <dir>`
+- `neural-survival run --config <path> [--seed <u64>] --headless-generations <u32> --out <dir>`
+- `neural-survival batch --config <path> [--seed <u64>] --generations <u32> --out <dir>`
 - `neural-survival view --snapshot <path>`
 
 ## Simulation Specification

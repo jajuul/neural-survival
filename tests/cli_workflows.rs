@@ -18,7 +18,7 @@ fn batch_command_writes_expected_artifacts() {
 
     execute_command(Commands::Batch(BatchArgs {
         config: PathBuf::from("configs/default.toml"),
-        seed: 123,
+        seed: Some(123),
         generations: 3,
         out: out.clone(),
     }))
@@ -36,7 +36,7 @@ fn run_command_fast_forwards_and_creates_snapshot() {
 
     execute_command(Commands::Run(RunArgs {
         config: PathBuf::from("configs/default.toml"),
-        seed: 777,
+        seed: Some(777),
         headless_generations: 2,
         out: out.clone(),
     }))
