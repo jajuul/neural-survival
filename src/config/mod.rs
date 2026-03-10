@@ -218,6 +218,20 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if config.max_acceleration <= 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "max_acceleration",
+            message: "must be > 0".into(),
+        });
+    }
+
+    if config.linear_drag < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "linear_drag",
+            message: "must be >= 0".into(),
+        });
+    }
+
     if config.max_turn_rate_radians <= 0.0 {
         return Err(ConfigError::Invalid {
             field: "max_turn_rate_radians",
@@ -416,6 +430,8 @@ mod tests {
             parsed.eye_fov_angle_radians,
             std::f32::consts::PI + std::f32::consts::FRAC_PI_4
         );
+        assert_eq!(parsed.max_acceleration, 18.0);
+        assert_eq!(parsed.linear_drag, 1.8);
     }
 
     #[test]
@@ -479,6 +495,40 @@ mod tests {
             err,
             ConfigError::Invalid {
                 field: "predator_capture_radius",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_max_acceleration_is_rejected() {
+        let raw = r#"
+            max_acceleration = 0.0
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("zero max_acceleration should be invalid");
+
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                field: "max_acceleration",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_linear_drag_is_rejected() {
+        let raw = r#"
+            linear_drag = -0.1
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("negative linear_drag should be invalid");
+
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                field: "linear_drag",
                 ..
             }
         ));

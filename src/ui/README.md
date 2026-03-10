@@ -8,7 +8,7 @@ This module provides viewer entrypoints for loading and inspecting simulation sn
 - In `--features gui` builds, renders a Bevy viewer with:
   - directional agent rendering, so heading is visible directly in the scene (`LTC` triangles rotate with heading; `MLP` circles include a forward marker)
   - explicit `Pause`, `Step`, and `Continue` simulation controls
-  - typed numeric fields for evolution continuation (`generations`, `world size`, `food count`, `food motion`, `food respawn`, `sensor noise`, `sensor dropout`, `episode steps`, `mutation rate`)
+  - typed numeric fields for evolution continuation (`generations`, `world size`, `food count`, `food motion`, `food respawn`, `acceleration`, `linear drag`, `sensor noise`, `sensor dropout`, `episode steps`, `mutation rate`)
   - evaluation schedule controls for GUI-triggered continuation runs:
     - initial evaluation mode (`Solo`/`Shared`)
     - post-switch mode (`Solo`/`Shared`)

@@ -7,6 +7,7 @@ This module implements the deterministic fixed-step simulation core for the 2D t
 - Initializes agent and food state deterministically from a seed.
 - Advances the world one fixed step at a time either with stub controller actions (`step_world`) or caller-provided controller actions (`step_world_with_actions` / `step_world_with_actions_and_telemetry`).
 - Applies toroidal wrapping, optional food drift motion, food collision handling, deterministic optional food respawn, and energy loss/gain updates.
+- Uses acceleration-driven movement with persistent linear momentum and configurable drag instead of writing speed directly from throttle each step.
 - Supports optional deterministic food clusters: moving cluster centers with per-cluster phase offsets that tighten or spread food density over the day/night cycle.
 - Supports an optional deterministic day/night cycle derived from `world.step_count`; the current light level is exposed as a reusable helper and can reduce sensing visibility at night.
 - Builds controller sensor vectors with Shorelark-inspired eyes: food, prey, and predators are binned by relative angle inside a configurable field-of-view and bounded by perception range/channel traits.
@@ -21,7 +22,7 @@ This module implements the deterministic fixed-step simulation core for the 2D t
 - Produces aggregate episode summaries for reproducibility checks.
 
 ## Inputs
-- `SimulationConfig` with world geometry, timing, food respawn/motion, optional food-cluster parameters, predator/prey capture parameters, day/night visibility, sensor corruption, and energy parameters.
+- `SimulationConfig` with world geometry, timing, food respawn/motion, optional food-cluster parameters, predator/prey capture parameters, motion parameters (`max_acceleration`, `linear_drag`), day/night visibility, sensor corruption, and energy parameters.
 - Deterministic `seed` for world initialization.
 
 ## Outputs

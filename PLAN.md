@@ -45,6 +45,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-10 00:20Z) Implemented milestone 1 of temporal ecology pressure: added a deterministic day/night cycle with configurable night visibility, applied light-level scaling to sensing, surfaced current light state in the GUI title/inspector, and validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-10 01:10Z) Implemented milestone 2 of temporal ecology pressure: added prey/predator roles to genomes and runtime state, upgraded eyes to typed `food`/`prey`/`predator` channels, preserved `(ControllerKind, AgentRole)` pools during evolution, added predator capture rules plus role-aware fitness scoring, and validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-10 02:00Z) Implemented milestone 3 of temporal ecology pressure: added deterministic moving food clusters with per-cluster phase offsets, phase-driven spatial concentration, cluster-aware respawn/layout, and GUI cluster overlays plus food coloring; validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
+- [x] (2026-03-10 02:35Z) Implemented milestone 4 of temporal ecology pressure: replaced direct-speed throttle with acceleration-driven motion plus linear drag, exposed motion knobs in config and GUI continuation controls, added inertia/anti-instant-reverse tests, and validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 
 ## Surprises & Discoveries
 
@@ -110,6 +111,9 @@ The implementation is successful when three things are demonstrably true: headle
 
 - Observation: Phase-sensitive food clusters are easier to keep deterministic when productivity changes spatial concentration rather than teleporting food counts between clusters.
   Evidence: The implemented model keeps food assigned to moving cluster centers and varies cluster radius by phase, which satisfied the density-change proof tests while preserving stable resource-region identities and snapshot compatibility.
+
+- Observation: The minimal motion change that materially increases temporal dependence does not require persistent turn-rate state; direct steering plus persistent linear momentum is already enough to create glide/coast behavior and prevent instant reversal under bounded acceleration.
+  Evidence: The new `sim::world` tests prove both momentum persistence after throttle drops and non-negative forward velocity immediately after a full-turn reversal attempt with limited acceleration.
 
 - Observation: Live network visualization in the GUI requires controller-specific activation snapshots captured during stepping; action outputs alone are not enough to reconstruct hidden/state activations after the fact.
   Evidence: The new viewer inspector only became possible after extending `NeuralController` with `inspect_network`/`step_with_diagnostics` and storing the selected agent's latest network snapshot in `ViewerRuntime`.
@@ -322,7 +326,7 @@ Validation should remain end-to-end. After implementation, run `cargo fmt`, `car
 - [x] Replace generic agent-eye sensing with typed `food`, `prey`, and `predator` channels and update the GUI inspector accordingly.
 - [x] Implement predator/prey collision rules and role-aware fitness accounting in shared evaluation.
 - [x] Add deterministic moving food clusters with phase-dependent productivity and a visible debug representation in the GUI.
-- [ ] Replace direct-speed kinematics with persistent acceleration/momentum and add unit tests for inertia/drag behavior.
+- [x] Replace direct-speed kinematics with persistent acceleration/momentum and add unit tests for inertia/drag behavior.
 - [x] Re-run `cargo fmt`, `cargo check --features gui`, and `cargo test`, then record outcomes and any design adjustments in this plan.
 
 Post-plan enhancement (v6): model-capacity knobs for `MLP` and `LTC` are now runtime-configurable through TOML (`mlp_hidden_size`, `ltc_state_size`) with validation and factory wiring.

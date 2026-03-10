@@ -10,7 +10,7 @@ This module defines shared controller interfaces and deterministic MLP/LTC contr
 - The LTC path uses gated sensory/recurrent synapses, leak conductance, membrane capacitance, and a fixed-count internal ODE unfold per simulation step.
 - Includes a mixed-family controller factory that can generate and build both controller kinds.
 - Uses config-driven controller capacity settings (`mlp_hidden_size`, `ltc_state_size`) when factories are created by genetics/experiment flows.
-- Maps controller outputs into simulation actions (`steering`, `throttle`).
+- Maps controller outputs into simulation actions (`steering`, `throttle`), where throttle is interpreted by the sim as a forward-acceleration request.
 - Exposes `step_with_observability` so UI code can inspect raw steering/throttle signals alongside the applied action.
 - Exposes `inspect_network` and `step_with_diagnostics` so the GUI can render selected-agent topology and live activation snapshots without duplicating controller internals in the UI layer.
 

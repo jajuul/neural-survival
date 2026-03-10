@@ -895,8 +895,20 @@ fn apply_kinematics(
     agent.heading_radians = (agent.heading_radians + steering * config.max_turn_rate_radians * dt)
         .rem_euclid(std::f32::consts::TAU);
 
-    let speed = throttle * agent.max_speed;
-    agent.velocity = Vec2::from_angle(agent.heading_radians).scale(speed);
+    let forward_acceleration =
+        Vec2::from_angle(agent.heading_radians).scale(throttle * config.max_acceleration);
+    agent.velocity = agent.velocity.add(forward_acceleration.scale(dt));
+
+    // Linear drag keeps momentum persistent while still letting speed decay when throttle drops.
+    let drag_scale = (1.0 - config.linear_drag * dt).clamp(0.0, 1.0);
+    agent.velocity = agent.velocity.scale(drag_scale);
+
+    let speed = agent.velocity.length();
+    if speed > agent.max_speed {
+        agent.velocity = agent.velocity.scale(agent.max_speed / speed);
+    }
+
+    let speed = agent.velocity.length();
     agent.position = wrap_position(agent.position.add(agent.velocity.scale(dt)), width, height);
 
     speed
@@ -1401,6 +1413,91 @@ mod tests {
 
         assert!((world.food[0].position.x - 7.0).abs() < 1e-6);
         assert!((world.food[0].position.y - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn throttle_accelerates_and_drag_preserves_momentum() {
+        let config = SimulationConfig {
+            timestep_seconds: 0.5,
+            max_acceleration: 10.0,
+            linear_drag: 1.0,
+            max_turn_rate_radians: 0.0,
+            base_energy_cost_per_second: 0.0,
+            speed_energy_cost_factor: 0.0,
+            network_energy_cost_factor: 0.0,
+            perception_energy_cost_factor: 0.0,
+            ..SimulationConfig::default()
+        };
+        let mut world = WorldState {
+            width: 50.0,
+            height: 50.0,
+            agents: vec![test_agent(10.0)],
+            food: vec![],
+            food_clusters: vec![],
+            world_seed: 0,
+            step_count: 0,
+        };
+
+        let accelerate = [ActionVector {
+            steering: 0.0,
+            throttle: 1.0,
+        }];
+        let coast = [ActionVector::default()];
+
+        step_world_with_actions(&mut world, &config, &accelerate);
+        let speed_after_accel = world.agents[0].velocity.length();
+        step_world_with_actions(&mut world, &config, &coast);
+        let speed_after_coast = world.agents[0].velocity.length();
+
+        assert!((speed_after_accel - 2.5).abs() < 1e-6);
+        assert!((speed_after_coast - 1.25).abs() < 1e-6);
+        assert!(speed_after_coast > 0.0);
+    }
+
+    #[test]
+    fn acceleration_limit_prevents_instant_reverse() {
+        let config = SimulationConfig {
+            timestep_seconds: 1.0,
+            max_acceleration: 2.0,
+            linear_drag: 0.0,
+            max_turn_rate_radians: std::f32::consts::PI,
+            base_energy_cost_per_second: 0.0,
+            speed_energy_cost_factor: 0.0,
+            network_energy_cost_factor: 0.0,
+            perception_energy_cost_factor: 0.0,
+            ..SimulationConfig::default()
+        };
+        let mut world = WorldState {
+            width: 50.0,
+            height: 50.0,
+            agents: vec![test_agent(10.0)],
+            food: vec![],
+            food_clusters: vec![],
+            world_seed: 0,
+            step_count: 0,
+        };
+
+        step_world_with_actions(
+            &mut world,
+            &config,
+            &[ActionVector {
+                steering: 0.0,
+                throttle: 1.0,
+            }],
+        );
+        let forward_velocity = world.agents[0].velocity.x;
+
+        step_world_with_actions(
+            &mut world,
+            &config,
+            &[ActionVector {
+                steering: 1.0,
+                throttle: 1.0,
+            }],
+        );
+
+        assert!(forward_velocity > 0.0);
+        assert!(world.agents[0].velocity.x >= 0.0);
     }
 
     #[test]

@@ -57,7 +57,7 @@ Version 1 focuses on:
   - predators capture prey within `predator_capture_radius`
   - successful captures grant `predator_capture_energy_gain`
   - predators do not consume food directly
-- Agent kinematics: steering plus bounded velocity.
+- Agent kinematics: steering plus bounded acceleration-driven velocity with linear drag.
 - Optional deterministic day/night cycle:
   - phase derived from `world.step_count`
   - current milestone only affects sensing visibility
@@ -108,7 +108,7 @@ Version 1 focuses on:
 1. User opens saved snapshot in GUI.
 2. User inspects movement, survival, and top-level statistics.
 3. User can pause/resume, adjust simulation speed, and toggle active world rules.
-4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `food motion`, `food respawn`, `sensor noise`, `sensor dropout`, `episode steps`, `mutation rate`) and a selectable evaluation schedule (`solo`, `shared`, or `solo -> shared @ N`).
+4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `food motion`, `food respawn`, `acceleration`, `linear drag`, `sensor noise`, `sensor dropout`, `episode steps`, `mutation rate`) and a selectable evaluation schedule (`solo`, `shared`, or `solo -> shared @ N`).
 5. User can click an agent in the GUI to inspect its current food/prey/predator eye-bin activations, controller outputs, last-step energy-cost breakdown, and live neural-network topology/activations.
 6. If food clusters are enabled, the GUI shows faint moving region markers and cluster-colored food so resource-region motion is visible.
 
@@ -223,11 +223,16 @@ pub struct RuleToggles {
   - Fixed controller input width where inactive eye bins are zero-filled (current width: `2 + 10 food + 10 prey + 10 predator = 32` values).
 - Action vector controls:
   - Steering direction change.
-  - Throttle/drive magnitude.
+  - Throttle/drive magnitude interpreted as forward acceleration request.
 
 ### Energy Model
 For each fixed step:
 `E(t+dt) = E(t) - base_cost*dt - speed_term - network_term - perception_term + food_gain + capture_gain`
+
+Velocity update uses persistent momentum:
+- throttle contributes forward acceleration bounded by `max_acceleration`
+- linear drag damps velocity by `linear_drag`
+- velocity is clamped to `max_speed`
 
 - `speed_term` applies only when `energy_by_speed = true`.
 - `network_term` applies only when `energy_by_network_size = true`.

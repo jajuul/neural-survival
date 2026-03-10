@@ -35,6 +35,8 @@ mod bevy_viewer {
     const FOOD_COUNT_MIN: usize = 1;
     const FOOD_COUNT_MAX: usize = 10000;
     const FOOD_MOTION_SPEED_MAX: f32 = 50.0;
+    const MAX_ACCELERATION_MAX: f32 = 100.0;
+    const LINEAR_DRAG_MAX: f32 = 20.0;
     const EPISODE_STEPS_MIN: u32 = 10;
     const EPISODE_STEPS_MAX: u32 = 20000;
     const SENSOR_NOISE_STDDEV_MAX: f32 = 2.0;
@@ -129,13 +131,15 @@ mod bevy_viewer {
         FoodCount,
         FoodMotionSpeed,
         FoodRespawnProbability,
+        MaxAcceleration,
+        LinearDrag,
         SensorNoiseStddev,
         SensorDropoutProbability,
         EpisodeSteps,
         MutationRate,
     }
 
-    const NUMERIC_FIELDS: [NumericFieldKind; 11] = [
+    const NUMERIC_FIELDS: [NumericFieldKind; 13] = [
         NumericFieldKind::EvolveGenerations,
         NumericFieldKind::EvaluationSwitchAfterGeneration,
         NumericFieldKind::WorldWidth,
@@ -143,6 +147,8 @@ mod bevy_viewer {
         NumericFieldKind::FoodCount,
         NumericFieldKind::FoodMotionSpeed,
         NumericFieldKind::FoodRespawnProbability,
+        NumericFieldKind::MaxAcceleration,
+        NumericFieldKind::LinearDrag,
         NumericFieldKind::SensorNoiseStddev,
         NumericFieldKind::SensorDropoutProbability,
         NumericFieldKind::EpisodeSteps,
@@ -168,6 +174,8 @@ mod bevy_viewer {
         food_count: String,
         food_motion_speed: String,
         food_respawn_probability: String,
+        max_acceleration: String,
+        linear_drag: String,
         sensor_noise_stddev: String,
         sensor_dropout_probability: String,
         episode_steps: String,
@@ -186,6 +194,8 @@ mod bevy_viewer {
                 food_count: config.food_count.to_string(),
                 food_motion_speed: format!("{:.2}", config.food_motion_speed),
                 food_respawn_probability: format!("{:.3}", config.food_respawn_probability),
+                max_acceleration: format!("{:.2}", config.max_acceleration),
+                linear_drag: format!("{:.2}", config.linear_drag),
                 sensor_noise_stddev: format!("{:.3}", config.sensor_noise_stddev),
                 sensor_dropout_probability: format!("{:.3}", config.sensor_dropout_probability),
                 episode_steps: config.episode_steps.to_string(),
@@ -204,6 +214,8 @@ mod bevy_viewer {
                 NumericFieldKind::FoodCount => &self.food_count,
                 NumericFieldKind::FoodMotionSpeed => &self.food_motion_speed,
                 NumericFieldKind::FoodRespawnProbability => &self.food_respawn_probability,
+                NumericFieldKind::MaxAcceleration => &self.max_acceleration,
+                NumericFieldKind::LinearDrag => &self.linear_drag,
                 NumericFieldKind::SensorNoiseStddev => &self.sensor_noise_stddev,
                 NumericFieldKind::SensorDropoutProbability => &self.sensor_dropout_probability,
                 NumericFieldKind::EpisodeSteps => &self.episode_steps,
@@ -222,6 +234,8 @@ mod bevy_viewer {
                 NumericFieldKind::FoodCount => &mut self.food_count,
                 NumericFieldKind::FoodMotionSpeed => &mut self.food_motion_speed,
                 NumericFieldKind::FoodRespawnProbability => &mut self.food_respawn_probability,
+                NumericFieldKind::MaxAcceleration => &mut self.max_acceleration,
+                NumericFieldKind::LinearDrag => &mut self.linear_drag,
                 NumericFieldKind::SensorNoiseStddev => &mut self.sensor_noise_stddev,
                 NumericFieldKind::SensorDropoutProbability => &mut self.sensor_dropout_probability,
                 NumericFieldKind::EpisodeSteps => &mut self.episode_steps,
@@ -2034,7 +2048,7 @@ mod bevy_viewer {
 
     fn cursor_over_ui_panel(cursor: bevy::math::Vec2, window: &Window) -> bool {
         let left_panel_right = 220.0;
-        if cursor.x <= left_panel_right && cursor.y <= 700.0 {
+        if cursor.x <= left_panel_right && cursor.y <= window.height() {
             return true;
         }
 
@@ -2180,6 +2194,8 @@ mod bevy_viewer {
             NumericFieldKind::FoodCount => "Food Count",
             NumericFieldKind::FoodMotionSpeed => "Food Motion",
             NumericFieldKind::FoodRespawnProbability => "Food Respawn",
+            NumericFieldKind::MaxAcceleration => "Acceleration",
+            NumericFieldKind::LinearDrag => "Linear Drag",
             NumericFieldKind::SensorNoiseStddev => "Sensor Noise",
             NumericFieldKind::SensorDropoutProbability => "Sensor Dropout",
             NumericFieldKind::EpisodeSteps => "Episode Steps",
@@ -2233,6 +2249,8 @@ mod bevy_viewer {
                 | NumericFieldKind::WorldHeight
                 | NumericFieldKind::FoodMotionSpeed
                 | NumericFieldKind::FoodRespawnProbability
+                | NumericFieldKind::MaxAcceleration
+                | NumericFieldKind::LinearDrag
                 | NumericFieldKind::SensorNoiseStddev
                 | NumericFieldKind::SensorDropoutProbability
                 | NumericFieldKind::MutationRate
@@ -2289,6 +2307,16 @@ mod bevy_viewer {
                     runtime.config.food_respawn_probability = value.clamp(0.0, 1.0);
                 }
             }
+            NumericFieldKind::MaxAcceleration => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.max_acceleration = value.clamp(0.01, MAX_ACCELERATION_MAX);
+                }
+            }
+            NumericFieldKind::LinearDrag => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.linear_drag = value.clamp(0.0, LINEAR_DRAG_MAX);
+                }
+            }
             NumericFieldKind::SensorNoiseStddev => {
                 if let Ok(value) = raw.parse::<f32>() {
                     runtime.config.sensor_noise_stddev = value.clamp(0.0, SENSOR_NOISE_STDDEV_MAX);
@@ -2340,6 +2368,13 @@ mod bevy_viewer {
             NumericFieldKind::FoodRespawnProbability => {
                 runtime.field_buffers.food_respawn_probability =
                     format!("{:.3}", runtime.config.food_respawn_probability);
+            }
+            NumericFieldKind::MaxAcceleration => {
+                runtime.field_buffers.max_acceleration =
+                    format!("{:.2}", runtime.config.max_acceleration);
+            }
+            NumericFieldKind::LinearDrag => {
+                runtime.field_buffers.linear_drag = format!("{:.2}", runtime.config.linear_drag);
             }
             NumericFieldKind::SensorNoiseStddev => {
                 runtime.field_buffers.sensor_noise_stddev =
