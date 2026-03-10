@@ -4,8 +4,8 @@ use rand_chacha::ChaCha8Rng;
 use crate::config::SimulationConfig;
 
 use super::types::{
-    ActionVector, AgentState, CONTROLLER_SENSOR_INPUT_SIZE, CORE_SENSOR_FEATURES, EnergyBreakdown,
-    EpisodeSummary, FoodState, MAX_VISION_CELLS, SensorObservation, SensorVector,
+    ActionVector, AgentState, CONTROLLER_SENSOR_INPUT_SIZE, CORE_SENSOR_FEATURES, DayNightState,
+    EnergyBreakdown, EpisodeSummary, FoodState, MAX_VISION_CELLS, SensorObservation, SensorVector,
     StepAgentTelemetry, StepOutcome, Vec2, WorldState,
 };
 
@@ -322,6 +322,35 @@ pub fn fill_population_sensor_vectors(
     }
 }
 
+/// Compute deterministic day/night state from world time and config.
+///
+/// Inputs: current `step_count` and validated runtime config.
+/// Output: normalized phase plus derived daylight and visibility multipliers.
+/// Side effects: none.
+pub fn current_day_night_state(step_count: u64, config: &SimulationConfig) -> DayNightState {
+    if !config.day_night_cycle_enabled || config.day_night_cycle_steps == 0 {
+        return DayNightState {
+            phase: 0.0,
+            daylight: 1.0,
+            visibility_multiplier: 1.0,
+            is_night: false,
+        };
+    }
+
+    let cycle_steps = config.day_night_cycle_steps.max(1) as f32;
+    let phase = (step_count as f32 / cycle_steps).fract();
+    let daylight = (phase * std::f32::consts::TAU).cos() * 0.5 + 0.5;
+    let visibility_multiplier =
+        config.night_visibility_multiplier + (1.0 - config.night_visibility_multiplier) * daylight;
+
+    DayNightState {
+        phase,
+        daylight,
+        visibility_multiplier,
+        is_night: daylight < 0.5,
+    }
+}
+
 /// Build decomposed controller inputs for one agent so UI code can inspect core scalars and eye
 /// bins without reimplementing the sensor model.
 ///
@@ -368,18 +397,26 @@ fn compute_sensor_values(
     spatial: &SpatialIndex,
     config: &SimulationConfig,
 ) -> [f32; CONTROLLER_SENSOR_INPUT_SIZE] {
+    let day_night = current_day_night_state(world.step_count, config);
     let mut values = [0.0; CONTROLLER_SENSOR_INPUT_SIZE];
     values[0] = (agent.energy / config.initial_agent_energy).clamp(0.0, 2.0);
     values[1] = (agent.velocity.length() / agent.max_speed.max(0.001)).clamp(0.0, 1.0);
 
     let food_start = CORE_SENSOR_FEATURES;
     let agent_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
-    fill_food_eye_cells(agent, world, spatial, &mut values[food_start..agent_start]);
+    fill_food_eye_cells(
+        agent,
+        world,
+        spatial,
+        &mut values[food_start..agent_start],
+        day_night.visibility_multiplier,
+    );
     fill_agent_eye_cells(
         agent,
         world,
         spatial,
         &mut values[agent_start..agent_start + MAX_VISION_CELLS],
+        day_night.visibility_multiplier,
     );
     apply_sensor_corruption_in_place(agent.id, world.step_count, &mut values, config);
     values
@@ -481,6 +518,7 @@ fn fill_food_eye_cells(
     world: &WorldState,
     spatial: &SpatialIndex,
     cells: &mut [f32],
+    visibility_multiplier: f32,
 ) {
     cells.fill(0.0);
     spatial.with_candidate_foods(agent.position, agent.perception_radius, |food_idx| {
@@ -490,6 +528,7 @@ fn fill_food_eye_cells(
             world.food[food_idx].position,
             world.width,
             world.height,
+            visibility_multiplier,
         );
     });
 }
@@ -499,6 +538,7 @@ fn fill_agent_eye_cells(
     world: &WorldState,
     spatial: &SpatialIndex,
     cells: &mut [f32],
+    visibility_multiplier: f32,
 ) {
     cells.fill(0.0);
     spatial.with_candidate_agents(agent.position, agent.perception_radius, |other_idx| {
@@ -507,7 +547,14 @@ fn fill_agent_eye_cells(
             return;
         }
 
-        accumulate_eye_target(agent, cells, other.position, world.width, world.height);
+        accumulate_eye_target(
+            agent,
+            cells,
+            other.position,
+            world.width,
+            world.height,
+            visibility_multiplier,
+        );
     });
 }
 
@@ -517,12 +564,14 @@ fn accumulate_eye_target(
     target_position: Vec2,
     world_width: f32,
     world_height: f32,
+    visibility_multiplier: f32,
 ) {
     let active_cells = agent.perception_channels.clamp(1, MAX_VISION_CELLS as u16) as usize;
     let fov = (agent.eye_cell_angle_radians.max(0.001) * active_cells as f32)
         .clamp(0.001, std::f32::consts::TAU);
     let half_fov = fov * 0.5;
-    let max_range = agent.perception_radius.max(0.001);
+    let visibility = visibility_multiplier.clamp(0.0, 1.0);
+    let max_range = (agent.perception_radius * visibility).max(0.001);
 
     let offset = toroidal_offset(agent.position, target_position, world_width, world_height);
     let distance = offset.length();
@@ -539,7 +588,7 @@ fn accumulate_eye_target(
 
     let normalized = (relative_angle + half_fov) / fov;
     let cell = ((normalized * active_cells as f32).floor() as usize).min(active_cells - 1);
-    cells[cell] += (max_range - distance) / max_range;
+    cells[cell] += visibility * (max_range - distance) / max_range;
 }
 
 fn apply_sensor_corruption_in_place(
@@ -704,9 +753,9 @@ mod tests {
 
     use super::{
         AgentState, CORE_SENSOR_FEATURES, FoodState, MAX_VISION_CELLS, Vec2, WorldState,
-        basic_sensor_vector, energy_breakdown_for_step, fill_population_sensor_vectors,
-        sensor_observation, step_world, step_world_with_actions_and_telemetry, toroidal_distance,
-        wrap_position,
+        basic_sensor_vector, current_day_night_state, energy_breakdown_for_step,
+        fill_population_sensor_vectors, sensor_observation, step_world,
+        step_world_with_actions_and_telemetry, toroidal_distance, wrap_position,
     };
 
     fn test_agent(energy: f32) -> AgentState {
@@ -732,6 +781,7 @@ mod tests {
             food_motion_speed: 0.0,
             sensor_noise_stddev: 0.0,
             sensor_dropout_probability: 0.0,
+            day_night_cycle_enabled: false,
             ..SimulationConfig::default()
         }
     }
@@ -1000,7 +1050,7 @@ mod tests {
             agents: vec![agent.clone()],
             food: vec![FoodState {
                 id: 0,
-                position: Vec2::new(15.0, 10.0),
+                position: Vec2::new(14.0, 10.0),
                 radius: 1.0,
                 energy_value: 1.0,
                 motion_angle_radians: 0.0,
@@ -1263,6 +1313,64 @@ mod tests {
 
         assert_eq!(batch[0], basic_sensor_vector(&first, &world, &config));
         assert_eq!(batch[1], basic_sensor_vector(&second, &world, &config));
+    }
+
+    #[test]
+    fn current_day_night_state_reports_full_day_and_midnight_levels() {
+        let config = SimulationConfig {
+            day_night_cycle_enabled: true,
+            day_night_cycle_steps: 240,
+            night_visibility_multiplier: 0.25,
+            ..deterministic_sensor_config()
+        };
+
+        let day = current_day_night_state(0, &config);
+        let night = current_day_night_state(120, &config);
+
+        assert!((day.visibility_multiplier - 1.0).abs() < 1e-6);
+        assert!(!day.is_night);
+        assert!((night.visibility_multiplier - 0.25).abs() < 1e-6);
+        assert!(night.is_night);
+    }
+
+    #[test]
+    fn night_visibility_reduces_sensor_strength() {
+        let config = SimulationConfig {
+            day_night_cycle_enabled: true,
+            day_night_cycle_steps: 240,
+            night_visibility_multiplier: 0.25,
+            ..deterministic_sensor_config()
+        };
+        let mut agent = test_agent(50.0);
+        agent.position = Vec2::new(10.0, 10.0);
+        agent.heading_radians = 0.0;
+        agent.perception_radius = 20.0;
+        agent.perception_channels = 5;
+        agent.eye_cell_angle_radians = std::f32::consts::FRAC_PI_2 / 5.0;
+
+        let day_world = WorldState {
+            width: 40.0,
+            height: 40.0,
+            agents: vec![agent.clone()],
+            food: vec![FoodState {
+                id: 0,
+                position: Vec2::new(14.0, 10.0),
+                radius: 1.0,
+                energy_value: 1.0,
+                motion_angle_radians: 0.0,
+            }],
+            step_count: 0,
+        };
+        let mut night_world = day_world.clone();
+        night_world.step_count = 120;
+
+        let day_sensor = sensor_observation(&agent, &day_world, &config);
+        let night_sensor = sensor_observation(&agent, &night_world, &config);
+        let day_total = day_sensor.food_eye_bins.iter().sum::<f32>();
+        let night_total = night_sensor.food_eye_bins.iter().sum::<f32>();
+
+        assert!(day_total > night_total);
+        assert!(night_total > 0.0);
     }
 
     #[test]

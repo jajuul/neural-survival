@@ -270,6 +270,20 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if config.day_night_cycle_enabled && config.day_night_cycle_steps == 0 {
+        return Err(ConfigError::Invalid {
+            field: "day_night_cycle_steps",
+            message: "must be >= 1 when day_night_cycle_enabled = true".into(),
+        });
+    }
+
+    if !(0.0..=1.0).contains(&config.night_visibility_multiplier) {
+        return Err(ConfigError::Invalid {
+            field: "night_visibility_multiplier",
+            message: "must be in [0, 1]".into(),
+        });
+    }
+
     if config.fitness_weight_survival < 0.0 {
         return Err(ConfigError::Invalid {
             field: "fitness_weight_survival",
@@ -327,6 +341,9 @@ mod tests {
         assert_eq!(parsed.mutation_rate, 0.15);
         assert_eq!(parsed.mlp_hidden_size, 8);
         assert_eq!(parsed.ltc_state_size, 8);
+        assert!(parsed.day_night_cycle_enabled);
+        assert_eq!(parsed.day_night_cycle_steps, 240);
+        assert_eq!(parsed.night_visibility_multiplier, 0.35);
         assert_eq!(
             parsed.eye_fov_angle_radians,
             std::f32::consts::PI + std::f32::consts::FRAC_PI_4
@@ -447,6 +464,39 @@ mod tests {
             err,
             ConfigError::Invalid {
                 field: "sensor_noise_stddev",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_day_night_cycle_steps_is_rejected_when_enabled() {
+        let raw = r#"
+            day_night_cycle_enabled = true
+            day_night_cycle_steps = 0
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("zero cycle length must fail when enabled");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                field: "day_night_cycle_steps",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_night_visibility_multiplier_is_rejected() {
+        let raw = r#"
+            night_visibility_multiplier = 1.2
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("night visibility > 1 must fail");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                field: "night_visibility_multiplier",
                 ..
             }
         ));

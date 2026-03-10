@@ -38,6 +38,10 @@ Version 1 focuses on:
 - Time model: fixed-step simulation.
 - Initial food model: stationary food points spawned uniformly at random and optionally respawned on consumption according to configurable probability.
 - Agent kinematics: steering plus bounded velocity.
+- Optional deterministic day/night cycle:
+  - phase derived from `world.step_count`
+  - current milestone only affects sensing visibility
+  - night reduces effective perception range and eye-bin intensity through config-driven `night_visibility_multiplier`
 
 ### Neural Controllers
 - Controller families required in v1:
@@ -187,6 +191,7 @@ pub struct RuleToggles {
   - Core normalized scalar cues (`energy`, `speed`).
   - Shorelark-inspired "eye" bins: angular perception cells within a configurable field-of-view and perception range.
   - Eye bins sense both food and other agents.
+  - If day/night is enabled, sensing strength is scaled by the current light level; night reduces both effective perception range and resulting eye activation.
   - Optional deterministic sensor corruption controlled by `sensor_noise_stddev` and `sensor_dropout_probability`.
   - Controller input uses separate channel stacks for food bins and agent bins, preserving type information for future extensions such as edible-agent versus predator-agent channels.
   - Per-agent channel count trait controls active eye bin count.
@@ -246,11 +251,13 @@ Weights are config-driven and exported in run metadata.
 - Best and mean fitness.
 - Controller-family distribution (MLP/LTC).
 - Active world-rule toggle states.
+- Current light phase and visibility multiplier when day/night is enabled.
 - Evolution continuation progress while GUI-triggered evolution is running.
 - Selected-agent inspector:
   - click-to-select agent inspection
   - live eye-bin chart for active perception channels, split into food and nearby-agent activations
   - core sensor values (`energy`, `speed`)
+  - current light state (`day`/`night`, phase, visibility multiplier)
   - raw controller outputs (`steering`, `throttle_raw`) and applied throttle
   - last-step energy breakdown (`base`, `speed`, `network`, `perception`, `food`, `net`)
   - live network inspector panel showing the selected controller topology and current node activations

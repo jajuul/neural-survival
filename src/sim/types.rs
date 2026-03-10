@@ -133,6 +133,15 @@ pub struct WorldState {
     pub step_count: u64,
 }
 
+/// Deterministic lighting phase derived from world step count and config.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct DayNightState {
+    pub phase: f32,
+    pub daylight: f32,
+    pub visibility_multiplier: f32,
+    pub is_night: bool,
+}
+
 /// Aggregated side effects for one world step.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct StepOutcome {

@@ -23,8 +23,8 @@ mod bevy_viewer {
     use crate::genetics::{AgentGenome, default_mixed_factory};
     use crate::io::snapshot::SnapshotFile;
     use crate::sim::{
-        EnergyBreakdown, FoodState, SensorObservation, Vec2, WorldState, sensor_observation,
-        step_world_with_actions_and_telemetry,
+        EnergyBreakdown, FoodState, SensorObservation, Vec2, WorldState, current_day_night_state,
+        sensor_observation, step_world_with_actions_and_telemetry,
     };
 
     const EVOLVE_GENERATIONS_MIN: u32 = 1;
@@ -1514,9 +1514,15 @@ mod bevy_viewer {
         } else {
             String::new()
         };
+        let day_night = current_day_night_state(runtime.world.step_count, &runtime.config);
+        let light_label = if runtime.config.day_night_cycle_enabled {
+            if day_night.is_night { "night" } else { "day" }
+        } else {
+            "fixed"
+        };
 
         window.title = format!(
-            "neural-survival | gen={} alive={} food={} bestE={:.1} meanE={:.1} MLP={} LTC={} speed={}x eval={} world={:.0}x{:.0} rules[s:{} n:{} p:{}]{}",
+            "neural-survival | gen={} alive={} food={} bestE={:.1} meanE={:.1} MLP={} LTC={} speed={}x eval={} light={} vis={:.2} world={:.0}x{:.0} rules[s:{} n:{} p:{}]{}",
             runtime.generation,
             alive,
             food,
@@ -1526,6 +1532,8 @@ mod bevy_viewer {
             ltc,
             runtime.speed_multiplier,
             format_evaluation_schedule(&runtime.config),
+            light_label,
+            day_night.visibility_multiplier,
             runtime.config.world_width,
             runtime.config.world_height,
             runtime.config.rule_toggles.energy_by_speed,
@@ -2006,6 +2014,7 @@ mod bevy_viewer {
             return "Click an agent in the world to inspect sensors and controller output."
                 .to_string();
         };
+        let day_night = current_day_night_state(runtime.world.step_count, &runtime.config);
 
         let [energy_norm, speed_norm] = snapshot.sensor.core_values;
         let output_text = if snapshot.has_live_step {
@@ -2047,11 +2056,18 @@ mod bevy_viewer {
             .fold(0.0_f32, f32::max);
 
         format!(
-            "agent #{} ({:?}) {}\nworld step: {}\nperception: radius={:.1} bins={} eye_angle={:.3} total_fov={:.3}\ncore sensors: energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eyes: food={:.3} agents={:.3}\nchart below: green=food, orange=agents, controller input channels are [food bins | agent bins]",
+            "agent #{} ({:?}) {}\nworld step: {}\nlight: {} phase={:.2} visibility={:.2}\nperception: radius={:.1} bins={} eye_angle={:.3} total_fov={:.3}\ncore sensors: energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eyes: food={:.3} agents={:.3}\nchart below: green=food, orange=agents, controller input channels are [food bins | agent bins]",
             snapshot.agent_id,
             snapshot.controller_kind,
             if snapshot.alive { "alive" } else { "dead" },
             snapshot.world_step,
+            if runtime.config.day_night_cycle_enabled {
+                if day_night.is_night { "night" } else { "day" }
+            } else {
+                "fixed"
+            },
+            day_night.phase,
+            day_night.visibility_multiplier,
             snapshot.perception_radius,
             snapshot.perception_channels,
             snapshot.eye_cell_angle_radians,
