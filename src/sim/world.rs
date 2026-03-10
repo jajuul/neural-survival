@@ -4,9 +4,9 @@ use rand_chacha::ChaCha8Rng;
 use crate::config::SimulationConfig;
 
 use super::types::{
-    ActionVector, AgentState, CONTROLLER_SENSOR_INPUT_SIZE, CORE_SENSOR_FEATURES, DayNightState,
-    EnergyBreakdown, EpisodeSummary, FoodState, MAX_VISION_CELLS, SensorObservation, SensorVector,
-    StepAgentTelemetry, StepOutcome, Vec2, WorldState,
+    ActionVector, AgentRole, AgentState, CONTROLLER_SENSOR_INPUT_SIZE, CORE_SENSOR_FEATURES,
+    DayNightState, EnergyBreakdown, EpisodeSummary, FoodState, MAX_VISION_CELLS, SensorObservation,
+    SensorVector, StepAgentTelemetry, StepOutcome, Vec2, WorldState,
 };
 
 /// Coarse toroidal spatial index used to prune food/agent sensor queries.
@@ -135,7 +135,13 @@ pub fn initialize_world(config: &SimulationConfig, seed: u64) -> WorldState {
                 / config.default_perception_channels.max(1) as f32,
             network_size: config.default_network_size,
             metabolic_efficiency: config.default_metabolic_efficiency,
+            role: if rng.gen_bool(config.predator_fraction as f64) {
+                AgentRole::Predator
+            } else {
+                AgentRole::Prey
+            },
             food_consumed: 0,
+            prey_captured: 0,
         })
         .collect();
 
@@ -204,6 +210,7 @@ pub fn step_world_with_actions_and_telemetry(
     let dt = config.timestep_seconds;
     let mut telemetry = vec![StepAgentTelemetry::default(); world.agents.len()];
     let mut next_food_id = world.food.iter().map(|food| food.id).max().unwrap_or(0) + 1;
+    let mut speeds = vec![0.0_f32; world.agents.len()];
 
     for agent_idx in 0..world.agents.len() {
         if !world.agents[agent_idx].alive {
@@ -215,7 +222,7 @@ pub fn step_world_with_actions_and_telemetry(
             .get(agent_idx)
             .copied()
             .unwrap_or_else(|| stub_action(world.agents[agent_idx].id, world.step_count));
-        let speed = apply_kinematics(
+        speeds[agent_idx] = apply_kinematics(
             &mut world.agents[agent_idx],
             action,
             world.width,
@@ -223,26 +230,47 @@ pub fn step_world_with_actions_and_telemetry(
             config,
             dt,
         );
+    }
 
-        let food_gain = if let Some(food_idx) = find_collided_food_index(
-            &world.food,
-            world.agents[agent_idx].position,
-            world.width,
-            world.height,
-        ) {
-            let food = world.food.remove(food_idx);
-            world.agents[agent_idx].food_consumed += 1;
-            outcome.consumed_food += 1;
-            maybe_respawn_food(world, config, agent_idx, &food, &mut next_food_id);
-            food.energy_value
+    let capture_gains = resolve_predator_captures(world, config, &mut outcome);
+
+    for agent_idx in 0..world.agents.len() {
+        if !world.agents[agent_idx].alive {
+            telemetry[agent_idx].alive_after = false;
+            continue;
+        }
+
+        let food_gain = if world.agents[agent_idx].role == AgentRole::Prey {
+            if let Some(food_idx) = find_collided_food_index(
+                &world.food,
+                world.agents[agent_idx].position,
+                world.width,
+                world.height,
+            ) {
+                let food = world.food.remove(food_idx);
+                world.agents[agent_idx].food_consumed += 1;
+                outcome.consumed_food += 1;
+                maybe_respawn_food(world, config, agent_idx, &food, &mut next_food_id);
+                food.energy_value
+            } else {
+                0.0
+            }
         } else {
             0.0
         };
 
-        let energy =
-            energy_breakdown_for_step(&world.agents[agent_idx], config, speed, dt, food_gain);
+        let capture_gain = capture_gains[agent_idx];
+        let energy = energy_breakdown_for_step(
+            &world.agents[agent_idx],
+            config,
+            speeds[agent_idx],
+            dt,
+            food_gain,
+            capture_gain,
+        );
         world.agents[agent_idx].energy =
-            (world.agents[agent_idx].energy - energy.total_loss + food_gain).max(0.0);
+            (world.agents[agent_idx].energy - energy.total_loss + food_gain + capture_gain)
+                .max(0.0);
 
         if world.agents[agent_idx].energy <= 0.0 {
             world.agents[agent_idx].alive = false;
@@ -252,6 +280,7 @@ pub fn step_world_with_actions_and_telemetry(
         telemetry[agent_idx] = StepAgentTelemetry {
             energy,
             consumed_food: food_gain > 0.0,
+            captured_prey: capture_gain > 0.0,
             alive_after: world.agents[agent_idx].alive,
         };
     }
@@ -287,8 +316,8 @@ pub fn run_steps(world: &mut WorldState, config: &SimulationConfig, steps: u32) 
 ///
 /// Inputs: the current agent state, world dimensions, and config normalization constants.
 /// Output: fixed-width vector
-/// `[energy_norm, speed_norm, food_vision(10), agent_vision(10)]`, where active bins are bounded
-/// by the agent's `perception_channels` trait.
+/// `[energy_norm, speed_norm, food_vision(10), prey_vision(10), predator_vision(10)]`, where
+/// active bins are bounded by the agent's `perception_channels` trait.
 /// Side effects: none.
 pub fn basic_sensor_vector(
     agent: &AgentState,
@@ -366,15 +395,18 @@ pub fn sensor_observation(
     let spatial = SpatialIndex::build(world);
     let values = compute_sensor_values(agent, world, &spatial, config);
     let food_start = CORE_SENSOR_FEATURES;
-    let agent_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
-    let food_eye_bins = values[food_start..agent_start].to_vec();
-    let agent_eye_bins = values[agent_start..agent_start + MAX_VISION_CELLS].to_vec();
+    let prey_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
+    let predator_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS * 2;
+    let food_eye_bins = values[food_start..prey_start].to_vec();
+    let prey_eye_bins = values[prey_start..predator_start].to_vec();
+    let predator_eye_bins = values[predator_start..predator_start + MAX_VISION_CELLS].to_vec();
     let vision_cells = values[CORE_SENSOR_FEATURES..].to_vec();
 
     SensorObservation {
         core_values: [values[0], values[1]],
         food_eye_bins,
-        agent_eye_bins,
+        prey_eye_bins,
+        predator_eye_bins,
         eye_bins: vision_cells,
         input: SensorVector { values },
     }
@@ -403,19 +435,29 @@ fn compute_sensor_values(
     values[1] = (agent.velocity.length() / agent.max_speed.max(0.001)).clamp(0.0, 1.0);
 
     let food_start = CORE_SENSOR_FEATURES;
-    let agent_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
+    let prey_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
+    let predator_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS * 2;
     fill_food_eye_cells(
         agent,
         world,
         spatial,
-        &mut values[food_start..agent_start],
+        &mut values[food_start..prey_start],
         day_night.visibility_multiplier,
     );
-    fill_agent_eye_cells(
+    fill_role_eye_cells(
         agent,
         world,
         spatial,
-        &mut values[agent_start..agent_start + MAX_VISION_CELLS],
+        &mut values[prey_start..predator_start],
+        AgentRole::Prey,
+        day_night.visibility_multiplier,
+    );
+    fill_role_eye_cells(
+        agent,
+        world,
+        spatial,
+        &mut values[predator_start..predator_start + MAX_VISION_CELLS],
+        AgentRole::Predator,
         day_night.visibility_multiplier,
     );
     apply_sensor_corruption_in_place(agent.id, world.step_count, &mut values, config);
@@ -533,17 +575,18 @@ fn fill_food_eye_cells(
     });
 }
 
-fn fill_agent_eye_cells(
+fn fill_role_eye_cells(
     agent: &AgentState,
     world: &WorldState,
     spatial: &SpatialIndex,
     cells: &mut [f32],
+    target_role: AgentRole,
     visibility_multiplier: f32,
 ) {
     cells.fill(0.0);
     spatial.with_candidate_agents(agent.position, agent.perception_radius, |other_idx| {
         let other = &world.agents[other_idx];
-        if other.id == agent.id || !other.alive {
+        if other.id == agent.id || !other.alive || other.role != target_role {
             return;
         }
 
@@ -702,6 +745,7 @@ pub fn energy_breakdown_for_step(
     speed: f32,
     dt: f32,
     food_gain: f32,
+    capture_gain: f32,
 ) -> EnergyBreakdown {
     let metabolic_scale = 1.0 / agent.metabolic_efficiency.max(0.001);
 
@@ -732,9 +776,77 @@ pub fn energy_breakdown_for_step(
         network_loss,
         perception_loss,
         food_gain,
+        capture_gain,
         total_loss,
-        net_delta: food_gain - total_loss,
+        net_delta: food_gain + capture_gain - total_loss,
     }
+}
+
+fn resolve_predator_captures(
+    world: &mut WorldState,
+    config: &SimulationConfig,
+    outcome: &mut StepOutcome,
+) -> Vec<f32> {
+    let mut capture_gains = vec![0.0_f32; world.agents.len()];
+    if config.predator_capture_radius <= 0.0 || config.predator_capture_energy_gain <= 0.0 {
+        return capture_gains;
+    }
+
+    let mut captured_prey = vec![false; world.agents.len()];
+    for predator_idx in 0..world.agents.len() {
+        let predator = &world.agents[predator_idx];
+        if !predator.alive || predator.role != AgentRole::Predator {
+            continue;
+        }
+
+        let mut target: Option<(usize, f32, u32)> = None;
+        for prey_idx in 0..world.agents.len() {
+            let prey = &world.agents[prey_idx];
+            if prey_idx == predator_idx
+                || !prey.alive
+                || prey.role != AgentRole::Prey
+                || captured_prey[prey_idx]
+            {
+                continue;
+            }
+
+            let distance =
+                toroidal_distance(predator.position, prey.position, world.width, world.height);
+            if distance > config.predator_capture_radius {
+                continue;
+            }
+
+            let should_replace = match target {
+                None => true,
+                Some((_, best_distance, best_id)) => {
+                    distance < best_distance || (distance == best_distance && prey.id < best_id)
+                }
+            };
+
+            if should_replace {
+                target = Some((prey_idx, distance, prey.id));
+            }
+        }
+
+        if let Some((prey_idx, _, _)) = target {
+            captured_prey[prey_idx] = true;
+            capture_gains[predator_idx] += config.predator_capture_energy_gain;
+            world.agents[predator_idx].prey_captured += 1;
+            outcome.prey_captures += 1;
+        }
+    }
+
+    for (prey_idx, was_captured) in captured_prey.into_iter().enumerate() {
+        if !was_captured {
+            continue;
+        }
+
+        world.agents[prey_idx].alive = false;
+        world.agents[prey_idx].energy = 0.0;
+        outcome.deaths += 1;
+    }
+
+    capture_gains
 }
 
 fn find_collided_food_index(
@@ -752,9 +864,9 @@ mod tests {
     use crate::config::{RuleToggles, SimulationConfig};
 
     use super::{
-        AgentState, CORE_SENSOR_FEATURES, FoodState, MAX_VISION_CELLS, Vec2, WorldState,
-        basic_sensor_vector, current_day_night_state, energy_breakdown_for_step,
-        fill_population_sensor_vectors, sensor_observation, step_world,
+        ActionVector, AgentRole, AgentState, CORE_SENSOR_FEATURES, FoodState, MAX_VISION_CELLS,
+        Vec2, WorldState, basic_sensor_vector, current_day_night_state, energy_breakdown_for_step,
+        fill_population_sensor_vectors, sensor_observation, step_world, step_world_with_actions,
         step_world_with_actions_and_telemetry, toroidal_distance, wrap_position,
     };
 
@@ -772,7 +884,9 @@ mod tests {
             eye_cell_angle_radians: std::f32::consts::FRAC_PI_4,
             network_size: 16,
             metabolic_efficiency: 1.0,
+            role: AgentRole::Prey,
             food_consumed: 0,
+            prey_captured: 0,
         }
     }
 
@@ -826,6 +940,58 @@ mod tests {
         assert_eq!(world.food.len(), 0);
         assert_eq!(world.agents[0].food_consumed, 1);
         assert!((world.agents[0].energy - 8.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn predator_capture_kills_prey_and_grants_energy() {
+        let config = SimulationConfig {
+            timestep_seconds: 0.1,
+            food_count: 1,
+            food_respawn_probability: 0.0,
+            base_energy_cost_per_second: 0.0,
+            speed_energy_cost_factor: 0.0,
+            network_energy_cost_factor: 0.0,
+            perception_energy_cost_factor: 0.0,
+            predator_capture_radius: 2.0,
+            predator_capture_energy_gain: 7.5,
+            ..SimulationConfig::default()
+        };
+
+        let mut predator = test_agent(5.0);
+        predator.role = AgentRole::Predator;
+        predator.position = Vec2::new(10.0, 10.0);
+        let mut prey = test_agent(5.0);
+        prey.id = 1;
+        prey.position = Vec2::new(10.5, 10.0);
+
+        let mut world = WorldState {
+            width: 20.0,
+            height: 20.0,
+            agents: vec![predator, prey],
+            food: vec![FoodState {
+                id: 0,
+                position: Vec2::new(10.0, 10.0),
+                radius: 5.0,
+                energy_value: 3.0,
+                motion_angle_radians: 0.0,
+            }],
+            step_count: 0,
+        };
+
+        let outcome = step_world_with_actions(
+            &mut world,
+            &config,
+            &[ActionVector::default(), ActionVector::default()],
+        );
+
+        assert_eq!(outcome.prey_captures, 1);
+        assert_eq!(outcome.deaths, 1);
+        assert_eq!(world.agents[0].prey_captured, 1);
+        assert!(world.agents[1].energy.abs() < 1e-6);
+        assert!(!world.agents[1].alive);
+        assert!((world.agents[0].energy - 12.5).abs() < 1e-6);
+        assert_eq!(world.agents[0].food_consumed, 0);
+        assert_eq!(world.food.len(), 1);
     }
 
     #[test]
@@ -916,12 +1082,14 @@ mod tests {
         let agent = test_agent(10.0);
 
         let breakdown =
-            energy_breakdown_for_step(&agent, &config, 4.0, config.timestep_seconds, 1.5);
+            energy_breakdown_for_step(&agent, &config, 4.0, config.timestep_seconds, 1.5, 0.0);
 
         assert!((breakdown.base_loss - 1.0).abs() < 1e-6);
         assert!((breakdown.speed_loss - 6.0).abs() < 1e-6);
         assert!((breakdown.network_loss - 0.8).abs() < 1e-6);
         assert!((breakdown.perception_loss - 4.0).abs() < 1e-6);
+        assert!((breakdown.food_gain - 1.5).abs() < 1e-6);
+        assert!(breakdown.capture_gain.abs() < 1e-6);
         assert!((breakdown.total_loss - 11.8).abs() < 1e-6);
         assert!((breakdown.net_delta + 10.3).abs() < 1e-6);
     }
@@ -1065,7 +1233,13 @@ mod tests {
 
         assert!(active[2] > 0.0);
         assert!(sensor.food_eye_bins[2] > 0.0);
-        assert!(sensor.agent_eye_bins.iter().all(|value| value.abs() < 1e-6));
+        assert!(sensor.prey_eye_bins.iter().all(|value| value.abs() < 1e-6));
+        assert!(
+            sensor
+                .predator_eye_bins
+                .iter()
+                .all(|value| value.abs() < 1e-6)
+        );
         assert!(
             sensor.input.values[CORE_SENSOR_FEATURES + MAX_VISION_CELLS..]
                 .iter()
@@ -1201,6 +1375,7 @@ mod tests {
         let mut other_agent = test_agent(50.0);
         other_agent.id = 1;
         other_agent.position = Vec2::new(15.0, 10.0);
+        other_agent.role = AgentRole::Predator;
 
         let world = WorldState {
             width: 40.0,
@@ -1212,9 +1387,10 @@ mod tests {
 
         let sensor = sensor_observation(&agent, &world, &config);
 
-        assert!(sensor.agent_eye_bins[2] > 0.0);
+        assert!(sensor.predator_eye_bins[2] > 0.0);
         assert!(sensor.food_eye_bins.iter().all(|value| value.abs() < 1e-6));
-        assert!(sensor.eye_bins[MAX_VISION_CELLS + 2] > 0.0);
+        assert!(sensor.prey_eye_bins.iter().all(|value| value.abs() < 1e-6));
+        assert!(sensor.eye_bins[MAX_VISION_CELLS * 2 + 2] > 0.0);
         assert!(
             sensor.eye_bins[..MAX_VISION_CELLS]
                 .iter()
@@ -1242,7 +1418,13 @@ mod tests {
 
         let sensor = sensor_observation(&agent, &world, &config);
 
-        assert!(sensor.agent_eye_bins.iter().all(|value| value.abs() < 1e-6));
+        assert!(sensor.prey_eye_bins.iter().all(|value| value.abs() < 1e-6));
+        assert!(
+            sensor
+                .predator_eye_bins
+                .iter()
+                .all(|value| value.abs() < 1e-6)
+        );
         assert!(sensor.eye_bins.iter().all(|value| value.abs() < 1e-6));
     }
 

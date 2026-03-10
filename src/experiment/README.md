@@ -8,10 +8,14 @@ This module orchestrates deterministic multi-generation evolution runs.
 - Scores genomes through deterministic episodes selected by `evaluation_mode`:
   - `solo`: each genome gets its own private episode
   - `shared`: the full population competes over one shared food field during scoring
+- Supports optional predator/prey ecology inside shared evaluation:
+  - prey are scored from food, survival, and energy
+  - predators are scored from captures, survival, and energy
+  - predator/prey reproduction remains partitioned by role as well as controller family
 - Supports scheduled regime switching with `evaluation_mode_after_switch` and
   `evaluation_mode_switch_after_generation`, so runs can follow curricula such as
   `solo -> shared @ 100`.
-- Feeds controllers deterministic sensor vectors (core scalar cues plus separate food-eye and agent-eye channels).
+- Feeds controllers deterministic sensor vectors (core scalar cues plus separate food-eye, prey-eye, and predator-eye channels).
 - Parallelizes `solo` evaluation deterministically across genomes, since each episode already has its own derived seed and no shared mutable world state.
 - Reuses shared-world action/sensor buffers and consumes per-step sensor data from the simulation's spatially indexed fast path.
 - Evolves generations using genetics operators.

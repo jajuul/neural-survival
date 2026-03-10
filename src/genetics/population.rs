@@ -5,7 +5,7 @@ use crate::brain::{
     MixedControllerFactory, MlpControllerFactory, MlpShape,
 };
 use crate::config::SimulationConfig;
-use crate::sim::CONTROLLER_SENSOR_INPUT_SIZE;
+use crate::sim::{AgentRole, CONTROLLER_SENSOR_INPUT_SIZE};
 
 use super::genome::AgentGenome;
 use super::operators::{crossover, default_traits, mutate};
@@ -48,6 +48,12 @@ pub fn initialize_population(
 
     (0..config.population_size)
         .map(|_| {
+            let mut traits = traits.clone();
+            traits.role = if rng.gen_bool(config.predator_fraction as f64) {
+                AgentRole::Predator
+            } else {
+                AgentRole::Prey
+            };
             let brain = factory.random_genome(rng);
             let controller_kind = match &brain {
                 BrainGenome::Mlp(_) => ControllerKind::Mlp,
@@ -57,7 +63,7 @@ pub fn initialize_population(
             AgentGenome {
                 controller_kind,
                 brain,
-                traits: traits.clone(),
+                traits,
             }
         })
         .collect()
@@ -80,12 +86,34 @@ pub fn evolve_population(
 
     let mlp_scored = scored
         .iter()
-        .filter(|entry| entry.genome.controller_kind == ControllerKind::Mlp)
+        .filter(|entry| {
+            entry.genome.controller_kind == ControllerKind::Mlp
+                && entry.genome.traits.role == AgentRole::Prey
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let mlp_predator_scored = scored
+        .iter()
+        .filter(|entry| {
+            entry.genome.controller_kind == ControllerKind::Mlp
+                && entry.genome.traits.role == AgentRole::Predator
+        })
         .cloned()
         .collect::<Vec<_>>();
     let ltc_scored = scored
         .iter()
-        .filter(|entry| entry.genome.controller_kind == ControllerKind::Ltc)
+        .filter(|entry| {
+            entry.genome.controller_kind == ControllerKind::Ltc
+                && entry.genome.traits.role == AgentRole::Prey
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let ltc_predator_scored = scored
+        .iter()
+        .filter(|entry| {
+            entry.genome.controller_kind == ControllerKind::Ltc
+                && entry.genome.traits.role == AgentRole::Predator
+        })
         .cloned()
         .collect::<Vec<_>>();
 
@@ -97,8 +125,20 @@ pub fn evolve_population(
         rng,
     ));
     next.extend(evolve_species_group(
+        &mlp_predator_scored,
+        mlp_predator_scored.len(),
+        config,
+        rng,
+    ));
+    next.extend(evolve_species_group(
         &ltc_scored,
         ltc_scored.len(),
+        config,
+        rng,
+    ));
+    next.extend(evolve_species_group(
+        &ltc_predator_scored,
+        ltc_predator_scored.len(),
         config,
         rng,
     ));
@@ -226,6 +266,14 @@ mod tests {
             .iter()
             .filter(|entry| entry.controller_kind == crate::brain::ControllerKind::Ltc)
             .count();
+        let prey_before = population
+            .iter()
+            .filter(|entry| entry.traits.role == crate::sim::AgentRole::Prey)
+            .count();
+        let predator_before = population
+            .iter()
+            .filter(|entry| entry.traits.role == crate::sim::AgentRole::Predator)
+            .count();
 
         let scored = population
             .into_iter()
@@ -247,9 +295,19 @@ mod tests {
             .iter()
             .filter(|entry| entry.controller_kind == crate::brain::ControllerKind::Ltc)
             .count();
+        let prey_after = next
+            .iter()
+            .filter(|entry| entry.traits.role == crate::sim::AgentRole::Prey)
+            .count();
+        let predator_after = next
+            .iter()
+            .filter(|entry| entry.traits.role == crate::sim::AgentRole::Predator)
+            .count();
 
         assert_eq!(mlp_after, mlp_before);
         assert_eq!(ltc_after, ltc_before);
+        assert_eq!(prey_after, prey_before);
+        assert_eq!(predator_after, predator_before);
     }
 
     #[test]

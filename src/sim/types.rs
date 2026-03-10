@@ -5,7 +5,7 @@ pub const CORE_SENSOR_FEATURES: usize = 2;
 /// Maximum number of bins in one vision channel.
 pub const MAX_VISION_CELLS: usize = crate::config::MAX_PERCEPTION_CHANNELS as usize;
 /// Number of distinct vision channels currently exposed to controllers.
-pub const VISION_CHANNEL_COUNT: usize = 2;
+pub const VISION_CHANNEL_COUNT: usize = 3;
 /// Fixed controller input width used by MLP/LTC genomes.
 pub const CONTROLLER_SENSOR_INPUT_SIZE: usize =
     CORE_SENSOR_FEATURES + MAX_VISION_CELLS * VISION_CHANNEL_COUNT;
@@ -76,7 +76,8 @@ impl SensorVector {
 pub struct SensorObservation {
     pub core_values: [f32; 2],
     pub food_eye_bins: Vec<f32>,
-    pub agent_eye_bins: Vec<f32>,
+    pub prey_eye_bins: Vec<f32>,
+    pub predator_eye_bins: Vec<f32>,
     pub eye_bins: Vec<f32>,
     pub input: SensorVector,
 }
@@ -91,6 +92,15 @@ pub struct ActionVector {
 fn default_eye_cell_angle_radians() -> f32 {
     crate::config::SimulationConfig::default().eye_fov_angle_radians
         / crate::config::SimulationConfig::default().default_perception_channels as f32
+}
+
+/// Ecological role used by sensing and future role-specific world rules.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentRole {
+    #[default]
+    Prey,
+    Predator,
 }
 
 /// Runtime state for one agent.
@@ -109,7 +119,11 @@ pub struct AgentState {
     pub eye_cell_angle_radians: f32,
     pub network_size: usize,
     pub metabolic_efficiency: f32,
+    #[serde(default)]
+    pub role: AgentRole,
     pub food_consumed: u32,
+    #[serde(default)]
+    pub prey_captured: u32,
 }
 
 /// Runtime state for one food item.
@@ -146,6 +160,7 @@ pub struct DayNightState {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct StepOutcome {
     pub consumed_food: usize,
+    pub prey_captures: usize,
     pub deaths: usize,
 }
 
@@ -157,6 +172,7 @@ pub struct EnergyBreakdown {
     pub network_loss: f32,
     pub perception_loss: f32,
     pub food_gain: f32,
+    pub capture_gain: f32,
     pub total_loss: f32,
     pub net_delta: f32,
 }
@@ -166,6 +182,7 @@ pub struct EnergyBreakdown {
 pub struct StepAgentTelemetry {
     pub energy: EnergyBreakdown,
     pub consumed_food: bool,
+    pub captured_prey: bool,
     pub alive_after: bool,
 }
 

@@ -20,7 +20,7 @@ Version 1 focuses on:
 8. Surface generation progress in CLI/GUI during long evolution runs.
 
 ## Non-Goals (v1)
-1. Predator-prey behavior.
+1. Full ecology beyond the current predator/prey role split and day/night visibility system.
 2. Multi-food edibility behavior in live simulation (only schema hooks are included).
 3. Topology-evolving neuroevolution methods (for example NEAT).
 4. GPU/distributed training.
@@ -37,6 +37,11 @@ Version 1 focuses on:
 - World geometry: 2D continuous toroidal (wrap-around edges).
 - Time model: fixed-step simulation.
 - Initial food model: stationary food points spawned uniformly at random and optionally respawned on consumption according to configurable probability.
+- Optional predator/prey ecology:
+  - initialized/evolved role mix controlled by `predator_fraction`
+  - predators capture prey within `predator_capture_radius`
+  - successful captures grant `predator_capture_energy_gain`
+  - predators do not consume food directly
 - Agent kinematics: steering plus bounded velocity.
 - Optional deterministic day/night cycle:
   - phase derived from `world.step_count`
@@ -67,6 +72,7 @@ Version 1 focuses on:
   - `solo` evaluation may run in deterministic parallel across genomes
   - sensing uses fixed-width controller inputs and a coarse toroidal spatial index to avoid repeated full-world scans
 - Controller families evolve in separate pools (MLP and LTC do not interbreed).
+- Ecological roles also reproduce in separate pools, so crossover/mutation stay inside `(ControllerKind, AgentRole)` families.
 - Reproducibility: strict seeded determinism for same seed/config/platform assumptions.
 
 ## User Workflows
@@ -88,7 +94,7 @@ Version 1 focuses on:
 2. User inspects movement, survival, and top-level statistics.
 3. User can pause/resume, adjust simulation speed, and toggle active world rules.
 4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `food motion`, `food respawn`, `sensor noise`, `sensor dropout`, `episode steps`, `mutation rate`) and a selectable evaluation schedule (`solo`, `shared`, or `solo -> shared @ N`).
-5. User can click an agent in the GUI to inspect its current food/agent eye-bin activations, controller outputs, last-step energy-cost breakdown, and live neural-network topology/activations.
+5. User can click an agent in the GUI to inspect its current food/prey/predator eye-bin activations, controller outputs, last-step energy-cost breakdown, and live neural-network topology/activations.
 
 ## Public Interfaces and Types
 
@@ -190,21 +196,21 @@ pub struct RuleToggles {
 - Sensor vector includes:
   - Core normalized scalar cues (`energy`, `speed`).
   - Shorelark-inspired "eye" bins: angular perception cells within a configurable field-of-view and perception range.
-  - Eye bins sense both food and other agents.
+  - Eye bins sense food, prey, and predators on separate channel stacks.
   - If day/night is enabled, sensing strength is scaled by the current light level; night reduces both effective perception range and resulting eye activation.
   - Optional deterministic sensor corruption controlled by `sensor_noise_stddev` and `sensor_dropout_probability`.
-  - Controller input uses separate channel stacks for food bins and agent bins, preserving type information for future extensions such as edible-agent versus predator-agent channels.
+  - Controller input uses separate channel stacks for food bins, prey bins, and predator bins.
   - Per-agent channel count trait controls active eye bin count.
   - Per-agent `eye_cell_angle_radians` trait controls how much angle each eye/bin covers.
   - Total visible field of view is derived from evolved eye count and evolved per-eye angle.
-  - Fixed controller input width where inactive eye bins are zero-filled (current width: `2 + 10 food + 10 agent = 22` values).
+  - Fixed controller input width where inactive eye bins are zero-filled (current width: `2 + 10 food + 10 prey + 10 predator = 32` values).
 - Action vector controls:
   - Steering direction change.
   - Throttle/drive magnitude.
 
 ### Energy Model
 For each fixed step:
-`E(t+dt) = E(t) - base_cost*dt - speed_term - network_term - perception_term + food_gain`
+`E(t+dt) = E(t) - base_cost*dt - speed_term - network_term - perception_term + food_gain + capture_gain`
 
 - `speed_term` applies only when `energy_by_speed = true`.
 - `network_term` applies only when `energy_by_network_size = true`.
@@ -214,7 +220,8 @@ For each fixed step:
 ### Fitness
 Per-agent episode fitness is weighted from:
 - Survival duration.
-- Food consumed.
+- Food consumed for prey.
+- Prey captured for predators.
 - Remaining energy.
 
 Fitness attribution is always per agent. The source episode depends on the effective evaluation mode for that generation: private single-agent episodes in `solo`, shared-population episodes in `shared`.

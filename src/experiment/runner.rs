@@ -229,7 +229,7 @@ where
                 let components = evaluate_genome_solo(config, eval_seed, genome, factory);
 
                 EvaluatedGenome {
-                    fitness: compute_fitness(components, config),
+                    fitness: compute_fitness(genome.traits.role, components, config),
                     genome: genome.clone(),
                     components,
                 }
@@ -245,7 +245,7 @@ where
                 .cloned()
                 .zip(components)
                 .map(|(genome, components)| EvaluatedGenome {
-                    fitness: compute_fitness(components, config),
+                    fitness: compute_fitness(genome.traits.role, components, config),
                     genome,
                     components,
                 })
@@ -308,6 +308,7 @@ where
         agent.perception_channels = genome.traits.perception_channels;
         agent.eye_cell_angle_radians = genome.traits.eye_cell_angle_radians;
         agent.metabolic_efficiency = genome.traits.metabolic_efficiency;
+        agent.role = genome.traits.role;
     }
 
     let mut controller = factory.build(&genome.brain);
@@ -332,6 +333,7 @@ where
     FitnessComponents {
         survival_steps,
         food_consumed: agent.food_consumed,
+        prey_captured: agent.prey_captured,
         final_energy: agent.energy,
     }
 }
@@ -350,6 +352,7 @@ fn evaluation_world_for_population(
         agent.perception_channels = genome.traits.perception_channels;
         agent.eye_cell_angle_radians = genome.traits.eye_cell_angle_radians;
         agent.metabolic_efficiency = genome.traits.metabolic_efficiency;
+        agent.role = genome.traits.role;
     }
 
     world
@@ -386,6 +389,7 @@ fn evaluate_population_in_world(
         .map(|(agent_idx, agent)| FitnessComponents {
             survival_steps: survival_steps[agent_idx],
             food_consumed: agent.food_consumed,
+            prey_captured: agent.prey_captured,
             final_energy: agent.energy,
         })
         .collect()
@@ -446,6 +450,7 @@ pub fn world_state_for_population(
         agent.perception_channels = genome.traits.perception_channels;
         agent.eye_cell_angle_radians = genome.traits.eye_cell_angle_radians;
         agent.metabolic_efficiency = genome.traits.metabolic_efficiency;
+        agent.role = genome.traits.role;
     }
 
     world
@@ -666,7 +671,9 @@ mod tests {
                     eye_cell_angle_radians: 1.0,
                     network_size: 1,
                     metabolic_efficiency: 1.0,
+                    role: crate::sim::AgentRole::Prey,
                     food_consumed: 0,
+                    prey_captured: 0,
                 },
                 AgentState {
                     id: 1,
@@ -681,7 +688,9 @@ mod tests {
                     eye_cell_angle_radians: 1.0,
                     network_size: 1,
                     metabolic_efficiency: 1.0,
+                    role: crate::sim::AgentRole::Prey,
                     food_consumed: 0,
+                    prey_captured: 0,
                 },
             ],
             food: vec![FoodState {
@@ -702,6 +711,78 @@ mod tests {
             results.iter().map(|entry| entry.food_consumed).sum::<u32>(),
             1
         );
+    }
+
+    #[test]
+    fn shared_world_evaluation_reports_predator_capture_components() {
+        let config = SimulationConfig {
+            population_size: 2,
+            episode_steps: 1,
+            food_count: 0,
+            food_respawn_probability: 0.0,
+            predator_capture_radius: 2.0,
+            predator_capture_energy_gain: 12.0,
+            initial_agent_energy: 100.0,
+            base_energy_cost_per_second: 0.0,
+            speed_energy_cost_factor: 0.0,
+            network_energy_cost_factor: 0.0,
+            perception_energy_cost_factor: 0.0,
+            ..SimulationConfig::default()
+        };
+        let world = WorldState {
+            width: 100.0,
+            height: 100.0,
+            agents: vec![
+                AgentState {
+                    id: 0,
+                    position: Vec2::new(10.0, 10.0),
+                    heading_radians: 0.0,
+                    velocity: Vec2::default(),
+                    energy: 100.0,
+                    alive: true,
+                    max_speed: 0.0,
+                    perception_radius: 10.0,
+                    perception_channels: 1,
+                    eye_cell_angle_radians: 1.0,
+                    network_size: 1,
+                    metabolic_efficiency: 1.0,
+                    role: crate::sim::AgentRole::Predator,
+                    food_consumed: 0,
+                    prey_captured: 0,
+                },
+                AgentState {
+                    id: 1,
+                    position: Vec2::new(10.5, 10.0),
+                    heading_radians: 0.0,
+                    velocity: Vec2::default(),
+                    energy: 100.0,
+                    alive: true,
+                    max_speed: 0.0,
+                    perception_radius: 10.0,
+                    perception_channels: 1,
+                    eye_cell_angle_radians: 1.0,
+                    network_size: 1,
+                    metabolic_efficiency: 1.0,
+                    role: crate::sim::AgentRole::Prey,
+                    food_consumed: 0,
+                    prey_captured: 0,
+                },
+            ],
+            food: vec![],
+            step_count: 0,
+        };
+        let mut controllers: Vec<Box<dyn NeuralController>> =
+            vec![Box::new(NullController), Box::new(NullController)];
+
+        let results = evaluate_population_in_world(&config, world, &mut controllers);
+
+        assert_eq!(results[0].prey_captured, 1);
+        assert_eq!(results[0].food_consumed, 0);
+        assert!((results[0].final_energy - 112.0).abs() < 1e-6);
+        assert_eq!(results[0].survival_steps, 1);
+        assert_eq!(results[1].prey_captured, 0);
+        assert_eq!(results[1].survival_steps, 0);
+        assert!(results[1].final_energy.abs() < 1e-6);
     }
 
     #[test]

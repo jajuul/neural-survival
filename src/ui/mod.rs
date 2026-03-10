@@ -238,6 +238,7 @@ mod bevy_viewer {
     struct SelectedAgentSnapshot {
         agent_id: u32,
         controller_kind: ControllerKind,
+        role: crate::sim::AgentRole,
         alive: bool,
         world_step: u64,
         perception_radius: f32,
@@ -1381,6 +1382,7 @@ mod bevy_viewer {
                             .get(selected_idx)
                             .copied()
                             .unwrap_or(ControllerKind::Mlp),
+                        role: agent.role,
                         alive: agent.alive,
                         world_step: runtime.world.step_count,
                         perception_radius: agent.perception_radius,
@@ -1718,16 +1720,19 @@ mod bevy_viewer {
         let active_bins = snapshot.perception_channels.max(1) as usize;
         let bins_len = active_bins
             .min(snapshot.sensor.food_eye_bins.len())
-            .min(snapshot.sensor.agent_eye_bins.len());
+            .min(snapshot.sensor.prey_eye_bins.len())
+            .min(snapshot.sensor.predator_eye_bins.len());
         let food_bins = &snapshot.sensor.food_eye_bins[..bins_len];
-        let agent_bins = &snapshot.sensor.agent_eye_bins[..bins_len];
+        let prey_bins = &snapshot.sensor.prey_eye_bins[..bins_len];
+        let predator_bins = &snapshot.sensor.predator_eye_bins[..bins_len];
         if food_bins.is_empty() {
             return;
         }
 
         let max_activation = food_bins
             .iter()
-            .chain(agent_bins.iter())
+            .chain(prey_bins.iter())
+            .chain(predator_bins.iter())
             .copied()
             .fold(0.0_f32, f32::max)
             .max(1.0);
@@ -1738,8 +1743,11 @@ mod bevy_viewer {
             let x1 = (x0 + bar_width - 2.0).min(plot_right);
             let food_top = plot_bottom
                 - ((food_bins[idx] / max_activation).clamp(0.0, 1.0) * (plot_bottom - plot_top));
-            let agent_top = plot_bottom
-                - ((agent_bins[idx] / max_activation).clamp(0.0, 1.0) * (plot_bottom - plot_top));
+            let prey_top = plot_bottom
+                - ((prey_bins[idx] / max_activation).clamp(0.0, 1.0) * (plot_bottom - plot_top));
+            let predator_top = plot_bottom
+                - ((predator_bins[idx] / max_activation).clamp(0.0, 1.0)
+                    * (plot_bottom - plot_top));
 
             let mut x = x0;
             while x <= x1 {
@@ -1758,10 +1766,19 @@ mod bevy_viewer {
                     x + 1.0,
                     plot_bottom,
                     x + 1.0,
-                    agent_top,
+                    prey_top,
+                    Color::srgb(0.34, 0.70, 1.0),
+                );
+                draw_screen_line(
+                    &mut gizmos,
+                    window,
+                    x + 2.0,
+                    plot_bottom,
+                    x + 2.0,
+                    predator_top,
                     Color::srgb(0.98, 0.62, 0.20),
                 );
-                x += 3.0;
+                x += 4.0;
             }
         }
     }
@@ -1957,6 +1974,7 @@ mod bevy_viewer {
                 .get(selected_idx)
                 .copied()
                 .unwrap_or(ControllerKind::Mlp),
+            role: agent.role,
             alive: agent.alive,
             world_step: runtime.world.step_count,
             perception_radius: agent.perception_radius,
@@ -2029,12 +2047,13 @@ mod bevy_viewer {
         };
         let energy_text = if snapshot.has_live_step {
             format!(
-                "energy: base={:.3} speed={:.3} network={:.3} perceive={:.3} food={:+.3} net={:+.3}",
+                "energy: base={:.3} speed={:.3} network={:.3} perceive={:.3} food={:+.3} capture={:+.3} net={:+.3}",
                 snapshot.energy.base_loss,
                 snapshot.energy.speed_loss,
                 snapshot.energy.network_loss,
                 snapshot.energy.perception_loss,
                 snapshot.energy.food_gain,
+                snapshot.energy.capture_gain,
                 snapshot.energy.net_delta
             )
         } else {
@@ -2047,18 +2066,26 @@ mod bevy_viewer {
             .take(snapshot.perception_channels as usize)
             .copied()
             .fold(0.0_f32, f32::max);
-        let agent_eye_max = snapshot
+        let prey_eye_max = snapshot
             .sensor
-            .agent_eye_bins
+            .prey_eye_bins
+            .iter()
+            .take(snapshot.perception_channels as usize)
+            .copied()
+            .fold(0.0_f32, f32::max);
+        let predator_eye_max = snapshot
+            .sensor
+            .predator_eye_bins
             .iter()
             .take(snapshot.perception_channels as usize)
             .copied()
             .fold(0.0_f32, f32::max);
 
         format!(
-            "agent #{} ({:?}) {}\nworld step: {}\nlight: {} phase={:.2} visibility={:.2}\nperception: radius={:.1} bins={} eye_angle={:.3} total_fov={:.3}\ncore sensors: energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eyes: food={:.3} agents={:.3}\nchart below: green=food, orange=agents, controller input channels are [food bins | agent bins]",
+            "agent #{} ({:?}, {:?}) {}\nworld step: {}\nlight: {} phase={:.2} visibility={:.2}\nperception: radius={:.1} bins={} eye_angle={:.3} total_fov={:.3}\ncore sensors: energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eyes: food={:.3} prey={:.3} predator={:.3}\nchart below: green=food, blue=prey, orange=predator, controller input channels are [food bins | prey bins | predator bins]",
             snapshot.agent_id,
             snapshot.controller_kind,
+            snapshot.role,
             if snapshot.alive { "alive" } else { "dead" },
             snapshot.world_step,
             if runtime.config.day_night_cycle_enabled {
@@ -2079,7 +2106,8 @@ mod bevy_viewer {
             energy_text,
             snapshot.consumed_food,
             food_eye_max,
-            agent_eye_max
+            prey_eye_max,
+            predator_eye_max
         )
     }
 
@@ -2114,7 +2142,7 @@ mod bevy_viewer {
     }
 
     fn controller_input_legend() -> &'static str {
-        "energy speed food0..9 agent0..9"
+        "energy speed food0..9 prey0..9 predator0..9"
     }
 
     fn field_label(kind: NumericFieldKind) -> &'static str {

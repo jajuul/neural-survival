@@ -17,7 +17,7 @@ This module provides viewer entrypoints for loading and inspecting simulation sn
   - live evolution progress visibility (`current/total generations`) during GUI-triggered continuation, updated every 10 generations (plus completion)
   - current day/night light state in the window title and selected-agent inspector (`day`/`night`, phase, visibility multiplier)
   - an in-viewer fitness-history plot showing best and mean fitness over generations from snapshot history and GUI-triggered continuation runs
-  - click-to-select agent inspection with a live eye-bin chart for both food and agent sensing, local core sensor values (`energy`, `speed`), controller outputs, and last-step energy-cost breakdown
+  - click-to-select agent inspection with a live eye-bin chart for food, prey, and predator sensing, local core sensor values (`energy`, `speed`), controller outputs, and last-step energy-cost breakdown
   - a selected-agent network inspector that renders controller topology and live activations:
     - MLP: input, hidden, and output layers
     - LTC: input, recurrent state, output, plus recurrent edges

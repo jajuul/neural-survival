@@ -26,6 +26,9 @@ mlp_hidden_size = 8
 ltc_state_size = 8
 default_metabolic_efficiency = 1.0
 controller_ltc_probability = 0.5
+predator_fraction = 0.0
+predator_capture_radius = 1.8
+predator_capture_energy_gain = 25.0
 sensor_noise_stddev = 0.03
 sensor_dropout_probability = 0.05
 day_night_cycle_enabled = true
@@ -36,6 +39,7 @@ evaluation_mode_after_switch = "shared"
 evaluation_mode_switch_after_generation = 0
 fitness_weight_survival = 0.00
 fitness_weight_food = 10.0
+fitness_weight_predation = 10.0
 fitness_weight_energy = 0.00
 
 [rule_toggles]

@@ -43,6 +43,7 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-09 00:00Z) Added explicit `Pause`, `Step`, and `Continue` GUI controls, plus a selected-agent network inspector that renders real-time MLP/LTC topology activations from live controller diagnostics; validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-09 00:30Z) Optimized evolution throughput by switching controller inputs to fixed-width sensor arrays, adding per-step spatial indexing for food/agent sensing, reusing shared-evaluation action/sensor buffers, and parallelizing deterministic `solo` evaluation with `rayon`; validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-10 00:20Z) Implemented milestone 1 of temporal ecology pressure: added a deterministic day/night cycle with configurable night visibility, applied light-level scaling to sensing, surfaced current light state in the GUI title/inspector, and validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
+- [x] (2026-03-10 01:10Z) Implemented milestone 2 of temporal ecology pressure: added prey/predator roles to genomes and runtime state, upgraded eyes to typed `food`/`prey`/`predator` channels, preserved `(ControllerKind, AgentRole)` pools during evolution, added predator capture rules plus role-aware fitness scoring, and validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 
 ## Surprises & Discoveries
 
@@ -103,8 +104,8 @@ The implementation is successful when three things are demonstrably true: headle
 - Observation: Adding direct agent sensing did not require changing controller input width; feeding signed `food_bin - agent_bin` values preserves existing genome shapes and snapshot compatibility.
   Evidence: Initial implementation used a signed merge, but controller behavior regressed (LTC spinning) after shared evaluation + agent sensing were combined.
 
-- Observation: Separate food and agent eye channels are a better fit than a signed merge once the controller must reason about competition.
-  Evidence: The revised sensor layout preserves both modalities explicitly (`food_eye_bins` and `agent_eye_bins`) and now uses a local-only `22`-input controller vector (`energy`, `speed`, `10` food bins, `10` agent bins), matching the new semantics without aliasing absolute position back into the task.
+- Observation: Separate typed food/prey/predator eye channels are a better fit than a generic agent channel once ecological roles become explicit.
+  Evidence: The revised sensor layout preserves all three modalities explicitly and now uses a local-only `32`-input controller vector (`energy`, `speed`, `10` food bins, `10` prey bins, `10` predator bins), matching the role-aware world rules without aliasing semantics.
 
 - Observation: Live network visualization in the GUI requires controller-specific activation snapshots captured during stepping; action outputs alone are not enough to reconstruct hidden/state activations after the fact.
   Evidence: The new viewer inspector only became possible after extending `NeuralController` with `inspect_network`/`step_with_diagnostics` and storing the selected agent's latest network snapshot in `ViewerRuntime`.
@@ -313,9 +314,9 @@ Validation should remain end-to-end. After implementation, run `cargo fmt`, `car
 
 - [x] Add validated config for day/night phase (`day_night_cycle_enabled`, `day_night_cycle_steps`, `night_visibility_multiplier`).
 - [x] Add day/night visibility scaling to sensing and surface current phase/visibility in the GUI.
-- [ ] Extend runtime and genome state with ecological role and any cluster state required for deterministic food-region motion.
-- [ ] Replace generic agent-eye sensing with typed `food`, `prey`, and `predator` channels and update the GUI inspector accordingly.
-- [ ] Implement predator/prey collision rules and role-aware fitness accounting in shared evaluation.
+- [x] Extend runtime and genome state with ecological role and any cluster state required for deterministic food-region motion.
+- [x] Replace generic agent-eye sensing with typed `food`, `prey`, and `predator` channels and update the GUI inspector accordingly.
+- [x] Implement predator/prey collision rules and role-aware fitness accounting in shared evaluation.
 - [ ] Add deterministic moving food clusters with phase-dependent productivity and a visible debug representation in the GUI.
 - [ ] Replace direct-speed kinematics with persistent acceleration/momentum and add unit tests for inertia/drag behavior.
 - [x] Re-run `cargo fmt`, `cargo check --features gui`, and `cargo test`, then record outcomes and any design adjustments in this plan.
@@ -676,3 +677,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-07: Plan updated after removing absolute position from controller inputs and adding configurable food motion plus deterministic sensor noise/dropout to better reward temporal controllers.
 2026-03-10: Plan updated to add the next planned milestone for temporal ecology pressure: phased day/night visibility, predator/prey typed sensing and role-aware fitness, moving food clusters, and momentum-based movement. This change was made to turn the user’s “make LTC clearly better” goal into a concrete, staged implementation path.
 2026-03-10: Plan updated after milestone 1 of temporal ecology pressure to document the implemented day/night config, night-visibility sensing scaling, GUI light indicator, and the edge-case discovery around visibility-boundary tests.
+2026-03-10: Plan updated after milestone 2 of temporal ecology pressure to document explicit `AgentRole` support, typed `food/prey/predator` eye channels, role-preserving reproduction pools, predator capture rules, and role-aware fitness scoring.

@@ -2,6 +2,7 @@ use rand::{Rng, rngs::StdRng};
 
 use crate::brain::{BrainGenome, ControllerKind, LtcGenome, MlpGenome};
 use crate::config::{MAX_PERCEPTION_CHANNELS, SimulationConfig};
+use crate::sim::AgentRole;
 
 use super::genome::{AgentGenome, TraitGenome};
 
@@ -21,6 +22,7 @@ pub fn default_traits(config: &SimulationConfig) -> TraitGenome {
             / config.default_perception_channels.max(1) as f32)
             .clamp(EYE_CELL_ANGLE_BOUNDS.0, EYE_CELL_ANGLE_BOUNDS.1),
         metabolic_efficiency: config.default_metabolic_efficiency,
+        role: AgentRole::Prey,
         food_preference_mask: 1,
     }
 }
@@ -34,6 +36,10 @@ pub fn crossover(parent_a: &AgentGenome, parent_b: &AgentGenome, rng: &mut StdRn
     assert_eq!(
         parent_a.controller_kind, parent_b.controller_kind,
         "crossover requires matching controller kinds"
+    );
+    assert_eq!(
+        parent_a.traits.role, parent_b.traits.role,
+        "crossover requires matching ecological roles"
     );
 
     let traits = TraitGenome {
@@ -62,6 +68,7 @@ pub fn crossover(parent_a: &AgentGenome, parent_b: &AgentGenome, rng: &mut StdRn
         } else {
             parent_b.traits.metabolic_efficiency
         },
+        role: parent_a.traits.role,
         food_preference_mask: if rng.gen_bool(0.5) {
             parent_a.traits.food_preference_mask
         } else {
@@ -218,6 +225,7 @@ mod tests {
 
     use crate::brain::{BrainGenome, ControllerKind, MlpGenome, MlpShape};
     use crate::config::SimulationConfig;
+    use crate::sim::AgentRole;
 
     use super::{
         EYE_CELL_ANGLE_BOUNDS, MAX_SPEED_BOUNDS, METABOLIC_EFFICIENCY_BOUNDS,
@@ -260,6 +268,7 @@ mod tests {
             brain: test_mlp_genome(0.1),
             traits: default_traits(&config),
         };
+        genome.traits.role = AgentRole::Predator;
 
         for _ in 0..64 {
             mutate(&mut genome, &mut rng, &config);
@@ -291,19 +300,22 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(5);
         let config = SimulationConfig::default();
 
-        let parent_a = AgentGenome {
+        let mut parent_a = AgentGenome {
             controller_kind: ControllerKind::Mlp,
             brain: test_mlp_genome(0.2),
             traits: default_traits(&config),
         };
-        let parent_b = AgentGenome {
+        parent_a.traits.role = AgentRole::Predator;
+        let mut parent_b = AgentGenome {
             controller_kind: ControllerKind::Mlp,
             brain: test_mlp_genome(-0.2),
             traits: default_traits(&config),
         };
+        parent_b.traits.role = AgentRole::Predator;
 
         let child = crossover(&parent_a, &parent_b, &mut rng);
         assert_eq!(child.controller_kind, ControllerKind::Mlp);
+        assert_eq!(child.traits.role, AgentRole::Predator);
     }
 
     #[test]

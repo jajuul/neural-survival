@@ -256,6 +256,27 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if !(0.0..=1.0).contains(&config.predator_fraction) {
+        return Err(ConfigError::Invalid {
+            field: "predator_fraction",
+            message: "must be in [0, 1]".into(),
+        });
+    }
+
+    if config.predator_capture_radius < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "predator_capture_radius",
+            message: "must be >= 0".into(),
+        });
+    }
+
+    if config.predator_capture_energy_gain < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "predator_capture_energy_gain",
+            message: "must be >= 0".into(),
+        });
+    }
+
     if config.sensor_noise_stddev < 0.0 {
         return Err(ConfigError::Invalid {
             field: "sensor_noise_stddev",
@@ -298,6 +319,13 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if config.fitness_weight_predation < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "fitness_weight_predation",
+            message: "must be >= 0".into(),
+        });
+    }
+
     if config.fitness_weight_energy < 0.0 {
         return Err(ConfigError::Invalid {
             field: "fitness_weight_energy",
@@ -305,7 +333,10 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
-    if (config.fitness_weight_survival + config.fitness_weight_food + config.fitness_weight_energy)
+    if (config.fitness_weight_survival
+        + config.fitness_weight_food
+        + config.fitness_weight_predation
+        + config.fitness_weight_energy)
         <= 0.0
     {
         return Err(ConfigError::Invalid {
@@ -341,6 +372,10 @@ mod tests {
         assert_eq!(parsed.mutation_rate, 0.15);
         assert_eq!(parsed.mlp_hidden_size, 8);
         assert_eq!(parsed.ltc_state_size, 8);
+        assert_eq!(parsed.predator_fraction, 0.0);
+        assert_eq!(parsed.predator_capture_radius, 1.8);
+        assert_eq!(parsed.predator_capture_energy_gain, 25.0);
+        assert_eq!(parsed.fitness_weight_predation, 2.0);
         assert!(parsed.day_night_cycle_enabled);
         assert_eq!(parsed.day_night_cycle_steps, 240);
         assert_eq!(parsed.night_visibility_multiplier, 0.35);
@@ -375,6 +410,23 @@ mod tests {
             err,
             ConfigError::Invalid {
                 field: "food_motion_speed",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_predator_capture_radius_is_rejected() {
+        let raw = r#"
+            predator_capture_radius = -0.1
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("negative predator capture radius is invalid");
+
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                field: "predator_capture_radius",
                 ..
             }
         ));
@@ -497,6 +549,22 @@ mod tests {
             err,
             ConfigError::Invalid {
                 field: "night_visibility_multiplier",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_predator_fraction_is_rejected() {
+        let raw = r#"
+            predator_fraction = 1.2
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("predator fraction > 1 must fail");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                field: "predator_fraction",
                 ..
             }
         ));

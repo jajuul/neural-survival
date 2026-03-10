@@ -4,9 +4,9 @@ pub mod types;
 mod world;
 
 pub use types::{
-    ActionVector, AgentState, CONTROLLER_SENSOR_INPUT_SIZE, CORE_SENSOR_FEATURES, DayNightState,
-    EnergyBreakdown, EpisodeSummary, FoodState, MAX_VISION_CELLS, SensorObservation, SensorVector,
-    StepAgentTelemetry, StepOutcome, VISION_CHANNEL_COUNT, Vec2, WorldState,
+    ActionVector, AgentRole, AgentState, CONTROLLER_SENSOR_INPUT_SIZE, CORE_SENSOR_FEATURES,
+    DayNightState, EnergyBreakdown, EpisodeSummary, FoodState, MAX_VISION_CELLS, SensorObservation,
+    SensorVector, StepAgentTelemetry, StepOutcome, VISION_CHANNEL_COUNT, Vec2, WorldState,
 };
 pub use world::{
     basic_sensor_vector, current_day_night_state, energy_breakdown_for_step,
