@@ -8,12 +8,17 @@ This module provides viewer entrypoints for loading and inspecting simulation sn
 - In `--features gui` builds, renders a Bevy viewer with:
   - directional agent rendering, so heading is visible directly in the scene (`LTC` triangles rotate with heading; `MLP` circles include a forward marker)
   - explicit `Pause`, `Step`, and `Continue` simulation controls
-  - typed numeric fields for evolution continuation (`generations`, `world size`, `food count`, `food motion`, `food respawn`, `acceleration`, `linear drag`, `sensor noise`, `sensor dropout`, `episode steps`, `mutation rate`)
+  - grouped typed editor fields for the full GUI continuation config surface:
+    - world, timing, food, clustering, and day/night parameters
+    - GA and fitness-weight parameters
+    - default trait, controller-capacity, predator/prey, and sensor parameters
+    - rule toggles (`energy_by_speed`, `energy_by_network_size`, `energy_by_perception_size`)
   - evaluation schedule controls for GUI-triggered continuation runs:
     - initial evaluation mode (`Solo`/`Shared`)
     - post-switch mode (`Solo`/`Shared`)
     - switch generation (`0` disables switching)
-  - continue-evolution action that applies edited parameters to in-GUI evolution
+  - continue-evolution action that applies the edited runtime config to the next in-GUI evolution run
+  - explicit note in the control panel that default/architecture fields affect newly initialized agents rather than rewriting already-evolved genomes in place
   - live evolution progress visibility (`current/total generations`) during GUI-triggered continuation, updated every 10 generations (plus completion)
   - current day/night light state in the window title and selected-agent inspector (`day`/`night`, phase, visibility multiplier)
   - faint moving food-cluster region markers plus cluster-colored food sprites so resource regions are visible in the world

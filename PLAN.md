@@ -46,6 +46,8 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-10 01:10Z) Implemented milestone 2 of temporal ecology pressure: added prey/predator roles to genomes and runtime state, upgraded eyes to typed `food`/`prey`/`predator` channels, preserved `(ControllerKind, AgentRole)` pools during evolution, added predator capture rules plus role-aware fitness scoring, and validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-10 02:00Z) Implemented milestone 3 of temporal ecology pressure: added deterministic moving food clusters with per-cluster phase offsets, phase-driven spatial concentration, cluster-aware respawn/layout, and GUI cluster overlays plus food coloring; validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
 - [x] (2026-03-10 02:35Z) Implemented milestone 4 of temporal ecology pressure: replaced direct-speed throttle with acceleration-driven motion plus linear drag, exposed motion knobs in config and GUI continuation controls, added inertia/anti-instant-reverse tests, and validated with `cargo fmt`, `cargo check --features gui`, and `cargo test`.
+- [x] (2026-03-10 03:20Z) Optimized the post-ecology hot paths by reusing the per-step spatial index for predator captures and food collisions, deferring consumed-food removal until after the agent loop so `swap_remove` can replace `Vec::remove`, and skipping empty predator/prey sensor passes when the target role is absent.
+- [x] (2026-03-10 03:55Z) Expanded the GUI continuation panel from a small parameter subset to grouped editors for the full runtime config surface, including environment, GA, fitness, predator/prey, sensor, and rule-toggle controls, and added an explicit note explaining that default/architecture fields affect newly initialized agents rather than mutating existing genomes in place.
 
 ## Surprises & Discoveries
 
@@ -124,6 +126,12 @@ The implementation is successful when three things are demonstrably true: headle
 - Observation: Night visibility tests are brittle if they assume a target exactly on the reduced visibility boundary still contributes signal.
   Evidence: The first `night_visibility_reduces_sensor_strength` test failed because a target at exactly `perception_radius * night_visibility_multiplier` correctly yielded zero contribution under the implemented falloff rule.
 
+- Observation: The slowdown that remained after disabling clusters and predators still matched the ecology refactor because the new code had increased baseline work, but the cliff was mainly driven by better agents surviving longer and triggering more food-collision/removal work.
+  Evidence: The reported slowdown moved later instead of disappearing when features were disabled, which matched the remaining `find_collided_food_index` linear scan plus `Vec::remove` path in `src/sim/world.rs`.
+
+- Observation: "All parameters editable from the GUI" conflicts with the current genetics architecture for a few fields, because existing genomes already own their trait values and brain shapes.
+  Evidence: `default_agent_*`, `default_perception_*`, `mlp_hidden_size`, `ltc_state_size`, and `controller_ltc_probability` are used by initialization/factory paths rather than by crossover/mutation of already-existing genomes.
+
 ## Decision Log
 
 - Decision: Use a two-binary behavior model inside one crate via subcommands (`run`, `batch`, `view`) instead of separate crates.
@@ -197,6 +205,14 @@ The implementation is successful when three things are demonstrably true: headle
 - Decision: Promote `solo -> shared` curricula to explicit config/runtime schedule fields instead of manual GUI timing.
   Rationale: The observed LTC behavior depends materially on when shared-world pressure is introduced, so the regime transition must be encoded in config and reused by both CLI and GUI runs to remain reproducible.
   Date/Author: 2026-03-07 / Codex
+
+- Decision: Keep food-consumption determinism by recording per-agent food claims during the step and removing food only after the agent loop with `swap_remove`.
+  Rationale: This preserves the existing "first claimant wins" semantics while eliminating the O(n) vector shifting cost that became visible once later-generation agents consumed food frequently.
+  Date/Author: 2026-03-10 / Codex
+
+- Decision: Expose the full config surface in the GUI, but label default/architecture fields as initialization-oriented instead of pretending they rewrite existing evolved genomes in place.
+  Rationale: This satisfies the request for complete editability while staying honest about the current genetics model, where some fields only affect newly initialized or newly added agents.
+  Date/Author: 2026-03-10 / Codex
 
 - Decision: Enforce output-directory safety by rejecting existing non-empty `--out` directories at I/O layer entry.
   Rationale: Prevents accidental artifact mixing while preserving the existing CLI contract without extra overwrite flags.
@@ -686,3 +702,5 @@ Dependencies to add in `Cargo.toml`:
 2026-03-10: Plan updated to add the next planned milestone for temporal ecology pressure: phased day/night visibility, predator/prey typed sensing and role-aware fitness, moving food clusters, and momentum-based movement. This change was made to turn the user’s “make LTC clearly better” goal into a concrete, staged implementation path.
 2026-03-10: Plan updated after milestone 1 of temporal ecology pressure to document the implemented day/night config, night-visibility sensing scaling, GUI light indicator, and the edge-case discovery around visibility-boundary tests.
 2026-03-10: Plan updated after milestone 2 of temporal ecology pressure to document explicit `AgentRole` support, typed `food/prey/predator` eye channels, role-preserving reproduction pools, predator capture rules, and role-aware fitness scoring.
+2026-03-10: Plan updated after the post-ecology performance pass to document spatialized food collisions, deferred `swap_remove` cleanup, and empty-role sensor/capture short-circuiting because later-generation slowdowns were being driven by longer-lived agents exercising those paths more often.
+2026-03-10: Plan updated after expanding the GUI control surface to document that the full runtime config is now editable from the viewer and to record the explicit caveat around initialization-only/default fields versus already-evolved genomes.

@@ -14,6 +14,9 @@ struct SpatialIndex {
     cell_size: f32,
     cols: usize,
     rows: usize,
+    max_food_radius: f32,
+    alive_prey_count: usize,
+    alive_predator_count: usize,
     food_cells: Vec<Vec<usize>>,
     agent_cells: Vec<Vec<usize>>,
 }
@@ -27,8 +30,15 @@ impl SpatialIndex {
             .fold(1.0_f32, f32::max);
         let cols = ((world.width / cell_size).ceil() as usize).max(1);
         let rows = ((world.height / cell_size).ceil() as usize).max(1);
+        let max_food_radius = world
+            .food
+            .iter()
+            .map(|food| food.radius.max(0.0))
+            .fold(0.0_f32, f32::max);
         let mut food_cells = vec![Vec::new(); cols * rows];
         let mut agent_cells = vec![Vec::new(); cols * rows];
+        let mut alive_prey_count = 0;
+        let mut alive_predator_count = 0;
 
         for (food_idx, food) in world.food.iter().enumerate() {
             let cell_idx = Self::flat_index_for_position(food.position, cell_size, cols, rows);
@@ -40,6 +50,11 @@ impl SpatialIndex {
                 continue;
             }
 
+            match agent.role {
+                AgentRole::Prey => alive_prey_count += 1,
+                AgentRole::Predator => alive_predator_count += 1,
+            }
+
             let cell_idx = Self::flat_index_for_position(agent.position, cell_size, cols, rows);
             agent_cells[cell_idx].push(agent_idx);
         }
@@ -48,6 +63,9 @@ impl SpatialIndex {
             cell_size,
             cols,
             rows,
+            max_food_radius,
+            alive_prey_count,
+            alive_predator_count,
             food_cells,
             agent_cells,
         }
@@ -65,6 +83,21 @@ impl SpatialIndex {
         F: FnMut(usize),
     {
         self.with_candidate_indices(position, radius, &self.agent_cells, &mut visit);
+    }
+
+    fn has_sensor_targets(&self, observer_role: AgentRole, target_role: AgentRole) -> bool {
+        match target_role {
+            AgentRole::Prey if observer_role == AgentRole::Prey => self.alive_prey_count > 1,
+            AgentRole::Prey => self.alive_prey_count > 0,
+            AgentRole::Predator if observer_role == AgentRole::Predator => {
+                self.alive_predator_count > 1
+            }
+            AgentRole::Predator => self.alive_predator_count > 0,
+        }
+    }
+
+    fn has_live_predator_and_prey(&self) -> bool {
+        self.alive_predator_count > 0 && self.alive_prey_count > 0
     }
 
     fn with_candidate_indices<F>(
@@ -281,7 +314,10 @@ pub fn step_world_with_actions_and_telemetry(
         );
     }
 
-    let capture_gains = resolve_predator_captures(world, config, &mut outcome);
+    let spatial = SpatialIndex::build(world);
+    let capture_gains = resolve_predator_captures(world, &spatial, config, &mut outcome);
+    let mut consumed_food_flags = vec![false; world.food.len()];
+    let mut consumed_food_by_agent = vec![None; world.agents.len()];
 
     for agent_idx in 0..world.agents.len() {
         if !world.agents[agent_idx].alive {
@@ -292,14 +328,17 @@ pub fn step_world_with_actions_and_telemetry(
         let food_gain = if world.agents[agent_idx].role == AgentRole::Prey {
             if let Some(food_idx) = find_collided_food_index(
                 &world.food,
+                &spatial,
+                &consumed_food_flags,
                 world.agents[agent_idx].position,
                 world.width,
                 world.height,
             ) {
-                let food = world.food.remove(food_idx);
+                consumed_food_flags[food_idx] = true;
+                let food = world.food[food_idx].clone();
+                consumed_food_by_agent[agent_idx] = Some(food.clone());
                 world.agents[agent_idx].food_consumed += 1;
                 outcome.consumed_food += 1;
-                maybe_respawn_food(world, config, agent_idx, &food, &mut next_food_id);
                 food.energy_value
             } else {
                 0.0
@@ -332,6 +371,19 @@ pub fn step_world_with_actions_and_telemetry(
             captured_prey: capture_gain > 0.0,
             alive_after: world.agents[agent_idx].alive,
         };
+    }
+
+    // Remove consumed items in reverse index order so `swap_remove` can avoid O(n) shifting while
+    // preserving deterministic "first claimant wins" collision semantics within the step.
+    for food_idx in (0..consumed_food_flags.len()).rev() {
+        if consumed_food_flags[food_idx] {
+            world.food.swap_remove(food_idx);
+        }
+    }
+    for (agent_idx, consumed_food) in consumed_food_by_agent.into_iter().enumerate() {
+        if let Some(food) = consumed_food {
+            maybe_respawn_food(world, config, agent_idx, &food, &mut next_food_id);
+        }
     }
 
     move_food(world, config, dt);
@@ -495,22 +547,26 @@ fn compute_sensor_values(
         &mut values[food_start..prey_start],
         day_night.visibility_multiplier,
     );
-    fill_role_eye_cells(
-        agent,
-        world,
-        spatial,
-        &mut values[prey_start..predator_start],
-        AgentRole::Prey,
-        day_night.visibility_multiplier,
-    );
-    fill_role_eye_cells(
-        agent,
-        world,
-        spatial,
-        &mut values[predator_start..predator_start + MAX_VISION_CELLS],
-        AgentRole::Predator,
-        day_night.visibility_multiplier,
-    );
+    if spatial.has_sensor_targets(agent.role, AgentRole::Prey) {
+        fill_role_eye_cells(
+            agent,
+            world,
+            spatial,
+            &mut values[prey_start..predator_start],
+            AgentRole::Prey,
+            day_night.visibility_multiplier,
+        );
+    }
+    if spatial.has_sensor_targets(agent.role, AgentRole::Predator) {
+        fill_role_eye_cells(
+            agent,
+            world,
+            spatial,
+            &mut values[predator_start..predator_start + MAX_VISION_CELLS],
+            AgentRole::Predator,
+            day_night.visibility_multiplier,
+        );
+    }
     apply_sensor_corruption_in_place(agent.id, world.step_count, &mut values, config);
     values
 }
@@ -579,27 +635,29 @@ fn maybe_respawn_food(
     }
 
     let cluster_id = assign_food_cluster(world, config, *next_food_id, &mut rng);
-    let position = if cluster_id.is_some() {
-        Vec2::new(0.0, 0.0)
-    } else {
-        Vec2::new(
+    let mut food = FoodState {
+        id: *next_food_id,
+        position: Vec2::new(
             rng.gen_range(0.0..world.width),
             rng.gen_range(0.0..world.height),
-        )
-    };
-
-    world.food.push(FoodState {
-        id: *next_food_id,
-        position,
+        ),
         radius: config.food_collision_radius,
         energy_value: config.food_energy_gain,
         motion_angle_radians: rng.gen_range(0.0..std::f32::consts::TAU),
         cluster_id,
         cluster_angle_radians: rng.gen_range(0.0..std::f32::consts::TAU),
         cluster_distance_factor: rng.gen_range(0.0..1.0),
-    });
+    };
+    layout_food_position(
+        &mut food,
+        &world.food_clusters,
+        world.width,
+        world.height,
+        world.step_count,
+        config,
+    );
+    world.food.push(food);
     *next_food_id = (*next_food_id).saturating_add(1);
-    apply_cluster_food_layout(world, config);
 }
 
 fn move_food(world: &mut WorldState, config: &SimulationConfig, dt: f32) {
@@ -642,30 +700,37 @@ fn apply_cluster_food_layout(world: &mut WorldState, config: &SimulationConfig) 
         return;
     }
 
-    let cluster_by_id = |cluster_id: u32| -> Option<&FoodClusterState> {
-        world
-            .food_clusters
-            .iter()
-            .find(|cluster| cluster.id == cluster_id)
-    };
-
     for food in &mut world.food {
-        let Some(cluster_id) = food.cluster_id else {
-            continue;
-        };
-        let Some(cluster) = cluster_by_id(cluster_id) else {
-            continue;
-        };
-        let local_radius = config.food_cluster_radius
-            * cluster_density_radius_scale(cluster, world.step_count, config)
-            * food.cluster_distance_factor.sqrt();
-        let local_offset = Vec2::from_angle(food.cluster_angle_radians).scale(local_radius);
-        food.position = wrap_position(
-            cluster.position.add(local_offset),
+        layout_food_position(
+            food,
+            &world.food_clusters,
             world.width,
             world.height,
+            world.step_count,
+            config,
         );
     }
+}
+
+fn layout_food_position(
+    food: &mut FoodState,
+    clusters: &[FoodClusterState],
+    width: f32,
+    height: f32,
+    step_count: u64,
+    config: &SimulationConfig,
+) {
+    let Some(cluster_id) = food.cluster_id else {
+        return;
+    };
+    let Some(cluster) = clusters.iter().find(|cluster| cluster.id == cluster_id) else {
+        return;
+    };
+    let local_radius = config.food_cluster_radius
+        * cluster_density_radius_scale(cluster, step_count, config)
+        * food.cluster_distance_factor.sqrt();
+    let local_offset = Vec2::from_angle(food.cluster_angle_radians).scale(local_radius);
+    food.position = wrap_position(cluster.position.add(local_offset), width, height);
 }
 
 pub fn cluster_productivity(
@@ -965,14 +1030,18 @@ pub fn energy_breakdown_for_step(
 
 fn resolve_predator_captures(
     world: &mut WorldState,
+    spatial: &SpatialIndex,
     config: &SimulationConfig,
     outcome: &mut StepOutcome,
 ) -> Vec<f32> {
-    let mut capture_gains = vec![0.0_f32; world.agents.len()];
     if config.predator_capture_radius <= 0.0 || config.predator_capture_energy_gain <= 0.0 {
-        return capture_gains;
+        return vec![0.0_f32; world.agents.len()];
+    }
+    if !spatial.has_live_predator_and_prey() {
+        return vec![0.0_f32; world.agents.len()];
     }
 
+    let mut capture_gains = vec![0.0_f32; world.agents.len()];
     let mut captured_prey = vec![false; world.agents.len()];
     for predator_idx in 0..world.agents.len() {
         let predator = &world.agents[predator_idx];
@@ -981,33 +1050,37 @@ fn resolve_predator_captures(
         }
 
         let mut target: Option<(usize, f32, u32)> = None;
-        for prey_idx in 0..world.agents.len() {
-            let prey = &world.agents[prey_idx];
-            if prey_idx == predator_idx
-                || !prey.alive
-                || prey.role != AgentRole::Prey
-                || captured_prey[prey_idx]
-            {
-                continue;
-            }
-
-            let distance =
-                toroidal_distance(predator.position, prey.position, world.width, world.height);
-            if distance > config.predator_capture_radius {
-                continue;
-            }
-
-            let should_replace = match target {
-                None => true,
-                Some((_, best_distance, best_id)) => {
-                    distance < best_distance || (distance == best_distance && prey.id < best_id)
+        spatial.with_candidate_agents(
+            predator.position,
+            config.predator_capture_radius,
+            |prey_idx| {
+                let prey = &world.agents[prey_idx];
+                if prey_idx == predator_idx
+                    || !prey.alive
+                    || prey.role != AgentRole::Prey
+                    || captured_prey[prey_idx]
+                {
+                    return;
                 }
-            };
 
-            if should_replace {
-                target = Some((prey_idx, distance, prey.id));
-            }
-        }
+                let distance =
+                    toroidal_distance(predator.position, prey.position, world.width, world.height);
+                if distance > config.predator_capture_radius {
+                    return;
+                }
+
+                let should_replace = match target {
+                    None => true,
+                    Some((_, best_distance, best_id)) => {
+                        distance < best_distance || (distance == best_distance && prey.id < best_id)
+                    }
+                };
+
+                if should_replace {
+                    target = Some((prey_idx, distance, prey.id));
+                }
+            },
+        );
 
         if let Some((prey_idx, _, _)) = target {
             captured_prey[prey_idx] = true;
@@ -1032,12 +1105,29 @@ fn resolve_predator_captures(
 
 fn find_collided_food_index(
     food: &[FoodState],
+    spatial: &SpatialIndex,
+    consumed_food_flags: &[bool],
     position: Vec2,
     width: f32,
     height: f32,
 ) -> Option<usize> {
-    food.iter()
-        .position(|item| toroidal_distance(position, item.position, width, height) <= item.radius)
+    let mut match_idx = None;
+    spatial.with_candidate_foods(position, spatial.max_food_radius.max(0.001), |food_idx| {
+        if consumed_food_flags.get(food_idx).copied().unwrap_or(false) {
+            return;
+        }
+
+        let item = &food[food_idx];
+        if toroidal_distance(position, item.position, width, height) > item.radius {
+            return;
+        }
+
+        if match_idx.is_none_or(|best_idx| food_idx < best_idx) {
+            match_idx = Some(food_idx);
+        }
+    });
+
+    match_idx
 }
 
 #[cfg(test)]
@@ -1140,6 +1230,55 @@ mod tests {
         assert_eq!(world.food.len(), 0);
         assert_eq!(world.agents[0].food_consumed, 1);
         assert!((world.agents[0].energy - 8.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn simultaneous_food_collision_only_rewards_one_agent() {
+        let config = SimulationConfig {
+            timestep_seconds: 0.1,
+            base_energy_cost_per_second: 0.0,
+            speed_energy_cost_factor: 0.0,
+            network_energy_cost_factor: 0.0,
+            perception_energy_cost_factor: 0.0,
+            food_respawn_probability: 0.0,
+            ..SimulationConfig::default()
+        };
+
+        let mut first = test_agent(5.0);
+        first.position = Vec2::new(10.0, 10.0);
+        let mut second = test_agent(5.0);
+        second.id = 1;
+        second.position = Vec2::new(10.0, 10.0);
+
+        let mut world = WorldState {
+            width: 20.0,
+            height: 20.0,
+            agents: vec![first, second],
+            food: vec![FoodState {
+                id: 0,
+                position: Vec2::new(10.0, 10.0),
+                radius: 5.0,
+                energy_value: 3.0,
+                motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
+            }],
+            food_clusters: vec![],
+            world_seed: 0,
+            step_count: 0,
+        };
+
+        let outcome = step_world_with_actions(
+            &mut world,
+            &config,
+            &[ActionVector::default(), ActionVector::default()],
+        );
+
+        assert_eq!(outcome.consumed_food, 1);
+        assert_eq!(world.food.len(), 0);
+        assert_eq!(world.agents[0].food_consumed, 1);
+        assert_eq!(world.agents[1].food_consumed, 0);
     }
 
     #[test]

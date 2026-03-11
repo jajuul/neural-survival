@@ -108,9 +108,10 @@ Version 1 focuses on:
 1. User opens saved snapshot in GUI.
 2. User inspects movement, survival, and top-level statistics.
 3. User can pause/resume, adjust simulation speed, and toggle active world rules.
-4. User can continue evolution from the loaded population for a typed number of generations, with editable continuation parameters (`world size`, `food count`, `food motion`, `food respawn`, `acceleration`, `linear drag`, `sensor noise`, `sensor dropout`, `episode steps`, `mutation rate`) and a selectable evaluation schedule (`solo`, `shared`, or `solo -> shared @ N`).
-5. User can click an agent in the GUI to inspect its current food/prey/predator eye-bin activations, controller outputs, last-step energy-cost breakdown, and live neural-network topology/activations.
-6. If food clusters are enabled, the GUI shows faint moving region markers and cluster-colored food so resource-region motion is visible.
+4. User can continue evolution from the loaded population for a typed number of generations, with editable GUI controls for the full runtime config surface (world, timing, food, clustering, GA, fitness, sensor, predator/prey, and rule-toggle parameters) and a selectable evaluation schedule (`solo`, `shared`, or `solo -> shared @ N`).
+5. GUI should make clear that default/architecture fields are editable but apply to newly initialized agents rather than mutating already-evolved genomes in place.
+6. User can click an agent in the GUI to inspect its current food/prey/predator eye-bin activations, controller outputs, last-step energy-cost breakdown, and live neural-network topology/activations.
+7. If food clusters are enabled, the GUI shows faint moving region markers and cluster-colored food so resource-region motion is visible.
 
 ## Public Interfaces and Types
 
@@ -310,16 +311,13 @@ Weights are config-driven and exported in run metadata.
   - switch generation (`0` disables the schedule)
 - View in-GUI fitness trend plot for best and mean fitness across generations.
 - View live network topology/activation plot for the selected agent.
-- Typed continuation controls:
+- Typed continuation controls for the full runtime config surface:
   - generations to evolve
-  - world width / world height
-  - food count
-  - food motion speed
-  - food respawn probability
-  - sensor noise standard deviation
-  - sensor dropout probability
-  - episode steps
-  - mutation rate
+  - world, timing, food, clustering, and day/night parameters
+  - GA and fitness-weight parameters
+  - default trait and controller-capacity parameters
+  - predator/prey and sensor-corruption parameters
+  - rule toggles for energy accounting terms
 - Run continuation evolution from GUI controls.
 - Click an agent to select it; click empty world space to clear selection.
 

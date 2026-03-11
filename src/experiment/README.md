@@ -18,6 +18,7 @@ This module orchestrates deterministic multi-generation evolution runs.
 - Feeds controllers deterministic sensor vectors (core scalar cues plus separate food-eye, prey-eye, and predator-eye channels).
 - Parallelizes `solo` evaluation deterministically across genomes, since each episode already has its own derived seed and no shared mutable world state.
 - Reuses shared-world action/sensor buffers and consumes per-step sensor data from the simulation's spatially indexed fast path.
+- Benefits from the simulation's spatialized food-collision and predator-capture paths, so later generations do not pay O(n) food-vector shifting costs just because policies got good at eating.
 - Uses whatever world resource model is configured, including moving food clusters with phase-dependent concentration, while keeping evaluation deterministic from seed/config.
 - Evolves generations using genetics operators.
 - Produces per-generation best/mean fitness metrics and final population genomes.

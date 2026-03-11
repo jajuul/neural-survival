@@ -11,6 +11,7 @@ mod bevy_viewer {
     use bevy::prelude::*;
     use bevy::prelude::{Mesh2d, MeshMaterial2d};
     use bevy::window::PrimaryWindow;
+    use std::collections::BTreeMap;
 
     use crate::brain::{
         ControllerDiagnostics, ControllerFactory, ControllerKind, ControllerNetworkSnapshot,
@@ -63,6 +64,31 @@ mod bevy_viewer {
     const NETWORK_PLOT_INSET_TOP: f32 = 86.0;
     const NETWORK_PLOT_INSET_BOTTOM: f32 = 28.0;
     const SELECTION_PICK_RADIUS: f32 = 12.0;
+    const CONTROL_LABEL_WIDTH: f32 = 120.0;
+    const CONTROL_VALUE_WIDTH: f32 = 110.0;
+    const CONTROL_COLUMN_WIDTH: f32 = 252.0;
+    const CONTROL_PANEL_GAP: f32 = 16.0;
+    const CONTROL_PANEL_TOP: f32 = 12.0;
+    const CONTROL_PANEL_LEFT: f32 = 12.0;
+    const TIMESTEP_SECONDS_MAX: f32 = 10.0;
+    const POPULATION_SIZE_MAX: usize = 4096;
+    const FOOD_CLUSTER_COUNT_MAX: usize = 256;
+    const FOOD_CLUSTER_RADIUS_MAX: f32 = 500.0;
+    const FOOD_CLUSTER_MOTION_SPEED_MAX: f32 = 100.0;
+    const TOURNAMENT_SIZE_MAX: usize = 4096;
+    const INITIAL_AGENT_ENERGY_MAX: f32 = 10_000.0;
+    const ENERGY_COST_MAX: f32 = 100.0;
+    const FOOD_ENERGY_GAIN_MAX: f32 = 10_000.0;
+    const FOOD_COLLISION_RADIUS_MAX: f32 = 100.0;
+    const EYE_FOV_MAX: f32 = std::f32::consts::TAU;
+    const DEFAULT_SPEED_MAX: f32 = 100.0;
+    const TURN_RATE_MAX: f32 = std::f32::consts::TAU * 10.0;
+    const PERCEPTION_RADIUS_MAX: f32 = 500.0;
+    const NETWORK_SIZE_MAX: usize = 100_000;
+    const HIDDEN_LAYER_SIZE_MAX: usize = 1024;
+    const METABOLIC_EFFICIENCY_MAX: f32 = 10.0;
+    const DAY_NIGHT_CYCLE_STEPS_MAX: u32 = 1_000_000;
+    const FITNESS_WEIGHT_MAX: f32 = 1_000.0;
 
     #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
     enum ViewerUpdateSet {
@@ -114,6 +140,16 @@ mod bevy_viewer {
     struct EvaluationModeAfterSwitchButtonLabel;
 
     #[derive(Component)]
+    struct ToggleField {
+        kind: ToggleFieldKind,
+    }
+
+    #[derive(Component)]
+    struct ToggleFieldValueText {
+        kind: ToggleFieldKind,
+    }
+
+    #[derive(Component)]
     struct FitnessPlotSummaryText;
 
     #[derive(Component)]
@@ -122,38 +158,171 @@ mod bevy_viewer {
     #[derive(Component)]
     struct SelectedAgentNetworkSummaryText;
 
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
     enum NumericFieldKind {
         EvolveGenerations,
         EvaluationSwitchAfterGeneration,
         WorldWidth,
         WorldHeight,
+        TimestepSeconds,
+        PopulationSize,
         FoodCount,
         FoodMotionSpeed,
         FoodRespawnProbability,
+        FoodClusterCount,
+        FoodClusterRadius,
+        FoodClusterMotionSpeed,
+        FoodClusterProductivityBias,
+        ElitismFraction,
+        TournamentSize,
+        InitialAgentEnergy,
+        BaseEnergyCostPerSecond,
+        SpeedEnergyCostFactor,
+        NetworkEnergyCostFactor,
+        PerceptionEnergyCostFactor,
+        FoodEnergyGain,
+        FoodCollisionRadius,
+        EyeFovAngleRadians,
+        DefaultAgentMaxSpeed,
         MaxAcceleration,
         LinearDrag,
+        MaxTurnRateRadians,
+        DefaultPerceptionRadius,
+        DefaultPerceptionChannels,
+        DefaultNetworkSize,
+        MlpHiddenSize,
+        LtcStateSize,
+        DefaultMetabolicEfficiency,
+        ControllerLtcProbability,
+        PredatorFraction,
+        PredatorCaptureRadius,
+        PredatorCaptureEnergyGain,
         SensorNoiseStddev,
         SensorDropoutProbability,
+        DayNightCycleSteps,
+        NightVisibilityMultiplier,
         EpisodeSteps,
         MutationRate,
+        FitnessWeightSurvival,
+        FitnessWeightFood,
+        FitnessWeightPredation,
+        FitnessWeightEnergy,
     }
 
-    const NUMERIC_FIELDS: [NumericFieldKind; 13] = [
+    const NUMERIC_FIELDS: [NumericFieldKind; 47] = [
         NumericFieldKind::EvolveGenerations,
         NumericFieldKind::EvaluationSwitchAfterGeneration,
         NumericFieldKind::WorldWidth,
         NumericFieldKind::WorldHeight,
+        NumericFieldKind::TimestepSeconds,
+        NumericFieldKind::PopulationSize,
         NumericFieldKind::FoodCount,
         NumericFieldKind::FoodMotionSpeed,
         NumericFieldKind::FoodRespawnProbability,
+        NumericFieldKind::FoodClusterCount,
+        NumericFieldKind::FoodClusterRadius,
+        NumericFieldKind::FoodClusterMotionSpeed,
+        NumericFieldKind::FoodClusterProductivityBias,
+        NumericFieldKind::ElitismFraction,
+        NumericFieldKind::TournamentSize,
+        NumericFieldKind::InitialAgentEnergy,
+        NumericFieldKind::BaseEnergyCostPerSecond,
+        NumericFieldKind::SpeedEnergyCostFactor,
+        NumericFieldKind::NetworkEnergyCostFactor,
+        NumericFieldKind::PerceptionEnergyCostFactor,
+        NumericFieldKind::FoodEnergyGain,
+        NumericFieldKind::FoodCollisionRadius,
+        NumericFieldKind::EyeFovAngleRadians,
+        NumericFieldKind::DefaultAgentMaxSpeed,
         NumericFieldKind::MaxAcceleration,
         NumericFieldKind::LinearDrag,
+        NumericFieldKind::MaxTurnRateRadians,
+        NumericFieldKind::DefaultPerceptionRadius,
+        NumericFieldKind::DefaultPerceptionChannels,
+        NumericFieldKind::DefaultNetworkSize,
+        NumericFieldKind::MlpHiddenSize,
+        NumericFieldKind::LtcStateSize,
+        NumericFieldKind::DefaultMetabolicEfficiency,
+        NumericFieldKind::ControllerLtcProbability,
+        NumericFieldKind::PredatorFraction,
+        NumericFieldKind::PredatorCaptureRadius,
+        NumericFieldKind::PredatorCaptureEnergyGain,
         NumericFieldKind::SensorNoiseStddev,
         NumericFieldKind::SensorDropoutProbability,
+        NumericFieldKind::DayNightCycleSteps,
+        NumericFieldKind::NightVisibilityMultiplier,
         NumericFieldKind::EpisodeSteps,
         NumericFieldKind::MutationRate,
+        NumericFieldKind::FitnessWeightSurvival,
+        NumericFieldKind::FitnessWeightFood,
+        NumericFieldKind::FitnessWeightPredation,
+        NumericFieldKind::FitnessWeightEnergy,
     ];
+
+    const CONTROL_COLUMN_1_FIELDS: [NumericFieldKind; 15] = [
+        NumericFieldKind::EvolveGenerations,
+        NumericFieldKind::EvaluationSwitchAfterGeneration,
+        NumericFieldKind::WorldWidth,
+        NumericFieldKind::WorldHeight,
+        NumericFieldKind::TimestepSeconds,
+        NumericFieldKind::EpisodeSteps,
+        NumericFieldKind::PopulationSize,
+        NumericFieldKind::FoodCount,
+        NumericFieldKind::FoodMotionSpeed,
+        NumericFieldKind::FoodRespawnProbability,
+        NumericFieldKind::FoodClusterCount,
+        NumericFieldKind::FoodClusterRadius,
+        NumericFieldKind::FoodClusterMotionSpeed,
+        NumericFieldKind::FoodClusterProductivityBias,
+        NumericFieldKind::InitialAgentEnergy,
+    ];
+
+    const CONTROL_COLUMN_2_FIELDS: [NumericFieldKind; 17] = [
+        NumericFieldKind::ElitismFraction,
+        NumericFieldKind::TournamentSize,
+        NumericFieldKind::MutationRate,
+        NumericFieldKind::BaseEnergyCostPerSecond,
+        NumericFieldKind::SpeedEnergyCostFactor,
+        NumericFieldKind::NetworkEnergyCostFactor,
+        NumericFieldKind::PerceptionEnergyCostFactor,
+        NumericFieldKind::FoodEnergyGain,
+        NumericFieldKind::FoodCollisionRadius,
+        NumericFieldKind::FitnessWeightSurvival,
+        NumericFieldKind::FitnessWeightFood,
+        NumericFieldKind::FitnessWeightPredation,
+        NumericFieldKind::FitnessWeightEnergy,
+        NumericFieldKind::PredatorFraction,
+        NumericFieldKind::PredatorCaptureRadius,
+        NumericFieldKind::PredatorCaptureEnergyGain,
+        NumericFieldKind::ControllerLtcProbability,
+    ];
+
+    const CONTROL_COLUMN_3_FIELDS: [NumericFieldKind; 15] = [
+        NumericFieldKind::EyeFovAngleRadians,
+        NumericFieldKind::DefaultAgentMaxSpeed,
+        NumericFieldKind::MaxAcceleration,
+        NumericFieldKind::LinearDrag,
+        NumericFieldKind::MaxTurnRateRadians,
+        NumericFieldKind::DefaultPerceptionRadius,
+        NumericFieldKind::DefaultPerceptionChannels,
+        NumericFieldKind::DefaultNetworkSize,
+        NumericFieldKind::MlpHiddenSize,
+        NumericFieldKind::LtcStateSize,
+        NumericFieldKind::DefaultMetabolicEfficiency,
+        NumericFieldKind::SensorNoiseStddev,
+        NumericFieldKind::SensorDropoutProbability,
+        NumericFieldKind::DayNightCycleSteps,
+        NumericFieldKind::NightVisibilityMultiplier,
+    ];
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum ToggleFieldKind {
+        FoodClusterEnabled,
+        DayNightCycleEnabled,
+        EnergyBySpeed,
+        EnergyByNetworkSize,
+        EnergyByPerceptionSize,
+    }
 
     #[derive(Component)]
     struct NumericField {
@@ -166,81 +335,28 @@ mod bevy_viewer {
     }
 
     #[derive(Clone, Debug)]
-    struct NumericFieldBuffers {
-        evolve_generations: String,
-        evaluation_switch_after_generation: String,
-        world_width: String,
-        world_height: String,
-        food_count: String,
-        food_motion_speed: String,
-        food_respawn_probability: String,
-        max_acceleration: String,
-        linear_drag: String,
-        sensor_noise_stddev: String,
-        sensor_dropout_probability: String,
-        episode_steps: String,
-        mutation_rate: String,
-    }
+    struct NumericFieldBuffers(BTreeMap<NumericFieldKind, String>);
 
     impl NumericFieldBuffers {
         fn from_state(evolve_generations: u32, config: &crate::config::SimulationConfig) -> Self {
-            Self {
-                evolve_generations: evolve_generations.to_string(),
-                evaluation_switch_after_generation: config
-                    .evaluation_mode_switch_after_generation
-                    .to_string(),
-                world_width: format!("{:.1}", config.world_width),
-                world_height: format!("{:.1}", config.world_height),
-                food_count: config.food_count.to_string(),
-                food_motion_speed: format!("{:.2}", config.food_motion_speed),
-                food_respawn_probability: format!("{:.3}", config.food_respawn_probability),
-                max_acceleration: format!("{:.2}", config.max_acceleration),
-                linear_drag: format!("{:.2}", config.linear_drag),
-                sensor_noise_stddev: format!("{:.3}", config.sensor_noise_stddev),
-                sensor_dropout_probability: format!("{:.3}", config.sensor_dropout_probability),
-                episode_steps: config.episode_steps.to_string(),
-                mutation_rate: format!("{:.3}", config.mutation_rate),
+            let mut values = BTreeMap::new();
+            for kind in NUMERIC_FIELDS {
+                values.insert(kind, numeric_field_string(kind, evolve_generations, config));
             }
+            Self(values)
         }
 
         fn get(&self, kind: NumericFieldKind) -> &str {
-            match kind {
-                NumericFieldKind::EvolveGenerations => &self.evolve_generations,
-                NumericFieldKind::EvaluationSwitchAfterGeneration => {
-                    &self.evaluation_switch_after_generation
-                }
-                NumericFieldKind::WorldWidth => &self.world_width,
-                NumericFieldKind::WorldHeight => &self.world_height,
-                NumericFieldKind::FoodCount => &self.food_count,
-                NumericFieldKind::FoodMotionSpeed => &self.food_motion_speed,
-                NumericFieldKind::FoodRespawnProbability => &self.food_respawn_probability,
-                NumericFieldKind::MaxAcceleration => &self.max_acceleration,
-                NumericFieldKind::LinearDrag => &self.linear_drag,
-                NumericFieldKind::SensorNoiseStddev => &self.sensor_noise_stddev,
-                NumericFieldKind::SensorDropoutProbability => &self.sensor_dropout_probability,
-                NumericFieldKind::EpisodeSteps => &self.episode_steps,
-                NumericFieldKind::MutationRate => &self.mutation_rate,
-            }
+            self.0
+                .get(&kind)
+                .map(String::as_str)
+                .expect("all numeric fields must have buffer entries")
         }
 
         fn get_mut(&mut self, kind: NumericFieldKind) -> &mut String {
-            match kind {
-                NumericFieldKind::EvolveGenerations => &mut self.evolve_generations,
-                NumericFieldKind::EvaluationSwitchAfterGeneration => {
-                    &mut self.evaluation_switch_after_generation
-                }
-                NumericFieldKind::WorldWidth => &mut self.world_width,
-                NumericFieldKind::WorldHeight => &mut self.world_height,
-                NumericFieldKind::FoodCount => &mut self.food_count,
-                NumericFieldKind::FoodMotionSpeed => &mut self.food_motion_speed,
-                NumericFieldKind::FoodRespawnProbability => &mut self.food_respawn_probability,
-                NumericFieldKind::MaxAcceleration => &mut self.max_acceleration,
-                NumericFieldKind::LinearDrag => &mut self.linear_drag,
-                NumericFieldKind::SensorNoiseStddev => &mut self.sensor_noise_stddev,
-                NumericFieldKind::SensorDropoutProbability => &mut self.sensor_dropout_probability,
-                NumericFieldKind::EpisodeSteps => &mut self.episode_steps,
-                NumericFieldKind::MutationRate => &mut self.mutation_rate,
-            }
+            self.0
+                .get_mut(&kind)
+                .expect("all numeric fields must have buffer entries")
         }
     }
 
@@ -329,7 +445,7 @@ mod bevy_viewer {
             .add_plugins(DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "neural-survival viewer".into(),
-                    resolution: (1520.0, 1100.0).into(),
+                    resolution: (1860.0, 1120.0).into(),
                     ..default()
                 }),
                 ..default()
@@ -353,6 +469,7 @@ mod bevy_viewer {
                     pause_button_interaction,
                     continue_button_interaction,
                     step_button_interaction,
+                    toggle_field_interaction,
                     evaluation_mode_button_interaction,
                     evaluation_mode_after_switch_button_interaction,
                 )
@@ -436,8 +553,8 @@ mod bevy_viewer {
         commands
             .spawn(Node {
                 position_type: PositionType::Absolute,
-                left: Val::Px(12.0),
-                top: Val::Px(12.0),
+                left: Val::Px(CONTROL_PANEL_LEFT),
+                top: Val::Px(CONTROL_PANEL_TOP),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(8.0),
                 ..default()
@@ -599,48 +716,58 @@ mod bevy_viewer {
                     TextFont::from_font_size(16.0),
                     TextColor(Color::srgb(0.93, 0.93, 0.93)),
                 ));
+                parent.spawn((
+                    Text::new(
+                        "Edits apply to the next GUI evolution run. Default/architecture fields affect newly initialized agents, not already-evolved genomes.",
+                    ),
+                    TextFont::from_font_size(11.0),
+                    TextColor(Color::srgb(0.75, 0.8, 0.86)),
+                    Node {
+                        width: Val::Px(CONTROL_COLUMN_WIDTH * 3.0 + CONTROL_PANEL_GAP * 2.0),
+                        ..default()
+                    },
+                ));
 
-                for kind in NUMERIC_FIELDS {
-                    parent
-                        .spawn(Node {
-                            flex_direction: FlexDirection::Row,
-                            column_gap: Val::Px(8.0),
-                            align_items: AlignItems::Center,
-                            ..default()
-                        })
-                        .with_children(|row| {
-                            row.spawn((
-                                Text::new(field_label(kind)),
-                                TextFont::from_font_size(15.0),
-                                TextColor(Color::srgb(0.88, 0.88, 0.88)),
-                                Node {
-                                    width: Val::Px(150.0),
-                                    ..default()
-                                },
-                            ));
-
-                            row.spawn((
-                                Button,
-                                Node {
-                                    width: Val::Px(140.0),
-                                    height: Val::Px(30.0),
-                                    justify_content: JustifyContent::Center,
-                                    align_items: AlignItems::Center,
-                                    ..default()
-                                },
-                                BackgroundColor(Color::srgb(0.2, 0.2, 0.2)),
-                                NumericField { kind },
-                            ))
-                            .with_children(|button| {
-                                button.spawn((
-                                    Text::new(runtime.field_buffers.get(kind).to_string()),
-                                    TextFont::from_font_size(15.0),
-                                    TextColor(Color::srgb(0.95, 0.95, 0.95)),
-                                    NumericFieldValueText { kind },
-                                ));
-                            });
-                        });
-                }
+                parent
+                    .spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(CONTROL_PANEL_GAP),
+                        align_items: AlignItems::FlexStart,
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        spawn_control_column(
+                            row,
+                            "Environment",
+                            &CONTROL_COLUMN_1_FIELDS,
+                            &runtime.field_buffers,
+                            &[
+                                ToggleFieldKind::FoodClusterEnabled,
+                                ToggleFieldKind::DayNightCycleEnabled,
+                            ],
+                            &runtime.config,
+                        );
+                        spawn_control_column(
+                            row,
+                            "Evolution + Fitness",
+                            &CONTROL_COLUMN_2_FIELDS,
+                            &runtime.field_buffers,
+                            &[
+                                ToggleFieldKind::EnergyBySpeed,
+                                ToggleFieldKind::EnergyByNetworkSize,
+                                ToggleFieldKind::EnergyByPerceptionSize,
+                            ],
+                            &runtime.config,
+                        );
+                        spawn_control_column(
+                            row,
+                            "Agents + Sensors",
+                            &CONTROL_COLUMN_3_FIELDS,
+                            &runtime.field_buffers,
+                            &[],
+                            &runtime.config,
+                        );
+                    });
 
                 parent
                     .spawn((
@@ -769,6 +896,142 @@ mod bevy_viewer {
             });
     }
 
+    fn spawn_control_column(
+        parent: &mut ChildBuilder,
+        title: &str,
+        fields: &[NumericFieldKind],
+        field_buffers: &NumericFieldBuffers,
+        toggles: &[ToggleFieldKind],
+        config: &crate::config::SimulationConfig,
+    ) {
+        parent
+            .spawn(Node {
+                width: Val::Px(CONTROL_COLUMN_WIDTH),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(6.0),
+                ..default()
+            })
+            .with_children(|column: &mut ChildBuilder| {
+                column.spawn((
+                    Text::new(title),
+                    TextFont::from_font_size(15.0),
+                    TextColor(Color::srgb(0.94, 0.94, 0.94)),
+                ));
+
+                for &kind in fields {
+                    spawn_numeric_field_row(column, kind, field_buffers);
+                }
+
+                if !toggles.is_empty() {
+                    column.spawn((
+                        Text::new("Toggles"),
+                        TextFont::from_font_size(13.0),
+                        TextColor(Color::srgb(0.82, 0.88, 0.94)),
+                        Node {
+                            margin: UiRect::top(Val::Px(4.0)),
+                            ..default()
+                        },
+                    ));
+
+                    for &kind in toggles {
+                        spawn_toggle_field_row(column, kind, config);
+                    }
+                }
+            });
+    }
+
+    fn spawn_numeric_field_row(
+        parent: &mut ChildBuilder,
+        kind: NumericFieldKind,
+        field_buffers: &NumericFieldBuffers,
+    ) {
+        parent
+            .spawn(Node {
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(8.0),
+                align_items: AlignItems::Center,
+                ..default()
+            })
+            .with_children(|row: &mut ChildBuilder| {
+                row.spawn((
+                    Text::new(field_label(kind)),
+                    TextFont::from_font_size(13.0),
+                    TextColor(Color::srgb(0.88, 0.88, 0.88)),
+                    Node {
+                        width: Val::Px(CONTROL_LABEL_WIDTH),
+                        ..default()
+                    },
+                ));
+
+                row.spawn((
+                    Button,
+                    Node {
+                        width: Val::Px(CONTROL_VALUE_WIDTH),
+                        height: Val::Px(28.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.2, 0.2, 0.2)),
+                    NumericField { kind },
+                ))
+                .with_children(|button: &mut ChildBuilder| {
+                    button.spawn((
+                        Text::new(field_buffers.get(kind).to_string()),
+                        TextFont::from_font_size(13.0),
+                        TextColor(Color::srgb(0.95, 0.95, 0.95)),
+                        NumericFieldValueText { kind },
+                    ));
+                });
+            });
+    }
+
+    fn spawn_toggle_field_row(
+        parent: &mut ChildBuilder,
+        kind: ToggleFieldKind,
+        config: &crate::config::SimulationConfig,
+    ) {
+        parent
+            .spawn(Node {
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(8.0),
+                align_items: AlignItems::Center,
+                ..default()
+            })
+            .with_children(|row: &mut ChildBuilder| {
+                row.spawn((
+                    Text::new(toggle_field_label(kind)),
+                    TextFont::from_font_size(13.0),
+                    TextColor(Color::srgb(0.88, 0.88, 0.88)),
+                    Node {
+                        width: Val::Px(CONTROL_LABEL_WIDTH),
+                        ..default()
+                    },
+                ));
+
+                row.spawn((
+                    Button,
+                    Node {
+                        width: Val::Px(CONTROL_VALUE_WIDTH),
+                        height: Val::Px(28.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    toggle_button_color(Interaction::None, toggle_field_value(kind, config)),
+                    ToggleField { kind },
+                ))
+                .with_children(|button: &mut ChildBuilder| {
+                    button.spawn((
+                        Text::new(format_toggle_value(toggle_field_value(kind, config))),
+                        TextFont::from_font_size(13.0),
+                        TextColor(Color::srgb(0.95, 0.95, 0.95)),
+                        ToggleFieldValueText { kind },
+                    ));
+                });
+            });
+    }
+
     fn keyboard_controls(keys: Res<ButtonInput<KeyCode>>, mut runtime: ResMut<ViewerRuntime>) {
         if runtime.active_input.is_some() || runtime.evolution_job.is_some() {
             return;
@@ -858,6 +1121,47 @@ mod bevy_viewer {
                 runtime.active_input = None;
                 runtime.paused = true;
                 run_simulation_steps(&mut runtime, 1);
+            }
+        }
+    }
+
+    fn toggle_field_interaction(
+        interactions: Query<
+            (&Interaction, &ToggleField),
+            (Changed<Interaction>, With<Button>, With<ToggleField>),
+        >,
+        mut runtime: ResMut<ViewerRuntime>,
+    ) {
+        if runtime.evolution_job.is_some() {
+            return;
+        }
+
+        for (interaction, toggle) in &interactions {
+            if !matches!(*interaction, Interaction::Pressed) {
+                continue;
+            }
+
+            runtime.active_input = None;
+            match toggle.kind {
+                ToggleFieldKind::FoodClusterEnabled => {
+                    runtime.config.food_cluster_enabled = !runtime.config.food_cluster_enabled;
+                }
+                ToggleFieldKind::DayNightCycleEnabled => {
+                    runtime.config.day_night_cycle_enabled =
+                        !runtime.config.day_night_cycle_enabled;
+                }
+                ToggleFieldKind::EnergyBySpeed => {
+                    runtime.config.rule_toggles.energy_by_speed =
+                        !runtime.config.rule_toggles.energy_by_speed;
+                }
+                ToggleFieldKind::EnergyByNetworkSize => {
+                    runtime.config.rule_toggles.energy_by_network_size =
+                        !runtime.config.rule_toggles.energy_by_network_size;
+                }
+                ToggleFieldKind::EnergyByPerceptionSize => {
+                    runtime.config.rule_toggles.energy_by_perception_size =
+                        !runtime.config.rule_toggles.energy_by_perception_size;
+                }
             }
         }
     }
@@ -1145,6 +1449,7 @@ mod bevy_viewer {
                 &Interaction,
                 &mut BackgroundColor,
                 Option<&NumericField>,
+                Option<&ToggleField>,
                 Option<&EvolveRunButton>,
                 Option<&EvaluationModeButton>,
                 Option<&EvaluationModeAfterSwitchButton>,
@@ -1154,6 +1459,7 @@ mod bevy_viewer {
         mut text_query: Query<(
             &mut Text,
             Option<&NumericFieldValueText>,
+            Option<&ToggleFieldValueText>,
             Option<&EvolveStatusText>,
             Option<&EvaluationModeButtonLabel>,
             Option<&EvaluationModeAfterSwitchButtonLabel>,
@@ -1164,6 +1470,7 @@ mod bevy_viewer {
             interaction,
             mut color,
             maybe_field,
+            maybe_toggle,
             maybe_evolve,
             maybe_eval_mode,
             maybe_eval_mode_after,
@@ -1175,6 +1482,11 @@ mod bevy_viewer {
                     runtime
                         .active_input
                         .is_some_and(|active| active == field.kind),
+                );
+            } else if let Some(toggle) = maybe_toggle {
+                *color = toggle_button_color(
+                    *interaction,
+                    toggle_field_value(toggle.kind, &runtime.config),
                 );
             } else if maybe_evolve.is_some() {
                 *color = evolve_run_button_color(*interaction, is_evolving);
@@ -1201,11 +1513,20 @@ mod bevy_viewer {
             )
         };
 
-        for (mut text, value_marker, status_marker, eval_mode_marker, eval_mode_after_marker) in
-            &mut text_query
+        for (
+            mut text,
+            value_marker,
+            toggle_marker,
+            status_marker,
+            eval_mode_marker,
+            eval_mode_after_marker,
+        ) in &mut text_query
         {
             if let Some(marker) = value_marker {
                 **text = runtime.field_buffers.get(marker.kind).to_string();
+            } else if let Some(marker) = toggle_marker {
+                **text = format_toggle_value(toggle_field_value(marker.kind, &runtime.config))
+                    .to_string();
             } else if status_marker.is_some() {
                 **text = status.clone();
             } else if eval_mode_marker.is_some() {
@@ -1270,6 +1591,18 @@ mod bevy_viewer {
             Interaction::Pressed => BackgroundColor(Color::srgb(0.42, 0.42, 0.42)),
             Interaction::Hovered => BackgroundColor(Color::srgb(0.32, 0.32, 0.32)),
             Interaction::None => BackgroundColor(Color::srgb(0.2, 0.2, 0.2)),
+        }
+    }
+
+    fn toggle_button_color(interaction: Interaction, enabled: bool) -> BackgroundColor {
+        if matches!(interaction, Interaction::Hovered) {
+            return BackgroundColor(Color::srgb(0.42, 0.42, 0.48));
+        }
+
+        if enabled {
+            BackgroundColor(Color::srgb(0.23, 0.56, 0.34))
+        } else {
+            BackgroundColor(Color::srgb(0.46, 0.22, 0.22))
         }
     }
 
@@ -2047,7 +2380,8 @@ mod bevy_viewer {
     }
 
     fn cursor_over_ui_panel(cursor: bevy::math::Vec2, window: &Window) -> bool {
-        let left_panel_right = 220.0;
+        let left_panel_right =
+            CONTROL_PANEL_LEFT + CONTROL_COLUMN_WIDTH * 3.0 + CONTROL_PANEL_GAP * 2.0 + 40.0;
         if cursor.x <= left_panel_right && cursor.y <= window.height() {
             return true;
         }
@@ -2191,15 +2525,173 @@ mod bevy_viewer {
             NumericFieldKind::EvaluationSwitchAfterGeneration => "Eval Switch After",
             NumericFieldKind::WorldWidth => "World Width",
             NumericFieldKind::WorldHeight => "World Height",
+            NumericFieldKind::TimestepSeconds => "Timestep",
+            NumericFieldKind::PopulationSize => "Population",
             NumericFieldKind::FoodCount => "Food Count",
             NumericFieldKind::FoodMotionSpeed => "Food Motion",
             NumericFieldKind::FoodRespawnProbability => "Food Respawn",
+            NumericFieldKind::FoodClusterCount => "Cluster Count",
+            NumericFieldKind::FoodClusterRadius => "Cluster Radius",
+            NumericFieldKind::FoodClusterMotionSpeed => "Cluster Motion",
+            NumericFieldKind::FoodClusterProductivityBias => "Cluster Bias",
+            NumericFieldKind::ElitismFraction => "Elitism",
+            NumericFieldKind::TournamentSize => "Tournament",
+            NumericFieldKind::InitialAgentEnergy => "Start Energy",
+            NumericFieldKind::BaseEnergyCostPerSecond => "Base Cost/s",
+            NumericFieldKind::SpeedEnergyCostFactor => "Speed Cost",
+            NumericFieldKind::NetworkEnergyCostFactor => "Network Cost",
+            NumericFieldKind::PerceptionEnergyCostFactor => "Vision Cost",
+            NumericFieldKind::FoodEnergyGain => "Food Gain",
+            NumericFieldKind::FoodCollisionRadius => "Food Radius",
+            NumericFieldKind::EyeFovAngleRadians => "Eye FOV Rad",
+            NumericFieldKind::DefaultAgentMaxSpeed => "Default Speed",
             NumericFieldKind::MaxAcceleration => "Acceleration",
             NumericFieldKind::LinearDrag => "Linear Drag",
+            NumericFieldKind::MaxTurnRateRadians => "Turn Rate Rad",
+            NumericFieldKind::DefaultPerceptionRadius => "Default Range",
+            NumericFieldKind::DefaultPerceptionChannels => "Default Eyes",
+            NumericFieldKind::DefaultNetworkSize => "Default Net Size",
+            NumericFieldKind::MlpHiddenSize => "MLP Hidden",
+            NumericFieldKind::LtcStateSize => "LTC State",
+            NumericFieldKind::DefaultMetabolicEfficiency => "Default Metab",
+            NumericFieldKind::ControllerLtcProbability => "LTC Probability",
+            NumericFieldKind::PredatorFraction => "Predator Frac",
+            NumericFieldKind::PredatorCaptureRadius => "Capture Radius",
+            NumericFieldKind::PredatorCaptureEnergyGain => "Capture Gain",
             NumericFieldKind::SensorNoiseStddev => "Sensor Noise",
             NumericFieldKind::SensorDropoutProbability => "Sensor Dropout",
+            NumericFieldKind::DayNightCycleSteps => "Day/Night Steps",
+            NumericFieldKind::NightVisibilityMultiplier => "Night Vision",
             NumericFieldKind::EpisodeSteps => "Episode Steps",
             NumericFieldKind::MutationRate => "Mutation Rate",
+            NumericFieldKind::FitnessWeightSurvival => "Fit Survival",
+            NumericFieldKind::FitnessWeightFood => "Fit Food",
+            NumericFieldKind::FitnessWeightPredation => "Fit Predation",
+            NumericFieldKind::FitnessWeightEnergy => "Fit Energy",
+        }
+    }
+
+    fn toggle_field_label(kind: ToggleFieldKind) -> &'static str {
+        match kind {
+            ToggleFieldKind::FoodClusterEnabled => "Food Clusters",
+            ToggleFieldKind::DayNightCycleEnabled => "Day/Night",
+            ToggleFieldKind::EnergyBySpeed => "Energy by Speed",
+            ToggleFieldKind::EnergyByNetworkSize => "Energy by Net",
+            ToggleFieldKind::EnergyByPerceptionSize => "Energy by Vision",
+        }
+    }
+
+    fn toggle_field_value(kind: ToggleFieldKind, config: &crate::config::SimulationConfig) -> bool {
+        match kind {
+            ToggleFieldKind::FoodClusterEnabled => config.food_cluster_enabled,
+            ToggleFieldKind::DayNightCycleEnabled => config.day_night_cycle_enabled,
+            ToggleFieldKind::EnergyBySpeed => config.rule_toggles.energy_by_speed,
+            ToggleFieldKind::EnergyByNetworkSize => config.rule_toggles.energy_by_network_size,
+            ToggleFieldKind::EnergyByPerceptionSize => {
+                config.rule_toggles.energy_by_perception_size
+            }
+        }
+    }
+
+    fn format_toggle_value(value: bool) -> &'static str {
+        if value { "On" } else { "Off" }
+    }
+
+    fn numeric_field_string(
+        kind: NumericFieldKind,
+        evolve_generations: u32,
+        config: &crate::config::SimulationConfig,
+    ) -> String {
+        match kind {
+            NumericFieldKind::EvolveGenerations => evolve_generations.to_string(),
+            NumericFieldKind::EvaluationSwitchAfterGeneration => {
+                config.evaluation_mode_switch_after_generation.to_string()
+            }
+            NumericFieldKind::WorldWidth => format!("{:.1}", config.world_width),
+            NumericFieldKind::WorldHeight => format!("{:.1}", config.world_height),
+            NumericFieldKind::TimestepSeconds => format!("{:.3}", config.timestep_seconds),
+            NumericFieldKind::PopulationSize => config.population_size.to_string(),
+            NumericFieldKind::FoodCount => config.food_count.to_string(),
+            NumericFieldKind::FoodMotionSpeed => format!("{:.2}", config.food_motion_speed),
+            NumericFieldKind::FoodRespawnProbability => {
+                format!("{:.3}", config.food_respawn_probability)
+            }
+            NumericFieldKind::FoodClusterCount => config.food_cluster_count.to_string(),
+            NumericFieldKind::FoodClusterRadius => format!("{:.2}", config.food_cluster_radius),
+            NumericFieldKind::FoodClusterMotionSpeed => {
+                format!("{:.2}", config.food_cluster_motion_speed)
+            }
+            NumericFieldKind::FoodClusterProductivityBias => {
+                format!("{:.3}", config.food_cluster_productivity_bias)
+            }
+            NumericFieldKind::ElitismFraction => format!("{:.3}", config.elitism_fraction),
+            NumericFieldKind::TournamentSize => config.tournament_size.to_string(),
+            NumericFieldKind::MutationRate => format!("{:.3}", config.mutation_rate),
+            NumericFieldKind::InitialAgentEnergy => format!("{:.2}", config.initial_agent_energy),
+            NumericFieldKind::BaseEnergyCostPerSecond => {
+                format!("{:.3}", config.base_energy_cost_per_second)
+            }
+            NumericFieldKind::SpeedEnergyCostFactor => {
+                format!("{:.3}", config.speed_energy_cost_factor)
+            }
+            NumericFieldKind::NetworkEnergyCostFactor => {
+                format!("{:.4}", config.network_energy_cost_factor)
+            }
+            NumericFieldKind::PerceptionEnergyCostFactor => {
+                format!("{:.4}", config.perception_energy_cost_factor)
+            }
+            NumericFieldKind::FoodEnergyGain => format!("{:.2}", config.food_energy_gain),
+            NumericFieldKind::FoodCollisionRadius => format!("{:.2}", config.food_collision_radius),
+            NumericFieldKind::EyeFovAngleRadians => format!("{:.3}", config.eye_fov_angle_radians),
+            NumericFieldKind::DefaultAgentMaxSpeed => {
+                format!("{:.2}", config.default_agent_max_speed)
+            }
+            NumericFieldKind::MaxAcceleration => format!("{:.2}", config.max_acceleration),
+            NumericFieldKind::LinearDrag => format!("{:.2}", config.linear_drag),
+            NumericFieldKind::MaxTurnRateRadians => {
+                format!("{:.3}", config.max_turn_rate_radians)
+            }
+            NumericFieldKind::DefaultPerceptionRadius => {
+                format!("{:.2}", config.default_perception_radius)
+            }
+            NumericFieldKind::DefaultPerceptionChannels => {
+                config.default_perception_channels.to_string()
+            }
+            NumericFieldKind::DefaultNetworkSize => config.default_network_size.to_string(),
+            NumericFieldKind::MlpHiddenSize => config.mlp_hidden_size.to_string(),
+            NumericFieldKind::LtcStateSize => config.ltc_state_size.to_string(),
+            NumericFieldKind::DefaultMetabolicEfficiency => {
+                format!("{:.3}", config.default_metabolic_efficiency)
+            }
+            NumericFieldKind::ControllerLtcProbability => {
+                format!("{:.3}", config.controller_ltc_probability)
+            }
+            NumericFieldKind::PredatorFraction => format!("{:.3}", config.predator_fraction),
+            NumericFieldKind::PredatorCaptureRadius => {
+                format!("{:.2}", config.predator_capture_radius)
+            }
+            NumericFieldKind::PredatorCaptureEnergyGain => {
+                format!("{:.2}", config.predator_capture_energy_gain)
+            }
+            NumericFieldKind::SensorNoiseStddev => format!("{:.3}", config.sensor_noise_stddev),
+            NumericFieldKind::SensorDropoutProbability => {
+                format!("{:.3}", config.sensor_dropout_probability)
+            }
+            NumericFieldKind::DayNightCycleSteps => config.day_night_cycle_steps.to_string(),
+            NumericFieldKind::NightVisibilityMultiplier => {
+                format!("{:.3}", config.night_visibility_multiplier)
+            }
+            NumericFieldKind::EpisodeSteps => config.episode_steps.to_string(),
+            NumericFieldKind::FitnessWeightSurvival => {
+                format!("{:.3}", config.fitness_weight_survival)
+            }
+            NumericFieldKind::FitnessWeightFood => format!("{:.3}", config.fitness_weight_food),
+            NumericFieldKind::FitnessWeightPredation => {
+                format!("{:.3}", config.fitness_weight_predation)
+            }
+            NumericFieldKind::FitnessWeightEnergy => {
+                format!("{:.3}", config.fitness_weight_energy)
+            }
         }
     }
 
@@ -2247,13 +2739,39 @@ mod bevy_viewer {
             kind,
             NumericFieldKind::WorldWidth
                 | NumericFieldKind::WorldHeight
+                | NumericFieldKind::TimestepSeconds
                 | NumericFieldKind::FoodMotionSpeed
                 | NumericFieldKind::FoodRespawnProbability
+                | NumericFieldKind::FoodClusterRadius
+                | NumericFieldKind::FoodClusterMotionSpeed
+                | NumericFieldKind::FoodClusterProductivityBias
+                | NumericFieldKind::ElitismFraction
+                | NumericFieldKind::InitialAgentEnergy
+                | NumericFieldKind::BaseEnergyCostPerSecond
+                | NumericFieldKind::SpeedEnergyCostFactor
+                | NumericFieldKind::NetworkEnergyCostFactor
+                | NumericFieldKind::PerceptionEnergyCostFactor
+                | NumericFieldKind::FoodEnergyGain
+                | NumericFieldKind::FoodCollisionRadius
+                | NumericFieldKind::EyeFovAngleRadians
+                | NumericFieldKind::DefaultAgentMaxSpeed
                 | NumericFieldKind::MaxAcceleration
                 | NumericFieldKind::LinearDrag
+                | NumericFieldKind::MaxTurnRateRadians
+                | NumericFieldKind::DefaultPerceptionRadius
+                | NumericFieldKind::DefaultMetabolicEfficiency
+                | NumericFieldKind::ControllerLtcProbability
+                | NumericFieldKind::PredatorFraction
+                | NumericFieldKind::PredatorCaptureRadius
+                | NumericFieldKind::PredatorCaptureEnergyGain
                 | NumericFieldKind::SensorNoiseStddev
                 | NumericFieldKind::SensorDropoutProbability
+                | NumericFieldKind::NightVisibilityMultiplier
                 | NumericFieldKind::MutationRate
+                | NumericFieldKind::FitnessWeightSurvival
+                | NumericFieldKind::FitnessWeightFood
+                | NumericFieldKind::FitnessWeightPredation
+                | NumericFieldKind::FitnessWeightEnergy
         ) && ch == '.'
             && !current.contains('.')
     }
@@ -2292,6 +2810,16 @@ mod bevy_viewer {
                     runtime.config.world_height = value.clamp(WORLD_SIZE_MIN, WORLD_SIZE_MAX);
                 }
             }
+            NumericFieldKind::TimestepSeconds => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.timestep_seconds = value.clamp(0.001, TIMESTEP_SECONDS_MAX);
+                }
+            }
+            NumericFieldKind::PopulationSize => {
+                if let Ok(value) = raw.parse::<usize>() {
+                    runtime.config.population_size = value.clamp(1, POPULATION_SIZE_MAX);
+                }
+            }
             NumericFieldKind::FoodCount => {
                 if let Ok(value) = raw.parse::<usize>() {
                     runtime.config.food_count = value.clamp(FOOD_COUNT_MIN, FOOD_COUNT_MAX);
@@ -2307,6 +2835,85 @@ mod bevy_viewer {
                     runtime.config.food_respawn_probability = value.clamp(0.0, 1.0);
                 }
             }
+            NumericFieldKind::FoodClusterCount => {
+                if let Ok(value) = raw.parse::<usize>() {
+                    runtime.config.food_cluster_count = value.clamp(1, FOOD_CLUSTER_COUNT_MAX);
+                }
+            }
+            NumericFieldKind::FoodClusterRadius => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.food_cluster_radius = value.clamp(0.01, FOOD_CLUSTER_RADIUS_MAX);
+                }
+            }
+            NumericFieldKind::FoodClusterMotionSpeed => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.food_cluster_motion_speed =
+                        value.clamp(0.0, FOOD_CLUSTER_MOTION_SPEED_MAX);
+                }
+            }
+            NumericFieldKind::FoodClusterProductivityBias => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.food_cluster_productivity_bias = value.clamp(0.0, 1.0);
+                }
+            }
+            NumericFieldKind::ElitismFraction => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.elitism_fraction = value.clamp(0.001, 1.0);
+                }
+            }
+            NumericFieldKind::TournamentSize => {
+                if let Ok(value) = raw.parse::<usize>() {
+                    runtime.config.tournament_size = value.clamp(1, TOURNAMENT_SIZE_MAX);
+                }
+            }
+            NumericFieldKind::InitialAgentEnergy => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.initial_agent_energy =
+                        value.clamp(0.001, INITIAL_AGENT_ENERGY_MAX);
+                }
+            }
+            NumericFieldKind::BaseEnergyCostPerSecond => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.base_energy_cost_per_second = value.clamp(0.0, ENERGY_COST_MAX);
+                }
+            }
+            NumericFieldKind::SpeedEnergyCostFactor => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.speed_energy_cost_factor = value.clamp(0.0, ENERGY_COST_MAX);
+                }
+            }
+            NumericFieldKind::NetworkEnergyCostFactor => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.network_energy_cost_factor = value.clamp(0.0, ENERGY_COST_MAX);
+                }
+            }
+            NumericFieldKind::PerceptionEnergyCostFactor => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.perception_energy_cost_factor =
+                        value.clamp(0.0, ENERGY_COST_MAX);
+                }
+            }
+            NumericFieldKind::FoodEnergyGain => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.food_energy_gain = value.clamp(0.001, FOOD_ENERGY_GAIN_MAX);
+                }
+            }
+            NumericFieldKind::FoodCollisionRadius => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.food_collision_radius =
+                        value.clamp(0.001, FOOD_COLLISION_RADIUS_MAX);
+                }
+            }
+            NumericFieldKind::EyeFovAngleRadians => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.eye_fov_angle_radians = value.clamp(0.001, EYE_FOV_MAX);
+                }
+            }
+            NumericFieldKind::DefaultAgentMaxSpeed => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.default_agent_max_speed = value.clamp(0.001, DEFAULT_SPEED_MAX);
+                }
+            }
             NumericFieldKind::MaxAcceleration => {
                 if let Ok(value) = raw.parse::<f32>() {
                     runtime.config.max_acceleration = value.clamp(0.01, MAX_ACCELERATION_MAX);
@@ -2317,6 +2924,66 @@ mod bevy_viewer {
                     runtime.config.linear_drag = value.clamp(0.0, LINEAR_DRAG_MAX);
                 }
             }
+            NumericFieldKind::MaxTurnRateRadians => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.max_turn_rate_radians = value.clamp(0.001, TURN_RATE_MAX);
+                }
+            }
+            NumericFieldKind::DefaultPerceptionRadius => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.default_perception_radius =
+                        value.clamp(0.001, PERCEPTION_RADIUS_MAX);
+                }
+            }
+            NumericFieldKind::DefaultPerceptionChannels => {
+                if let Ok(value) = raw.parse::<u16>() {
+                    runtime.config.default_perception_channels =
+                        value.clamp(1, crate::config::MAX_PERCEPTION_CHANNELS);
+                }
+            }
+            NumericFieldKind::DefaultNetworkSize => {
+                if let Ok(value) = raw.parse::<usize>() {
+                    runtime.config.default_network_size = value.clamp(1, NETWORK_SIZE_MAX);
+                }
+            }
+            NumericFieldKind::MlpHiddenSize => {
+                if let Ok(value) = raw.parse::<usize>() {
+                    runtime.config.mlp_hidden_size = value.clamp(1, HIDDEN_LAYER_SIZE_MAX);
+                }
+            }
+            NumericFieldKind::LtcStateSize => {
+                if let Ok(value) = raw.parse::<usize>() {
+                    runtime.config.ltc_state_size = value.clamp(1, HIDDEN_LAYER_SIZE_MAX);
+                }
+            }
+            NumericFieldKind::DefaultMetabolicEfficiency => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.default_metabolic_efficiency =
+                        value.clamp(0.001, METABOLIC_EFFICIENCY_MAX);
+                }
+            }
+            NumericFieldKind::ControllerLtcProbability => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.controller_ltc_probability = value.clamp(0.0, 1.0);
+                }
+            }
+            NumericFieldKind::PredatorFraction => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.predator_fraction = value.clamp(0.0, 1.0);
+                }
+            }
+            NumericFieldKind::PredatorCaptureRadius => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.predator_capture_radius =
+                        value.clamp(0.001, FOOD_COLLISION_RADIUS_MAX);
+                }
+            }
+            NumericFieldKind::PredatorCaptureEnergyGain => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.predator_capture_energy_gain =
+                        value.clamp(0.001, FOOD_ENERGY_GAIN_MAX);
+                }
+            }
             NumericFieldKind::SensorNoiseStddev => {
                 if let Ok(value) = raw.parse::<f32>() {
                     runtime.config.sensor_noise_stddev = value.clamp(0.0, SENSOR_NOISE_STDDEV_MAX);
@@ -2325,6 +2992,17 @@ mod bevy_viewer {
             NumericFieldKind::SensorDropoutProbability => {
                 if let Ok(value) = raw.parse::<f32>() {
                     runtime.config.sensor_dropout_probability = value.clamp(0.0, 1.0);
+                }
+            }
+            NumericFieldKind::DayNightCycleSteps => {
+                if let Ok(value) = raw.parse::<u32>() {
+                    runtime.config.day_night_cycle_steps =
+                        value.clamp(1, DAY_NIGHT_CYCLE_STEPS_MAX);
+                }
+            }
+            NumericFieldKind::NightVisibilityMultiplier => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.night_visibility_multiplier = value.clamp(0.0, 1.0);
                 }
             }
             NumericFieldKind::EpisodeSteps => {
@@ -2338,60 +3016,34 @@ mod bevy_viewer {
                     runtime.config.mutation_rate = value.clamp(0.0, 1.0);
                 }
             }
+            NumericFieldKind::FitnessWeightSurvival => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.fitness_weight_survival = value.clamp(0.0, FITNESS_WEIGHT_MAX);
+                }
+            }
+            NumericFieldKind::FitnessWeightFood => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.fitness_weight_food = value.clamp(0.0, FITNESS_WEIGHT_MAX);
+                }
+            }
+            NumericFieldKind::FitnessWeightPredation => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.fitness_weight_predation = value.clamp(0.0, FITNESS_WEIGHT_MAX);
+                }
+            }
+            NumericFieldKind::FitnessWeightEnergy => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.fitness_weight_energy = value.clamp(0.0, FITNESS_WEIGHT_MAX);
+                }
+            }
         }
     }
 
     fn normalize_numeric_field_buffer(runtime: &mut ViewerRuntime, field: NumericFieldKind) {
-        match field {
-            NumericFieldKind::EvolveGenerations => {
-                runtime.field_buffers.evolve_generations = runtime.evolve_generations.to_string();
-            }
-            NumericFieldKind::EvaluationSwitchAfterGeneration => {
-                runtime.field_buffers.evaluation_switch_after_generation = runtime
-                    .config
-                    .evaluation_mode_switch_after_generation
-                    .to_string();
-            }
-            NumericFieldKind::WorldWidth => {
-                runtime.field_buffers.world_width = format!("{:.1}", runtime.config.world_width);
-            }
-            NumericFieldKind::WorldHeight => {
-                runtime.field_buffers.world_height = format!("{:.1}", runtime.config.world_height);
-            }
-            NumericFieldKind::FoodCount => {
-                runtime.field_buffers.food_count = runtime.config.food_count.to_string();
-            }
-            NumericFieldKind::FoodMotionSpeed => {
-                runtime.field_buffers.food_motion_speed =
-                    format!("{:.2}", runtime.config.food_motion_speed);
-            }
-            NumericFieldKind::FoodRespawnProbability => {
-                runtime.field_buffers.food_respawn_probability =
-                    format!("{:.3}", runtime.config.food_respawn_probability);
-            }
-            NumericFieldKind::MaxAcceleration => {
-                runtime.field_buffers.max_acceleration =
-                    format!("{:.2}", runtime.config.max_acceleration);
-            }
-            NumericFieldKind::LinearDrag => {
-                runtime.field_buffers.linear_drag = format!("{:.2}", runtime.config.linear_drag);
-            }
-            NumericFieldKind::SensorNoiseStddev => {
-                runtime.field_buffers.sensor_noise_stddev =
-                    format!("{:.3}", runtime.config.sensor_noise_stddev);
-            }
-            NumericFieldKind::SensorDropoutProbability => {
-                runtime.field_buffers.sensor_dropout_probability =
-                    format!("{:.3}", runtime.config.sensor_dropout_probability);
-            }
-            NumericFieldKind::EpisodeSteps => {
-                runtime.field_buffers.episode_steps = runtime.config.episode_steps.to_string();
-            }
-            NumericFieldKind::MutationRate => {
-                runtime.field_buffers.mutation_rate =
-                    format!("{:.3}", runtime.config.mutation_rate);
-            }
-        }
+        runtime.field_buffers.0.insert(
+            field,
+            numeric_field_string(field, runtime.evolve_generations, &runtime.config),
+        );
     }
 
     fn reset_runtime_to_snapshot(runtime: &mut ViewerRuntime) {
