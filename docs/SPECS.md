@@ -73,6 +73,7 @@ Version 1 focuses on:
   - `mlp_hidden_size`
   - `ltc_state_size`
 - The LTC controller uses gated sensory/recurrent conductances with leak and membrane-capacitance terms, advanced by a fixed-count internal ODE unfold each simulation step.
+- Each LTC unfold computes membrane state as a conductance-weighted average of the previous state, leak pull, sensory synapses, and recurrent synapses, where each synaptic conductance is `weight * sigmoid((source - mu) * sigma)` and each synapse pulls toward its configured reversal potential.
 
 ### Evolution
 - Genetic algorithm strategy:

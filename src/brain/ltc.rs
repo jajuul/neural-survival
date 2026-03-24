@@ -436,47 +436,13 @@ impl LtcController {
         let shape = self.genome.shape;
         let elapsed = dt.max(1e-4);
 
-        let mut input_buffer = vec![0.0; shape.input_size];
-        for (dst, src) in input_buffer.iter_mut().zip(input.values.iter().copied()) {
-            *dst = src;
-        }
-
+        let input_buffer = self.input_buffer(input);
         let sensory_drive = self.compute_sensory_drive(&input_buffer);
-        let cm_scale = self
-            .genome
-            .cm_state
-            .iter()
-            .map(|cm| cm / (elapsed / LTC_ODE_UNFOLDS as f32))
-            .collect::<Vec<_>>();
+        let cm_scale = self.compute_cm_scale(elapsed);
 
         for _ in 0..LTC_ODE_UNFOLDS {
             let previous_state = self.state.clone();
-            let mut next_state = vec![0.0; shape.state_size];
-
-            for state_idx in 0..shape.state_size {
-                let mut numerator = cm_scale[state_idx] * previous_state[state_idx]
-                    + self.genome.gleak_state[state_idx] * self.genome.vleak_state[state_idx]
-                    + sensory_drive.numerator[state_idx];
-                let mut denominator = cm_scale[state_idx]
-                    + self.genome.gleak_state[state_idx]
-                    + sensory_drive.denominator[state_idx];
-
-                let recurrent_row_start = state_idx * shape.state_size;
-                for recurrent_idx in 0..shape.state_size {
-                    let index = recurrent_row_start + recurrent_idx;
-                    let gate = sigmoid(
-                        (previous_state[recurrent_idx] - self.genome.recurrent_mu[index])
-                            * self.genome.recurrent_sigma[index],
-                    );
-                    let conductance = self.genome.recurrent_weight[index] * gate;
-                    numerator += conductance * self.genome.recurrent_erev[index];
-                    denominator += conductance;
-                }
-
-                next_state[state_idx] = numerator / denominator.max(DENOMINATOR_EPSILON);
-            }
-
-            self.state = next_state;
+            self.state = self.unfold_state_once(&previous_state, &sensory_drive, &cm_scale);
         }
 
         let mut outputs = vec![0.0; shape.output_size];
@@ -495,6 +461,14 @@ impl LtcController {
         outputs
     }
 
+    fn compute_cm_scale(&self, elapsed: f32) -> Vec<f32> {
+        self.genome
+            .cm_state
+            .iter()
+            .map(|cm| cm / (elapsed / LTC_ODE_UNFOLDS as f32))
+            .collect()
+    }
+
     fn input_buffer(&self, input: &SensorVector) -> Vec<f32> {
         let shape = self.genome.shape;
         let mut input_buffer = vec![0.0; shape.input_size];
@@ -502,6 +476,36 @@ impl LtcController {
             *dst = src;
         }
         input_buffer
+    }
+
+    fn unfold_state_once(
+        &self,
+        previous_state: &[f32],
+        sensory_drive: &SynapseDrive,
+        cm_scale: &[f32],
+    ) -> Vec<f32> {
+        let shape = self.genome.shape;
+        let mut next_state = vec![0.0; shape.state_size];
+
+        for state_idx in 0..shape.state_size {
+            let recurrent_drive = self.compute_recurrent_drive(previous_state, state_idx);
+
+            // One LTC unfold solves the membrane voltage update as a conductance-weighted average.
+            // The numerator collects "pulls" toward leak and synaptic reversal potentials, while
+            // the denominator collects the total conductance plus the capacitance-scaled inertia.
+            let numerator = cm_scale[state_idx] * previous_state[state_idx]
+                + self.genome.gleak_state[state_idx] * self.genome.vleak_state[state_idx]
+                + sensory_drive.numerator[state_idx]
+                + recurrent_drive.numerator;
+            let denominator = cm_scale[state_idx]
+                + self.genome.gleak_state[state_idx]
+                + sensory_drive.denominator[state_idx]
+                + recurrent_drive.denominator;
+
+            next_state[state_idx] = numerator / denominator.max(DENOMINATOR_EPSILON);
+        }
+
+        next_state
     }
 
     fn readout_outputs(&self) -> Vec<f32> {
@@ -561,6 +565,29 @@ impl LtcController {
         }
     }
 
+    fn compute_recurrent_drive(&self, previous_state: &[f32], state_idx: usize) -> SynapseDriveScalar {
+        let shape = self.genome.shape;
+        let recurrent_row_start = state_idx * shape.state_size;
+        let mut numerator = 0.0;
+        let mut denominator = 0.0;
+
+        for recurrent_idx in 0..shape.state_size {
+            let index = recurrent_row_start + recurrent_idx;
+            let gate = sigmoid(
+                (previous_state[recurrent_idx] - self.genome.recurrent_mu[index])
+                    * self.genome.recurrent_sigma[index],
+            );
+            let conductance = self.genome.recurrent_weight[index] * gate;
+            numerator += conductance * self.genome.recurrent_erev[index];
+            denominator += conductance;
+        }
+
+        SynapseDriveScalar {
+            numerator,
+            denominator,
+        }
+    }
+
     fn step_output_from_signals(outputs: &[f32]) -> ControllerStepOutput {
         let steering_raw = outputs.first().copied().unwrap_or(0.0).clamp(-1.0, 1.0);
         let throttle_raw = outputs.get(1).copied().unwrap_or(0.0).clamp(-1.0, 1.0);
@@ -582,6 +609,12 @@ impl LtcController {
 struct SynapseDrive {
     numerator: Vec<f32>,
     denominator: Vec<f32>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SynapseDriveScalar {
+    numerator: f32,
+    denominator: f32,
 }
 
 impl NeuralController for LtcController {
@@ -661,15 +694,21 @@ mod tests {
 
     use super::{LtcController, LtcControllerFactory, LtcGenome, LtcGenomeError, LtcShape};
 
+    fn single_state_genome(parameters: [f32; 15]) -> LtcGenome {
+        LtcGenome::from_flat_parameters(
+            LtcShape {
+                input_size: 1,
+                state_size: 1,
+                output_size: 2,
+            },
+            &parameters,
+        )
+        .expect("single-state parameter vector should match LTC shape")
+    }
+
     #[test]
     fn deterministic_state_evolution_matches_known_sequence() {
-        let shape = LtcShape {
-            input_size: 1,
-            state_size: 1,
-            output_size: 2,
-        };
-
-        let params = [
+        let mut controller = LtcController::new(single_state_genome([
             1.0,   // sensory_weight
             0.0,   // sensory_mu
             1.0,   // sensory_sigma
@@ -683,12 +722,8 @@ mod tests {
             1.0,   // gleak
             1.0, -1.0, // state->output
             0.0, 0.0, // output bias
-        ];
-
-        let genome = LtcGenome::from_flat_parameters(shape, &params)
-            .expect("known LTC parameter vector must be valid");
-        let mut controller =
-            LtcController::new(genome).expect("known genome must construct controller");
+        ]))
+        .expect("known genome must construct controller");
 
         let action_1 = controller.step(&SensorVector::from_slice(&[0.0]), 1.0);
         let action_2 = controller.step(&SensorVector::from_slice(&[0.0]), 1.0);
@@ -790,19 +825,10 @@ mod tests {
 
     #[test]
     fn step_with_observability_matches_action_mapping() {
-        let shape = LtcShape {
-            input_size: 1,
-            state_size: 1,
-            output_size: 2,
-        };
-        let genome = LtcGenome::from_flat_parameters(
-            shape,
-            &[
-                1.0, 0.0, 1.0, 1.0, 0.001, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, -1.0, 0.0, 0.0,
-            ],
-        )
-        .expect("parameter vector should match LTC shape");
-        let mut controller = LtcController::new(genome).expect("genome should construct");
+        let mut controller = LtcController::new(single_state_genome([
+            1.0, 0.0, 1.0, 1.0, 0.001, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, -1.0, 0.0, 0.0,
+        ]))
+        .expect("genome should construct");
 
         let output = controller.step_with_observability(&SensorVector::from_slice(&[0.0]), 1.0);
 
@@ -814,19 +840,10 @@ mod tests {
 
     #[test]
     fn step_with_diagnostics_exposes_state_snapshot() {
-        let shape = LtcShape {
-            input_size: 1,
-            state_size: 1,
-            output_size: 2,
-        };
-        let genome = LtcGenome::from_flat_parameters(
-            shape,
-            &[
-                1.0, 0.0, 1.0, 1.0, 0.001, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, -1.0, 0.0, 0.0,
-            ],
-        )
-        .expect("parameter vector should match LTC shape");
-        let mut controller = LtcController::new(genome).expect("genome should construct");
+        let mut controller = LtcController::new(single_state_genome([
+            1.0, 0.0, 1.0, 1.0, 0.001, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, -1.0, 0.0, 0.0,
+        ]))
+        .expect("genome should construct");
 
         let diagnostics = controller.step_with_diagnostics(&SensorVector::from_slice(&[0.0]), 1.0);
 
@@ -840,5 +857,54 @@ mod tests {
         assert_eq!(network.sensory_weights.len(), 1);
         assert_eq!(network.recurrent_weights.len(), 1);
         assert_eq!(network.readout_weights.len(), 2);
+    }
+
+    #[test]
+    fn zero_input_converges_toward_leak_equilibrium() {
+        let mut controller = LtcController::new(single_state_genome([
+            0.001, 1.5, 10.0, 0.0, 0.001, 1.5, 10.0, 0.0, 0.25, 1.0, 1.5, 1.0, 0.0, 0.0, 0.0,
+        ]))
+        .expect("genome should construct");
+
+        for _ in 0..20 {
+            controller.step(&SensorVector::from_slice(&[0.0]), 1.0);
+        }
+
+        assert!((controller.state[0] - 0.25).abs() < 0.02);
+    }
+
+    #[test]
+    fn reversal_potential_sign_controls_state_direction() {
+        let positive = single_state_genome([
+            3.0, 0.0, 10.0, 1.0, 0.001, 1.5, 10.0, 0.0, 0.0, 1.0, 0.001, 1.0, 0.0, 0.0, 0.0,
+        ]);
+        let negative = single_state_genome([
+            3.0, 0.0, 10.0, -1.0, 0.001, 1.5, 10.0, 0.0, 0.0, 1.0, 0.001, 1.0, 0.0, 0.0, 0.0,
+        ]);
+
+        let mut positive_controller = LtcController::new(positive).expect("genome should construct");
+        let mut negative_controller = LtcController::new(negative).expect("genome should construct");
+
+        positive_controller.step(&SensorVector::from_slice(&[1.0]), 1.0);
+        negative_controller.step(&SensorVector::from_slice(&[1.0]), 1.0);
+
+        assert!(positive_controller.state[0] > 0.0);
+        assert!(negative_controller.state[0] < 0.0);
+    }
+
+    #[test]
+    fn split_timestep_tracks_single_step_closely() {
+        let genome = single_state_genome([
+            1.2, 0.1, 6.0, 1.0, 0.6, -0.1, 5.0, -0.5, 0.05, 0.8, 0.7, 1.0, 0.0, 0.0, 0.0,
+        ]);
+        let mut one_step = LtcController::new(genome.clone()).expect("genome should construct");
+        let mut two_half_steps = LtcController::new(genome).expect("genome should construct");
+        let input = SensorVector::from_slice(&[0.35]);
+
+        one_step.step(&input, 0.5);
+        two_half_steps.step(&input, 0.25);
+        two_half_steps.step(&input, 0.25);
+
+        assert!((one_step.state[0] - two_half_steps.state[0]).abs() < 0.03);
     }
 }

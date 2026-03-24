@@ -15,8 +15,8 @@ The change is successful when three things are true: the LTC state update matche
 - [x] (2026-03-24 12:41Z) Read `.agent/PLANS.md`, `docs/SPECS.md`, `docs/TECH_SPEC.md`, `src/brain/ltc.rs`, `src/genetics/operators.rs`, and `src/io/snapshot.rs`.
 - [x] (2026-03-24 12:41Z) Verified the current branch already contains a conductance-based LTC structure, legacy serde aliases/defaults, diagnostics hooks, and passing LTC-focused unit tests via `cargo test brain::ltc -- --nocapture`.
 - [x] (2026-03-24 12:41Z) Authored this ExecPlan for finishing and hardening the LTC implementation as the canonical controller.
-- [ ] Lock the exact LTC equation and document it in code comments and both specs.
-- [ ] Refactor the LTC integrator into explicit, testable substeps and add invariance/stability tests.
+- [x] (2026-03-24 12:49Z) Documented the canonical conductance-based LTC membrane update in `src/brain/ltc.rs`, `docs/SPECS.md`, and `docs/TECH_SPEC.md`.
+- [x] (2026-03-24 12:49Z) Refactored LTC stepping into explicit capacitance-scaling, recurrent-drive, and single-unfold helpers and added equilibrium, reversal-sign, and split-timestep tests; verified with `cargo test brain::ltc`, `cargo test genetics::operators`, and full `cargo test`.
 - [ ] Audit genetics, serialization, diagnostics, and GUI inspection so every LTC-facing surface reflects the real parameterization.
 - [ ] Run full regression tests and one artifact-producing headless run with LTC-enabled populations.
 
@@ -30,6 +30,9 @@ The change is successful when three things are true: the LTC state update matche
 
 - Observation: current LTC tests prove determinism and serde compatibility, but they do not yet prove equation fidelity across numerical refinements.
   Evidence: existing tests cover known-sequence stepping, clamp ranges, factory wiring, diagnostics exposure, and legacy deserialization, but not timestep refinement or equilibrium behavior.
+
+- Observation: the existing conductance update was already mathematically close to the target equation; the immediate value came from decomposing it into named helpers and proving its behavior with finer-grained tests.
+  Evidence: after the helper refactor, the original golden tests still passed unchanged and the new equilibrium/reversal/refinement tests passed without changing external LTC interfaces.
 
 ## Decision Log
 
@@ -51,7 +54,7 @@ The change is successful when three things are true: the LTC state update matche
 
 ## Outcomes & Retrospective
 
-No implementation changes have been made yet. The key result of this planning pass is that the work is smaller than a full rewrite: the conductance-style genome and update path already exist, so the remaining work is to lock the equation, harden tests, complete compatibility guarantees, and align every surrounding surface with the real LTC model.
+The first implementation slice is complete. The LTC update rule is now explicit in code and specs, and the test suite now covers equilibrium, reversal-potential sign, and split-timestep consistency in addition to the earlier determinism and serde checks. The remaining work is concentrated in semantic mutation, richer diagnostics, and artifact-level validation rather than core controller structure.
 
 ## Context and Orientation
 
@@ -172,3 +175,4 @@ No new external crate is required for this work unless a deterministic numeric h
 ## Revision Note
 
 2026-03-24: Created this ExecPlan after reviewing the current conductance-based LTC branch. The plan is intentionally framed as a completion and hardening effort, not a full rewrite, because the repository already contains the core conductance-style genome and state-update path.
+2026-03-24: Updated the ExecPlan after the first implementation slice to record the completed equation-documentation refactor and the new equilibrium, reversal-sign, and split-timestep verification coverage.
