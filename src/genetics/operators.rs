@@ -205,16 +205,32 @@ fn mutate_brain(brain: &mut BrainGenome, rng: &mut StdRng, mutation_rate: f32) {
                 .expect("MLP mutation must preserve vector length");
         }
         BrainGenome::Ltc(genome) => {
-            let shape = genome.shape;
-            let mut params = genome.to_flat_parameters();
-            for value in &mut params {
-                if rng.gen_bool(rate) {
-                    *value += rng.gen_range(-0.25..=0.25);
-                }
-            }
-            *genome = LtcGenome::from_flat_parameters(shape, &params)
-                .expect("LTC mutation must preserve vector length");
-            genome.clamp_stable_ranges();
+            mutate_ltc_genome(genome, rng, rate);
+        }
+    }
+}
+
+fn mutate_ltc_genome(genome: &mut LtcGenome, rng: &mut StdRng, rate: f64) {
+    mutate_values(&mut genome.sensory_weight, rng, rate, 0.12);
+    mutate_values(&mut genome.sensory_mu, rng, rate, 0.2);
+    mutate_values(&mut genome.sensory_sigma, rng, rate, 0.8);
+    mutate_values(&mut genome.sensory_erev, rng, rate, 0.18);
+    mutate_values(&mut genome.recurrent_weight, rng, rate, 0.12);
+    mutate_values(&mut genome.recurrent_mu, rng, rate, 0.2);
+    mutate_values(&mut genome.recurrent_sigma, rng, rate, 0.8);
+    mutate_values(&mut genome.recurrent_erev, rng, rate, 0.18);
+    mutate_values(&mut genome.vleak_state, rng, rate, 0.12);
+    mutate_values(&mut genome.cm_state, rng, rate, 0.1);
+    mutate_values(&mut genome.gleak_state, rng, rate, 0.1);
+    mutate_values(&mut genome.weights_state_output, rng, rate, 0.25);
+    mutate_values(&mut genome.bias_output, rng, rate, 0.2);
+    genome.clamp_stable_ranges();
+}
+
+fn mutate_values(values: &mut [f32], rng: &mut StdRng, rate: f64, amplitude: f32) {
+    for value in values {
+        if rng.gen_bool(rate) {
+            *value += rng.gen_range(-amplitude..=amplitude);
         }
     }
 }
@@ -223,7 +239,7 @@ fn mutate_brain(brain: &mut BrainGenome, rng: &mut StdRng, mutation_rate: f32) {
 mod tests {
     use rand::{SeedableRng, rngs::StdRng};
 
-    use crate::brain::{BrainGenome, ControllerKind, MlpGenome, MlpShape};
+    use crate::brain::{BrainGenome, ControllerKind, LtcGenome, LtcShape, MlpGenome, MlpShape};
     use crate::config::SimulationConfig;
     use crate::sim::AgentRole;
 
@@ -253,6 +269,18 @@ mod tests {
             )
             .expect("test MLP shape should be valid"),
         )
+    }
+
+    fn test_ltc_genome() -> BrainGenome {
+        let mut rng = StdRng::seed_from_u64(17);
+        BrainGenome::Ltc(LtcGenome::random(
+            LtcShape {
+                input_size: 4,
+                state_size: 3,
+                output_size: 2,
+            },
+            &mut rng,
+        ))
     }
 
     #[test]
@@ -292,6 +320,39 @@ mod tests {
                 genome.traits.metabolic_efficiency >= METABOLIC_EFFICIENCY_BOUNDS.0
                     && genome.traits.metabolic_efficiency <= METABOLIC_EFFICIENCY_BOUNDS.1
             );
+        }
+    }
+
+    #[test]
+    fn mutation_keeps_ltc_parameters_within_semantic_ranges() {
+        let config = SimulationConfig {
+            mutation_rate: 1.0,
+            ..SimulationConfig::default()
+        };
+        let mut rng = StdRng::seed_from_u64(101);
+
+        let mut genome = AgentGenome {
+            controller_kind: ControllerKind::Ltc,
+            brain: test_ltc_genome(),
+            traits: default_traits(&config),
+        };
+
+        for _ in 0..64 {
+            mutate(&mut genome, &mut rng, &config);
+
+            let BrainGenome::Ltc(ltc) = &genome.brain else {
+                panic!("expected LTC genome after mutation");
+            };
+
+            assert!(ltc.sensory_weight.iter().all(|value| *value >= 0.001));
+            assert!(ltc.recurrent_weight.iter().all(|value| *value >= 0.001));
+            assert!(ltc.sensory_sigma.iter().all(|value| *value >= 0.1));
+            assert!(ltc.recurrent_sigma.iter().all(|value| *value >= 0.1));
+            assert!(ltc.sensory_erev.iter().all(|value| (-1.0..=1.0).contains(value)));
+            assert!(ltc.recurrent_erev.iter().all(|value| (-1.0..=1.0).contains(value)));
+            assert!(ltc.vleak_state.iter().all(|value| (-1.0..=1.0).contains(value)));
+            assert!(ltc.cm_state.iter().all(|value| *value >= 0.05));
+            assert!(ltc.gleak_state.iter().all(|value| *value >= 0.001));
         }
     }
 

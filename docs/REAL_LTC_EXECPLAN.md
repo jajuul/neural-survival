@@ -17,7 +17,8 @@ The change is successful when three things are true: the LTC state update matche
 - [x] (2026-03-24 12:41Z) Authored this ExecPlan for finishing and hardening the LTC implementation as the canonical controller.
 - [x] (2026-03-24 12:49Z) Documented the canonical conductance-based LTC membrane update in `src/brain/ltc.rs`, `docs/SPECS.md`, and `docs/TECH_SPEC.md`.
 - [x] (2026-03-24 12:49Z) Refactored LTC stepping into explicit capacitance-scaling, recurrent-drive, and single-unfold helpers and added equilibrium, reversal-sign, and split-timestep tests; verified with `cargo test brain::ltc`, `cargo test genetics::operators`, and full `cargo test`.
-- [ ] Audit genetics, serialization, diagnostics, and GUI inspection so every LTC-facing surface reflects the real parameterization.
+- [x] (2026-03-24 12:51Z) Replaced flat LTC scalar mutation with field-aware semantic mutation groups and added repeated-mutation range tests to keep conductances, gate slopes, reversal potentials, leak, and capacitance in valid operating ranges; verified with focused and full test suites.
+- [ ] Audit remaining serialization, diagnostics, and GUI inspection surfaces so every LTC-facing view reflects the real parameterization.
 - [ ] Run full regression tests and one artifact-producing headless run with LTC-enabled populations.
 
 ## Surprises & Discoveries
@@ -33,6 +34,9 @@ The change is successful when three things are true: the LTC state update matche
 
 - Observation: the existing conductance update was already mathematically close to the target equation; the immediate value came from decomposing it into named helpers and proving its behavior with finer-grained tests.
   Evidence: after the helper refactor, the original golden tests still passed unchanged and the new equilibrium/reversal/refinement tests passed without changing external LTC interfaces.
+
+- Observation: flattening LTC parameters is still useful for crossover, but using the same mutation delta for every field was too coarse for a conductance-based model.
+  Evidence: the mutation code became much clearer when grouped by parameter role, and the new repeated-mutation test now asserts semantic ranges for weights, sigmas, reversal potentials, leak voltage, capacitance, and leak conductance.
 
 ## Decision Log
 
@@ -54,7 +58,7 @@ The change is successful when three things are true: the LTC state update matche
 
 ## Outcomes & Retrospective
 
-The first implementation slice is complete. The LTC update rule is now explicit in code and specs, and the test suite now covers equilibrium, reversal-potential sign, and split-timestep consistency in addition to the earlier determinism and serde checks. The remaining work is concentrated in semantic mutation, richer diagnostics, and artifact-level validation rather than core controller structure.
+Two implementation slices are complete. The LTC update rule is now explicit in code and specs, the test suite now covers equilibrium, reversal-potential sign, and split-timestep consistency, and LTC mutation now preserves semantic parameter group ranges instead of treating the genome as an undifferentiated vector. The remaining work is concentrated in richer diagnostics, GUI/network inspection fidelity, and artifact-level validation.
 
 ## Context and Orientation
 
@@ -176,3 +180,4 @@ No new external crate is required for this work unless a deterministic numeric h
 
 2026-03-24: Created this ExecPlan after reviewing the current conductance-based LTC branch. The plan is intentionally framed as a completion and hardening effort, not a full rewrite, because the repository already contains the core conductance-style genome and state-update path.
 2026-03-24: Updated the ExecPlan after the first implementation slice to record the completed equation-documentation refactor and the new equilibrium, reversal-sign, and split-timestep verification coverage.
+2026-03-24: Updated the ExecPlan after the second implementation slice to record field-aware LTC mutation and the new repeated-mutation semantic range tests.
