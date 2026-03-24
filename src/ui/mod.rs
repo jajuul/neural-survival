@@ -12,6 +12,7 @@ mod bevy_viewer {
     use bevy::prelude::{Mesh2d, MeshMaterial2d};
     use bevy::window::PrimaryWindow;
     use std::collections::BTreeMap;
+    use std::path::PathBuf;
 
     use crate::brain::{
         ControllerDiagnostics, ControllerFactory, ControllerKind, ControllerNetworkSnapshot,
@@ -22,7 +23,7 @@ mod bevy_viewer {
         GenerationMetrics, continue_generations_from_population, world_state_for_population,
     };
     use crate::genetics::{AgentGenome, default_mixed_factory};
-    use crate::io::snapshot::SnapshotFile;
+    use crate::io::snapshot::{SnapshotFile, write_viewer_snapshot};
     use crate::sim::{
         EnergyBreakdown, FoodState, SensorObservation, Vec2, WorldState,
         cluster_density_radius_scale, cluster_productivity, current_day_night_state,
@@ -122,10 +123,16 @@ mod bevy_viewer {
     struct StepButton;
 
     #[derive(Component)]
+    struct SaveSnapshotButton;
+
+    #[derive(Component)]
     struct EvolveRunButton;
 
     #[derive(Component)]
     struct EvolveStatusText;
+
+    #[derive(Component)]
+    struct SaveSnapshotStatusText;
 
     #[derive(Component)]
     struct EvaluationModeButton;
@@ -403,6 +410,7 @@ mod bevy_viewer {
         selected_agent_index: Option<usize>,
         selected_agent_snapshot: Option<SelectedAgentSnapshot>,
         evolution_job: Option<EvolutionJob>,
+        snapshot_save_status: String,
     }
 
     #[derive(Clone, Debug)]
@@ -441,6 +449,7 @@ mod bevy_viewer {
                 selected_agent_index: None,
                 selected_agent_snapshot: None,
                 evolution_job: None,
+                snapshot_save_status: "Snapshot save: not saved this session".into(),
             })
             .add_plugins(DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
@@ -469,6 +478,7 @@ mod bevy_viewer {
                     pause_button_interaction,
                     continue_button_interaction,
                     step_button_interaction,
+                    save_snapshot_button_interaction,
                     toggle_field_interaction,
                     evaluation_mode_button_interaction,
                     evaluation_mode_after_switch_button_interaction,
@@ -709,6 +719,26 @@ mod bevy_viewer {
                                 TextColor(Color::srgb(0.95, 0.95, 0.95)),
                             ));
                         });
+
+                        row.spawn((
+                            Button,
+                            Node {
+                                width: Val::Px(62.0),
+                                height: Val::Px(36.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.54, 0.38, 0.18)),
+                            SaveSnapshotButton,
+                        ))
+                        .with_children(|button| {
+                            button.spawn((
+                                Text::new("Save"),
+                                TextFont::from_font_size(14.0),
+                                TextColor(Color::srgb(0.95, 0.95, 0.95)),
+                            ));
+                        });
                     });
 
                 parent.spawn((
@@ -770,24 +800,32 @@ mod bevy_viewer {
                     });
 
                 parent
-                    .spawn((
-                        Button,
-                        Node {
-                            width: Val::Px(180.0),
-                            height: Val::Px(36.0),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgb(0.35, 0.45, 0.8)),
-                        EvolveRunButton,
-                    ))
-                    .with_children(|button| {
-                        button.spawn((
-                            Text::new("Evolve"),
-                            TextFont::from_font_size(16.0),
-                            TextColor(Color::srgb(0.95, 0.95, 0.95)),
-                        ));
+                    .spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(8.0),
+                        align_items: AlignItems::Center,
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        row.spawn((
+                            Button,
+                            Node {
+                                width: Val::Px(180.0),
+                                height: Val::Px(36.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.35, 0.45, 0.8)),
+                            EvolveRunButton,
+                        ))
+                        .with_children(|button| {
+                            button.spawn((
+                                Text::new("Evolve"),
+                                TextFont::from_font_size(16.0),
+                                TextColor(Color::srgb(0.95, 0.95, 0.95)),
+                            ));
+                        });
                     });
 
                 parent.spawn((
@@ -795,6 +833,16 @@ mod bevy_viewer {
                     TextFont::from_font_size(14.0),
                     TextColor(Color::srgb(0.86, 0.86, 0.86)),
                     EvolveStatusText,
+                ));
+                parent.spawn((
+                    Text::new("Snapshot save: not saved this session"),
+                    TextFont::from_font_size(13.0),
+                    TextColor(Color::srgb(0.78, 0.84, 0.88)),
+                    Node {
+                        width: Val::Px(CONTROL_COLUMN_WIDTH * 3.0 + CONTROL_PANEL_GAP * 2.0),
+                        ..default()
+                    },
+                    SaveSnapshotStatusText,
                 ));
             });
 
@@ -1125,6 +1173,31 @@ mod bevy_viewer {
         }
     }
 
+    fn save_snapshot_button_interaction(
+        interactions: Query<
+            &Interaction,
+            (Changed<Interaction>, With<Button>, With<SaveSnapshotButton>),
+        >,
+        mut runtime: ResMut<ViewerRuntime>,
+    ) {
+        if runtime.evolution_job.is_some() {
+            return;
+        }
+
+        let save_pressed = interactions
+            .iter()
+            .any(|interaction| matches!(*interaction, Interaction::Pressed));
+        if !save_pressed {
+            return;
+        }
+
+        runtime.active_input = None;
+        runtime.snapshot_save_status = match save_runtime_snapshot(&runtime) {
+            Ok(path) => format!("Snapshot save: {}", path.display()),
+            Err(error) => format!("Snapshot save failed: {error}"),
+        };
+    }
+
     fn toggle_field_interaction(
         interactions: Query<
             (&Interaction, &ToggleField),
@@ -1413,17 +1486,20 @@ mod bevy_viewer {
                 Option<&PauseButton>,
                 Option<&StepButton>,
                 Option<&ContinueButton>,
+                Option<&SaveSnapshotButton>,
             ),
             With<Button>,
         >,
     ) {
-        for (interaction, mut color, pause, step, cont) in &mut button_query {
+        for (interaction, mut color, pause, step, cont, save) in &mut button_query {
             let base = if pause.is_some() {
                 Color::srgb(0.70, 0.30, 0.25)
             } else if step.is_some() {
                 Color::srgb(0.22, 0.65, 0.35)
             } else if cont.is_some() {
                 Color::srgb(0.20, 0.45, 0.78)
+            } else if save.is_some() {
+                Color::srgb(0.54, 0.38, 0.18)
             } else {
                 continue;
             };
@@ -1453,6 +1529,7 @@ mod bevy_viewer {
                 Option<&EvolveRunButton>,
                 Option<&EvaluationModeButton>,
                 Option<&EvaluationModeAfterSwitchButton>,
+                Option<&SaveSnapshotButton>,
             ),
             With<Button>,
         >,
@@ -1463,6 +1540,7 @@ mod bevy_viewer {
             Option<&EvolveStatusText>,
             Option<&EvaluationModeButtonLabel>,
             Option<&EvaluationModeAfterSwitchButtonLabel>,
+            Option<&SaveSnapshotStatusText>,
         )>,
     ) {
         let is_evolving = runtime.evolution_job.is_some();
@@ -1474,6 +1552,7 @@ mod bevy_viewer {
             maybe_evolve,
             maybe_eval_mode,
             maybe_eval_mode_after,
+            maybe_save,
         ) in &mut button_query
         {
             if let Some(field) = maybe_field {
@@ -1497,6 +1576,8 @@ mod bevy_viewer {
                     *interaction,
                     runtime.config.evaluation_mode_after_switch,
                 );
+            } else if maybe_save.is_some() {
+                *color = snapshot_save_button_color(*interaction);
             }
         }
 
@@ -1520,6 +1601,7 @@ mod bevy_viewer {
             status_marker,
             eval_mode_marker,
             eval_mode_after_marker,
+            save_status_marker,
         ) in &mut text_query
         {
             if let Some(marker) = value_marker {
@@ -1534,6 +1616,8 @@ mod bevy_viewer {
             } else if eval_mode_after_marker.is_some() {
                 **text =
                     format_evaluation_mode(runtime.config.evaluation_mode_after_switch).to_string();
+            } else if save_status_marker.is_some() {
+                **text = runtime.snapshot_save_status.clone();
             }
         }
     }
@@ -1615,6 +1699,14 @@ mod bevy_viewer {
             Interaction::Pressed => BackgroundColor(Color::srgb(0.2, 0.65, 0.45)),
             Interaction::Hovered => BackgroundColor(Color::srgb(0.4, 0.5, 0.85)),
             Interaction::None => BackgroundColor(Color::srgb(0.35, 0.45, 0.8)),
+        }
+    }
+
+    fn snapshot_save_button_color(interaction: Interaction) -> BackgroundColor {
+        match interaction {
+            Interaction::Pressed => BackgroundColor(Color::srgb(0.62, 0.46, 0.22)),
+            Interaction::Hovered => BackgroundColor(Color::srgb(0.66, 0.52, 0.30)),
+            Interaction::None => BackgroundColor(Color::srgb(0.54, 0.38, 0.18)),
         }
     }
 
@@ -3074,6 +3166,28 @@ mod bevy_viewer {
         refresh_selected_agent_preview(runtime);
         runtime.evolution_job = None;
         runtime.rebuild_visuals = true;
+    }
+
+    fn current_runtime_snapshot(runtime: &ViewerRuntime) -> SnapshotFile {
+        SnapshotFile {
+            generation: runtime.generation,
+            seed: runtime.initial_snapshot.seed,
+            resolved_config: runtime.config.clone(),
+            metrics_history: runtime.metrics_history.clone(),
+            population: runtime.population.clone(),
+            world_state: runtime.world.clone(),
+        }
+    }
+
+    fn save_runtime_snapshot(runtime: &ViewerRuntime) -> anyhow::Result<PathBuf> {
+        let save_dir = std::env::current_dir()?.join("viewer_snapshots");
+        let snapshot = current_runtime_snapshot(runtime);
+        write_viewer_snapshot(
+            &save_dir,
+            runtime.generation,
+            runtime.world.step_count,
+            &snapshot,
+        )
     }
 
     fn sampled_metrics(

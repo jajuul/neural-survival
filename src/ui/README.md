@@ -23,6 +23,7 @@ This module provides viewer entrypoints for loading and inspecting simulation sn
   - current day/night light state in the window title and selected-agent inspector (`day`/`night`, phase, visibility multiplier)
   - faint moving food-cluster region markers plus cluster-colored food sprites so resource regions are visible in the world
   - an in-viewer fitness-history plot showing best and mean fitness over generations from snapshot history and GUI-triggered continuation runs
+  - a `Save` button that writes the current viewer state to `viewer_snapshots/` in the working directory and shows the exact saved path in the control panel
   - click-to-select agent inspection with a live eye-bin chart for food, prey, and predator sensing, local core sensor values (`energy`, `speed`), controller outputs, and last-step energy-cost breakdown
   - a selected-agent network inspector that renders controller topology and live activations:
     - MLP: input, hidden, and output layers
