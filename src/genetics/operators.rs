@@ -348,9 +348,21 @@ mod tests {
             assert!(ltc.recurrent_weight.iter().all(|value| *value >= 0.001));
             assert!(ltc.sensory_sigma.iter().all(|value| *value >= 0.1));
             assert!(ltc.recurrent_sigma.iter().all(|value| *value >= 0.1));
-            assert!(ltc.sensory_erev.iter().all(|value| (-1.0..=1.0).contains(value)));
-            assert!(ltc.recurrent_erev.iter().all(|value| (-1.0..=1.0).contains(value)));
-            assert!(ltc.vleak_state.iter().all(|value| (-1.0..=1.0).contains(value)));
+            assert!(
+                ltc.sensory_erev
+                    .iter()
+                    .all(|value| (-1.0..=1.0).contains(value))
+            );
+            assert!(
+                ltc.recurrent_erev
+                    .iter()
+                    .all(|value| (-1.0..=1.0).contains(value))
+            );
+            assert!(
+                ltc.vleak_state
+                    .iter()
+                    .all(|value| (-1.0..=1.0).contains(value))
+            );
             assert!(ltc.cm_state.iter().all(|value| *value >= 0.05));
             assert!(ltc.gleak_state.iter().all(|value| *value >= 0.001));
         }

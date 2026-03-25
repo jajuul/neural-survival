@@ -565,7 +565,11 @@ impl LtcController {
         }
     }
 
-    fn compute_recurrent_drive(&self, previous_state: &[f32], state_idx: usize) -> SynapseDriveScalar {
+    fn compute_recurrent_drive(
+        &self,
+        previous_state: &[f32],
+        state_idx: usize,
+    ) -> SynapseDriveScalar {
         let shape = self.genome.shape;
         let recurrent_row_start = state_idx * shape.state_size;
         let mut numerator = 0.0;
@@ -882,8 +886,10 @@ mod tests {
             3.0, 0.0, 10.0, -1.0, 0.001, 1.5, 10.0, 0.0, 0.0, 1.0, 0.001, 1.0, 0.0, 0.0, 0.0,
         ]);
 
-        let mut positive_controller = LtcController::new(positive).expect("genome should construct");
-        let mut negative_controller = LtcController::new(negative).expect("genome should construct");
+        let mut positive_controller =
+            LtcController::new(positive).expect("genome should construct");
+        let mut negative_controller =
+            LtcController::new(negative).expect("genome should construct");
 
         positive_controller.step(&SensorVector::from_slice(&[1.0]), 1.0);
         negative_controller.step(&SensorVector::from_slice(&[1.0]), 1.0);
