@@ -314,8 +314,11 @@ pub fn step_world_with_actions_and_telemetry(
         );
     }
 
-    let spatial = SpatialIndex::build(world);
-    let capture_gains = resolve_predator_captures(world, &spatial, config, &mut outcome);
+    let spatial = (world.agents.len() > 1).then(|| SpatialIndex::build(world));
+    let capture_gains = spatial
+        .as_ref()
+        .map(|spatial| resolve_predator_captures(world, spatial, config, &mut outcome))
+        .unwrap_or_else(|| vec![0.0_f32; world.agents.len()]);
     let mut consumed_food_flags = vec![false; world.food.len()];
     let mut consumed_food_by_agent = vec![None; world.agents.len()];
 
@@ -326,14 +329,25 @@ pub fn step_world_with_actions_and_telemetry(
         }
 
         let food_gain = if world.agents[agent_idx].role == AgentRole::Prey {
-            if let Some(food_idx) = find_collided_food_index(
-                &world.food,
-                &spatial,
-                &consumed_food_flags,
-                world.agents[agent_idx].position,
-                world.width,
-                world.height,
-            ) {
+            let food_idx = if let Some(spatial) = &spatial {
+                find_collided_food_index(
+                    &world.food,
+                    spatial,
+                    &consumed_food_flags,
+                    world.agents[agent_idx].position,
+                    world.width,
+                    world.height,
+                )
+            } else {
+                find_collided_food_index_direct(
+                    &world.food,
+                    &consumed_food_flags,
+                    world.agents[agent_idx].position,
+                    world.width,
+                    world.height,
+                )
+            };
+            if let Some(food_idx) = food_idx {
                 consumed_food_flags[food_idx] = true;
                 let food = world.food[food_idx].clone();
                 consumed_food_by_agent[agent_idx] = Some(food.clone());
@@ -427,6 +441,12 @@ pub fn basic_sensor_vector(
     world: &WorldState,
     config: &SimulationConfig,
 ) -> SensorVector {
+    if world.agents.len() <= 1 {
+        return SensorVector {
+            values: compute_sensor_values_single_agent(agent, world, config),
+        };
+    }
+
     let spatial = SpatialIndex::build(world);
     basic_sensor_vector_with_index(agent, world, &spatial, config)
 }
@@ -495,8 +515,12 @@ pub fn sensor_observation(
     world: &WorldState,
     config: &SimulationConfig,
 ) -> SensorObservation {
-    let spatial = SpatialIndex::build(world);
-    let values = compute_sensor_values(agent, world, &spatial, config);
+    let values = if world.agents.len() <= 1 {
+        compute_sensor_values_single_agent(agent, world, config)
+    } else {
+        let spatial = SpatialIndex::build(world);
+        compute_sensor_values(agent, world, &spatial, config)
+    };
     let food_start = CORE_SENSOR_FEATURES;
     let prey_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
     let predator_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS * 2;
@@ -567,6 +591,28 @@ fn compute_sensor_values(
             day_night.visibility_multiplier,
         );
     }
+    apply_sensor_corruption_in_place(agent.id, world.step_count, &mut values, config);
+    values
+}
+
+fn compute_sensor_values_single_agent(
+    agent: &AgentState,
+    world: &WorldState,
+    config: &SimulationConfig,
+) -> [f32; CONTROLLER_SENSOR_INPUT_SIZE] {
+    let day_night = current_day_night_state(world.step_count, config);
+    let mut values = [0.0; CONTROLLER_SENSOR_INPUT_SIZE];
+    values[0] = (agent.energy / config.initial_agent_energy).clamp(0.0, 2.0);
+    values[1] = (agent.velocity.length() / agent.max_speed.max(0.001)).clamp(0.0, 1.0);
+
+    let food_start = CORE_SENSOR_FEATURES;
+    let prey_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
+    fill_food_eye_cells_direct(
+        agent,
+        world,
+        &mut values[food_start..prey_start],
+        day_night.visibility_multiplier,
+    );
     apply_sensor_corruption_in_place(agent.id, world.step_count, &mut values, config);
     values
 }
@@ -807,6 +853,25 @@ fn fill_food_eye_cells(
             visibility_multiplier,
         );
     });
+}
+
+fn fill_food_eye_cells_direct(
+    agent: &AgentState,
+    world: &WorldState,
+    cells: &mut [f32],
+    visibility_multiplier: f32,
+) {
+    cells.fill(0.0);
+    for food in &world.food {
+        accumulate_eye_target(
+            agent,
+            cells,
+            food.position,
+            world.width,
+            world.height,
+            visibility_multiplier,
+        );
+    }
 }
 
 fn fill_role_eye_cells(
@@ -1130,16 +1195,35 @@ fn find_collided_food_index(
     match_idx
 }
 
+fn find_collided_food_index_direct(
+    food: &[FoodState],
+    consumed_food_flags: &[bool],
+    position: Vec2,
+    width: f32,
+    height: f32,
+) -> Option<usize> {
+    food.iter()
+        .enumerate()
+        .filter(|(food_idx, _)| !consumed_food_flags.get(*food_idx).copied().unwrap_or(false))
+        .filter(|(_, item)| {
+            toroidal_distance(position, item.position, width, height) <= item.radius
+        })
+        .map(|(food_idx, _)| food_idx)
+        .min()
+}
+
 #[cfg(test)]
 mod tests {
     use crate::config::{RuleToggles, SimulationConfig};
 
     use super::{
         ActionVector, AgentRole, AgentState, CORE_SENSOR_FEATURES, FoodClusterState, FoodState,
-        MAX_VISION_CELLS, Vec2, WorldState, apply_cluster_food_layout, basic_sensor_vector,
-        cluster_density_radius_scale, current_day_night_state, energy_breakdown_for_step,
-        fill_population_sensor_vectors, sensor_observation, step_world, step_world_with_actions,
-        step_world_with_actions_and_telemetry, toroidal_distance, wrap_position,
+        MAX_VISION_CELLS, SpatialIndex, Vec2, WorldState, apply_cluster_food_layout,
+        basic_sensor_vector, basic_sensor_vector_with_index, cluster_density_radius_scale,
+        current_day_night_state, energy_breakdown_for_step, fill_population_sensor_vectors,
+        find_collided_food_index, find_collided_food_index_direct, sensor_observation, step_world,
+        step_world_with_actions, step_world_with_actions_and_telemetry, toroidal_distance,
+        wrap_position,
     };
 
     fn test_agent(energy: f32) -> AgentState {
@@ -2034,6 +2118,109 @@ mod tests {
         let observed = sensor_observation(&agent, &world, &config);
 
         assert_eq!(fast, observed.input);
+    }
+
+    #[test]
+    fn single_agent_sensor_fast_path_matches_indexed_path() {
+        let config = deterministic_sensor_config();
+        let mut agent = test_agent(80.0);
+        agent.position = Vec2::new(8.0, 7.0);
+        agent.heading_radians = std::f32::consts::FRAC_PI_4;
+        agent.perception_radius = 18.0;
+        agent.perception_channels = 5;
+        agent.eye_cell_angle_radians = std::f32::consts::FRAC_PI_2 / 5.0;
+        let world = WorldState {
+            width: 40.0,
+            height: 40.0,
+            agents: vec![agent.clone()],
+            food: vec![
+                FoodState {
+                    id: 0,
+                    position: Vec2::new(10.0, 9.0),
+                    radius: 1.0,
+                    energy_value: 1.0,
+                    motion_angle_radians: 0.0,
+                    cluster_id: None,
+                    cluster_angle_radians: 0.0,
+                    cluster_distance_factor: 0.0,
+                },
+                FoodState {
+                    id: 1,
+                    position: Vec2::new(15.0, 16.0),
+                    radius: 1.0,
+                    energy_value: 1.0,
+                    motion_angle_radians: 0.0,
+                    cluster_id: None,
+                    cluster_angle_radians: 0.0,
+                    cluster_distance_factor: 0.0,
+                },
+            ],
+            food_clusters: vec![],
+            world_seed: 0,
+            step_count: 3,
+        };
+
+        let fast = basic_sensor_vector(&agent, &world, &config);
+        let spatial = SpatialIndex::build(&world);
+        let indexed = basic_sensor_vector_with_index(&agent, &world, &spatial, &config);
+
+        assert_eq!(fast, indexed);
+    }
+
+    #[test]
+    fn single_agent_food_collision_fast_path_matches_spatial_lookup() {
+        let food = vec![
+            FoodState {
+                id: 0,
+                position: Vec2::new(25.0, 25.0),
+                radius: 1.0,
+                energy_value: 5.0,
+                motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
+            },
+            FoodState {
+                id: 1,
+                position: Vec2::new(10.0, 10.0),
+                radius: 1.0,
+                energy_value: 5.0,
+                motion_angle_radians: 0.0,
+                cluster_id: None,
+                cluster_angle_radians: 0.0,
+                cluster_distance_factor: 0.0,
+            },
+        ];
+        let world = WorldState {
+            width: 30.0,
+            height: 30.0,
+            agents: vec![test_agent(50.0)],
+            food: food.clone(),
+            food_clusters: vec![],
+            world_seed: 7,
+            step_count: 0,
+        };
+        let consumed_food_flags = vec![false; food.len()];
+        let position = Vec2::new(9.5, 9.7);
+
+        let spatial = SpatialIndex::build(&world);
+        let indexed = find_collided_food_index(
+            &food,
+            &spatial,
+            &consumed_food_flags,
+            position,
+            world.width,
+            world.height,
+        );
+        let direct = find_collided_food_index_direct(
+            &food,
+            &consumed_food_flags,
+            position,
+            world.width,
+            world.height,
+        );
+
+        assert_eq!(direct, indexed);
     }
 
     #[test]
