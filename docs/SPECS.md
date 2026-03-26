@@ -45,7 +45,7 @@ Version 1 focuses on:
 ### Core Simulation
 - World geometry: 2D continuous toroidal (wrap-around edges).
 - Time model: fixed-step simulation.
-- Initial food model: stationary food points spawned uniformly at random and optionally respawned on consumption according to configurable probability.
+- Initial food model: stationary food points spawned uniformly at random, optionally respawned on consumption according to configurable probability, and optionally spawned at a fixed configurable rate over simulated time.
 - Optional food-cluster model:
   - `food_cluster_enabled` switches food placement from uniform particles to moving resource regions
   - `food_cluster_count` controls the number of moving centers
@@ -208,6 +208,7 @@ pub struct RuleToggles {
 - Food entities are points with collision radius and optional drift motion controlled by `food_motion_speed`.
 - When food clusters are enabled, each food item is attached to a moving cluster center and its distance from the center expands/contracts deterministically with cluster productivity over the day/night cycle.
 - Consumed food can respawn immediately at a new random position, controlled by `food_respawn_probability` in `[0, 1]`.
+- Food can also spawn without consumption according to `food_spawn_rate_per_second`, a deterministic fixed-rate schedule expressed in foods per simulated second.
 - Agents have position, heading, velocity, energy, controller state, and trait values.
 - World wraps in both axes.
 

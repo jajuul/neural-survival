@@ -4,7 +4,7 @@
 This module defines simulation configuration data and validation rules.
 
 ## Behavior
-It loads TOML configuration into strongly typed Rust structs, applies spec defaults, and validates key numeric ranges (including eye FOV, perception-channel limits, and configurable controller layer sizes).
+It loads TOML configuration into strongly typed Rust structs, applies spec defaults, and validates key numeric ranges (including food respawn and fixed-rate food spawning, eye FOV, perception-channel limits, and configurable controller layer sizes).
 
 ## Inputs
 - A TOML document from disk or in-memory text.

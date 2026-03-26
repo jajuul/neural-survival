@@ -92,6 +92,13 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if config.food_spawn_rate_per_second < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "food_spawn_rate_per_second",
+            message: "must be >= 0".into(),
+        });
+    }
+
     if config.food_motion_speed < 0.0 {
         return Err(ConfigError::Invalid {
             field: "food_motion_speed",
@@ -408,6 +415,7 @@ mod tests {
         assert_eq!(parsed.population_size, 128);
         assert_eq!(parsed.food_count, 400);
         assert_eq!(parsed.food_respawn_probability, 1.0);
+        assert_eq!(parsed.food_spawn_rate_per_second, 0.0);
         assert_eq!(parsed.food_motion_speed, 1.0);
         assert!(!parsed.food_cluster_enabled);
         assert_eq!(parsed.food_cluster_count, 4);
@@ -459,6 +467,22 @@ mod tests {
             err,
             ConfigError::Invalid {
                 field: "food_motion_speed",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_food_spawn_rate_per_second_is_rejected() {
+        let raw = r#"
+            food_spawn_rate_per_second = -0.1
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("negative fixed food spawn rate must fail");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                field: "food_spawn_rate_per_second",
                 ..
             }
         ));

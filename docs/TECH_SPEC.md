@@ -17,6 +17,7 @@ This document describes how `neural-survival` is expected to work internally. It
 - Food spawns uniformly at random in the initial world state.
 - Food may remain stationary or drift according to `food_motion_speed`.
 - Food may respawn immediately on consumption according to `food_respawn_probability`.
+- Food may also spawn according to `food_spawn_rate_per_second`, a deterministic foods-per-simulated-second schedule.
 
 ### Agents
 - Agents carry position, heading, velocity, energy, controller state, and evolved trait values.
@@ -252,7 +253,7 @@ The GUI must provide:
 - restart from seed and config
 - snapshot load
 - continuation evaluation schedule controls
-- typed continuation controls for generations, world size, food count, food motion speed, food respawn probability, sensor noise, sensor dropout, episode steps, and mutation rate
+- typed continuation controls for generations, world size, food count, food spawn rate, food motion speed, food respawn probability, sensor noise, sensor dropout, episode steps, and mutation rate
 
 ## Data Export
 

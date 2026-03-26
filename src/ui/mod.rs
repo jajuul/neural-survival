@@ -36,6 +36,7 @@ mod bevy_viewer {
     const WORLD_SIZE_MAX: f32 = 5000.0;
     const FOOD_COUNT_MIN: usize = 1;
     const FOOD_COUNT_MAX: usize = 10000;
+    const FOOD_SPAWN_RATE_MAX: f32 = 1000.0;
     const FOOD_MOTION_SPEED_MAX: f32 = 50.0;
     const MAX_ACCELERATION_MAX: f32 = 100.0;
     const LINEAR_DRAG_MAX: f32 = 20.0;
@@ -174,6 +175,7 @@ mod bevy_viewer {
         TimestepSeconds,
         PopulationSize,
         FoodCount,
+        FoodSpawnRatePerSecond,
         FoodMotionSpeed,
         FoodRespawnProbability,
         FoodClusterCount,
@@ -216,7 +218,7 @@ mod bevy_viewer {
         FitnessWeightEnergy,
     }
 
-    const NUMERIC_FIELDS: [NumericFieldKind; 47] = [
+    const NUMERIC_FIELDS: [NumericFieldKind; 48] = [
         NumericFieldKind::EvolveGenerations,
         NumericFieldKind::EvaluationSwitchAfterGeneration,
         NumericFieldKind::WorldWidth,
@@ -224,6 +226,7 @@ mod bevy_viewer {
         NumericFieldKind::TimestepSeconds,
         NumericFieldKind::PopulationSize,
         NumericFieldKind::FoodCount,
+        NumericFieldKind::FoodSpawnRatePerSecond,
         NumericFieldKind::FoodMotionSpeed,
         NumericFieldKind::FoodRespawnProbability,
         NumericFieldKind::FoodClusterCount,
@@ -266,7 +269,7 @@ mod bevy_viewer {
         NumericFieldKind::FitnessWeightEnergy,
     ];
 
-    const CONTROL_COLUMN_1_FIELDS: [NumericFieldKind; 15] = [
+    const CONTROL_COLUMN_1_FIELDS: [NumericFieldKind; 16] = [
         NumericFieldKind::EvolveGenerations,
         NumericFieldKind::EvaluationSwitchAfterGeneration,
         NumericFieldKind::WorldWidth,
@@ -275,6 +278,7 @@ mod bevy_viewer {
         NumericFieldKind::EpisodeSteps,
         NumericFieldKind::PopulationSize,
         NumericFieldKind::FoodCount,
+        NumericFieldKind::FoodSpawnRatePerSecond,
         NumericFieldKind::FoodMotionSpeed,
         NumericFieldKind::FoodRespawnProbability,
         NumericFieldKind::FoodClusterCount,
@@ -2620,6 +2624,7 @@ mod bevy_viewer {
             NumericFieldKind::TimestepSeconds => "Timestep",
             NumericFieldKind::PopulationSize => "Population",
             NumericFieldKind::FoodCount => "Food Count",
+            NumericFieldKind::FoodSpawnRatePerSecond => "Food Spawn/s",
             NumericFieldKind::FoodMotionSpeed => "Food Motion",
             NumericFieldKind::FoodRespawnProbability => "Food Respawn",
             NumericFieldKind::FoodClusterCount => "Cluster Count",
@@ -2704,6 +2709,9 @@ mod bevy_viewer {
             NumericFieldKind::TimestepSeconds => format!("{:.3}", config.timestep_seconds),
             NumericFieldKind::PopulationSize => config.population_size.to_string(),
             NumericFieldKind::FoodCount => config.food_count.to_string(),
+            NumericFieldKind::FoodSpawnRatePerSecond => {
+                format!("{:.3}", config.food_spawn_rate_per_second)
+            }
             NumericFieldKind::FoodMotionSpeed => format!("{:.2}", config.food_motion_speed),
             NumericFieldKind::FoodRespawnProbability => {
                 format!("{:.3}", config.food_respawn_probability)
@@ -2832,6 +2840,7 @@ mod bevy_viewer {
             NumericFieldKind::WorldWidth
                 | NumericFieldKind::WorldHeight
                 | NumericFieldKind::TimestepSeconds
+                | NumericFieldKind::FoodSpawnRatePerSecond
                 | NumericFieldKind::FoodMotionSpeed
                 | NumericFieldKind::FoodRespawnProbability
                 | NumericFieldKind::FoodClusterRadius
@@ -2915,6 +2924,12 @@ mod bevy_viewer {
             NumericFieldKind::FoodCount => {
                 if let Ok(value) = raw.parse::<usize>() {
                     runtime.config.food_count = value.clamp(FOOD_COUNT_MIN, FOOD_COUNT_MAX);
+                }
+            }
+            NumericFieldKind::FoodSpawnRatePerSecond => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.food_spawn_rate_per_second =
+                        value.clamp(0.0, FOOD_SPAWN_RATE_MAX);
                 }
             }
             NumericFieldKind::FoodMotionSpeed => {

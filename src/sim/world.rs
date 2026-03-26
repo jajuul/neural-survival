@@ -399,6 +399,7 @@ pub fn step_world_with_actions_and_telemetry(
             maybe_respawn_food(world, config, agent_idx, &food, &mut next_food_id);
         }
     }
+    spawn_food_at_fixed_rate(world, config, &mut next_food_id);
 
     move_food(world, config, dt);
     move_food_clusters(world, config, dt);
@@ -680,7 +681,52 @@ fn maybe_respawn_food(
         return;
     }
 
-    let cluster_id = assign_food_cluster(world, config, *next_food_id, &mut rng);
+    spawn_food_with_rng(world, config, next_food_id, &mut rng);
+}
+
+fn spawn_food_at_fixed_rate(
+    world: &mut WorldState,
+    config: &SimulationConfig,
+    next_food_id: &mut u32,
+) {
+    let spawn_count = fixed_food_spawn_count_for_step(world, config);
+    if spawn_count == 0 {
+        return;
+    }
+
+    for spawn_index in 0..spawn_count {
+        let mut rng = ChaCha8Rng::seed_from_u64(
+            world.world_seed
+                ^ ((world.step_count + 1).wrapping_mul(0xD6E8_FEB8_6659_FD93))
+                ^ ((spawn_index as u64 + 1).wrapping_mul(0xA24B_AED4_0FBF_4C3D)),
+        );
+        spawn_food_with_rng(world, config, next_food_id, &mut rng);
+    }
+}
+
+fn fixed_food_spawn_count_for_step(world: &WorldState, config: &SimulationConfig) -> u32 {
+    if config.food_spawn_rate_per_second <= 0.0 {
+        return 0;
+    }
+
+    let rate_per_second = config.food_spawn_rate_per_second as f64;
+    let dt = config.timestep_seconds as f64;
+    let completed_before_step = (world.step_count as f64 * dt * rate_per_second).floor() as u64;
+    let completed_after_step =
+        ((world.step_count as f64 + 1.0) * dt * rate_per_second).floor() as u64;
+
+    completed_after_step
+        .saturating_sub(completed_before_step)
+        .min(u32::MAX as u64) as u32
+}
+
+fn spawn_food_with_rng(
+    world: &mut WorldState,
+    config: &SimulationConfig,
+    next_food_id: &mut u32,
+    rng: &mut ChaCha8Rng,
+) {
+    let cluster_id = assign_food_cluster(world, config, *next_food_id, rng);
     let mut food = FoodState {
         id: *next_food_id,
         position: Vec2::new(
@@ -1221,9 +1267,9 @@ mod tests {
         MAX_VISION_CELLS, SpatialIndex, Vec2, WorldState, apply_cluster_food_layout,
         basic_sensor_vector, basic_sensor_vector_with_index, cluster_density_radius_scale,
         current_day_night_state, energy_breakdown_for_step, fill_population_sensor_vectors,
-        find_collided_food_index, find_collided_food_index_direct, sensor_observation, step_world,
-        step_world_with_actions, step_world_with_actions_and_telemetry, toroidal_distance,
-        wrap_position,
+        find_collided_food_index, find_collided_food_index_direct, run_steps, sensor_observation,
+        step_world, step_world_with_actions, step_world_with_actions_and_telemetry,
+        toroidal_distance, wrap_position,
     };
 
     fn test_agent(energy: f32) -> AgentState {
@@ -1600,6 +1646,71 @@ mod tests {
         assert_ne!(world.food[0].id, 7);
         assert!(world.food[0].position.x >= 0.0 && world.food[0].position.x < world.width);
         assert!(world.food[0].position.y >= 0.0 && world.food[0].position.y < world.height);
+    }
+
+    #[test]
+    fn fixed_rate_food_spawning_adds_food_without_consumption() {
+        let config = SimulationConfig {
+            timestep_seconds: 0.25,
+            food_spawn_rate_per_second: 2.0,
+            food_respawn_probability: 0.0,
+            food_motion_speed: 0.0,
+            base_energy_cost_per_second: 0.0,
+            speed_energy_cost_factor: 0.0,
+            network_energy_cost_factor: 0.0,
+            perception_energy_cost_factor: 0.0,
+            ..SimulationConfig::default()
+        };
+        let mut world = WorldState {
+            width: 20.0,
+            height: 20.0,
+            agents: vec![],
+            food: vec![],
+            food_clusters: vec![],
+            world_seed: 17,
+            step_count: 0,
+        };
+
+        step_world(&mut world, &config);
+        assert!(world.food.is_empty());
+
+        step_world(&mut world, &config);
+        assert_eq!(world.food.len(), 1);
+        assert_eq!(world.food[0].id, 1);
+
+        step_world(&mut world, &config);
+        assert_eq!(world.food.len(), 1);
+
+        step_world(&mut world, &config);
+        assert_eq!(world.food.len(), 2);
+        assert_eq!(world.food[1].id, 2);
+    }
+
+    #[test]
+    fn fixed_rate_food_spawning_is_deterministic_for_same_seed() {
+        let config = SimulationConfig {
+            timestep_seconds: 0.2,
+            food_spawn_rate_per_second: 3.0,
+            food_respawn_probability: 0.0,
+            food_motion_speed: 0.0,
+            ..SimulationConfig::default()
+        };
+        let mut world_a = WorldState {
+            width: 20.0,
+            height: 20.0,
+            agents: vec![],
+            food: vec![test_food(3, Vec2::new(2.0, 2.0))],
+            food_clusters: vec![],
+            world_seed: 91,
+            step_count: 0,
+        };
+        let mut world_b = world_a.clone();
+
+        run_steps(&mut world_a, &config, 8);
+        run_steps(&mut world_b, &config, 8);
+
+        assert_eq!(world_a.food, world_b.food);
+        assert_eq!(world_a.step_count, world_b.step_count);
     }
 
     #[test]
