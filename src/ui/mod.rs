@@ -2348,9 +2348,12 @@ mod bevy_viewer {
                 .get(idx)
                 .copied()
                 .unwrap_or(ControllerKind::Mlp);
-            let color = match kind {
-                ControllerKind::Mlp => Color::srgb(0.2, 0.5, 1.0),
-                ControllerKind::Ltc => Color::srgb(1.0, 0.45, 0.1),
+            let color = match agent.role {
+                crate::sim::AgentRole::Predator => Color::srgb(0.9, 0.1, 0.1),
+                crate::sim::AgentRole::Prey => match kind {
+                    ControllerKind::Mlp => Color::srgb(0.2, 0.5, 1.0),
+                    ControllerKind::Ltc => Color::srgb(1.0, 0.45, 0.1),
+                },
             };
             let mesh = match kind {
                 ControllerKind::Mlp => meshes.add(Circle::new(4.5)),
