@@ -3,10 +3,11 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::brain::upgrade_brain_genome_input_size;
 use crate::config::SimulationConfig;
 use crate::experiment::GenerationMetrics;
 use crate::genetics::AgentGenome;
-use crate::sim::WorldState;
+use crate::sim::{CONTROLLER_SENSOR_INPUT_SIZE, WorldState};
 
 /// Snapshot payload persisted for later viewer reload.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -88,7 +89,10 @@ pub fn write_viewer_snapshot(
 /// Side effects: reads file from disk.
 pub fn read_snapshot(path: &Path) -> anyhow::Result<SnapshotFile> {
     let bytes = fs::read(path)?;
-    let snapshot = serde_json::from_slice(&bytes)?;
+    let mut snapshot: SnapshotFile = serde_json::from_slice(&bytes)?;
+    for genome in &mut snapshot.population {
+        upgrade_brain_genome_input_size(&mut genome.brain, CONTROLLER_SENSOR_INPUT_SIZE);
+    }
     Ok(snapshot)
 }
 
@@ -100,10 +104,12 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use crate::brain::{BrainGenome, ControllerKind, MlpGenome, MlpShape};
     use crate::config::SimulationConfig;
-    use crate::sim::initialize_world;
+    use crate::genetics::{AgentGenome, TraitGenome};
+    use crate::sim::{CONTROLLER_SENSOR_INPUT_SIZE, MAX_VISION_CELLS, initialize_world};
 
-    use super::{SnapshotFile, write_viewer_snapshot};
+    use super::{SnapshotFile, read_snapshot, write_snapshot_to_path, write_viewer_snapshot};
 
     fn temp_dir(label: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -163,6 +169,63 @@ mod tests {
         assert_ne!(first, second);
         assert!(first.exists());
         assert!(second.exists());
+
+        let _ = fs::remove_dir_all(out_dir);
+    }
+
+    #[test]
+    fn read_snapshot_upgrades_legacy_controller_input_width() {
+        let out_dir = temp_dir("legacy-snapshot");
+        let path = out_dir.join("legacy.json");
+        let config = SimulationConfig {
+            population_size: 1,
+            food_count: 1,
+            ..SimulationConfig::default()
+        };
+        let world = initialize_world(&config, 11);
+        let legacy_input_size = CONTROLLER_SENSOR_INPUT_SIZE - MAX_VISION_CELLS;
+        let legacy_shape = MlpShape {
+            input_size: legacy_input_size,
+            hidden_size: 2,
+            output_size: 2,
+        };
+        let population = vec![AgentGenome {
+            controller_kind: ControllerKind::Mlp,
+            brain: BrainGenome::Mlp(
+                MlpGenome::from_flat_parameters(
+                    legacy_shape,
+                    &vec![0.0; legacy_shape.parameter_count()],
+                )
+                .expect("legacy MLP shape should build"),
+            ),
+            traits: TraitGenome {
+                max_speed: 1.0,
+                perception_radius: 5.0,
+                perception_channels: 2,
+                eye_cell_angle_radians: 0.5,
+                metabolic_efficiency: 1.0,
+                role: crate::sim::AgentRole::Prey,
+                food_preference_mask: 1,
+            },
+        }];
+        let snapshot = SnapshotFile {
+            generation: 1,
+            seed: 11,
+            resolved_config: config,
+            metrics_history: Vec::new(),
+            population,
+            world_state: world,
+        };
+
+        write_snapshot_to_path(&path, &snapshot).expect("legacy snapshot write should succeed");
+        let loaded = read_snapshot(&path).expect("legacy snapshot read should succeed");
+
+        match &loaded.population[0].brain {
+            BrainGenome::Mlp(genome) => {
+                assert_eq!(genome.shape.input_size, CONTROLLER_SENSOR_INPUT_SIZE);
+            }
+            BrainGenome::Ltc(_) => panic!("expected upgraded legacy MLP genome"),
+        }
 
         let _ = fs::remove_dir_all(out_dir);
     }

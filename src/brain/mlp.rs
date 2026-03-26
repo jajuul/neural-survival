@@ -152,6 +152,25 @@ impl MlpGenome {
         self.shape.parameter_count()
     }
 
+    /// Expand the input layer by appending zeroed weights for newly added sensor channels.
+    pub fn upgrade_input_size(&mut self, target_input_size: usize) {
+        if target_input_size <= self.shape.input_size {
+            return;
+        }
+
+        let old_input_size = self.shape.input_size;
+        let mut upgraded = Vec::with_capacity(self.shape.hidden_size * target_input_size);
+        for hidden_idx in 0..self.shape.hidden_size {
+            let row_start = hidden_idx * old_input_size;
+            upgraded.extend_from_slice(
+                &self.weights_input_hidden[row_start..row_start + old_input_size],
+            );
+            upgraded.resize(upgraded.len() + (target_input_size - old_input_size), 0.0);
+        }
+        self.weights_input_hidden = upgraded;
+        self.shape.input_size = target_input_size;
+    }
+
     /// Validate internal vector lengths against shape.
     pub fn validate(&self) -> Result<(), MlpGenomeError> {
         self.shape.validate()?;
@@ -327,10 +346,14 @@ impl ControllerFactory for MlpControllerFactory {
 
     fn build(&self, genome: &BrainGenome) -> Box<dyn NeuralController> {
         match genome {
-            BrainGenome::Mlp(mlp) => Box::new(
-                MlpController::new(mlp.clone())
-                    .expect("MLP factory received invalid MLP genome shape/parameter sizes"),
-            ),
+            BrainGenome::Mlp(mlp) => {
+                let mut upgraded = mlp.clone();
+                upgraded.upgrade_input_size(self.shape.input_size);
+                Box::new(
+                    MlpController::new(upgraded)
+                        .expect("MLP factory received invalid MLP genome shape/parameter sizes"),
+                )
+            }
             BrainGenome::Ltc(_) => {
                 panic!("MLP factory cannot build LTC genomes");
             }

@@ -278,6 +278,44 @@ impl LtcGenome {
         self.shape.parameter_count()
     }
 
+    /// Expand sensory input rows by appending neutral parameters for newly added sensor channels.
+    pub fn upgrade_input_size(&mut self, target_input_size: usize) {
+        if target_input_size <= self.shape.input_size {
+            return;
+        }
+
+        let old_input_size = self.shape.input_size;
+        self.sensory_weight = expand_input_rows(
+            &self.sensory_weight,
+            self.shape.state_size,
+            old_input_size,
+            target_input_size,
+            0.0,
+        );
+        self.sensory_mu = expand_input_rows(
+            &self.sensory_mu,
+            self.shape.state_size,
+            old_input_size,
+            target_input_size,
+            0.0,
+        );
+        self.sensory_sigma = expand_input_rows(
+            &self.sensory_sigma,
+            self.shape.state_size,
+            old_input_size,
+            target_input_size,
+            1.0,
+        );
+        self.sensory_erev = expand_input_rows(
+            &self.sensory_erev,
+            self.shape.state_size,
+            old_input_size,
+            target_input_size,
+            1.0,
+        );
+        self.shape.input_size = target_input_size;
+    }
+
     /// Clamp parameters to ranges that keep conductance-based stepping stable.
     pub fn clamp_stable_ranges(&mut self) {
         self.ensure_layout();
@@ -388,6 +426,22 @@ fn validate_len(
             actual: values.len(),
         })
     }
+}
+
+fn expand_input_rows(
+    values: &[f32],
+    row_count: usize,
+    old_input_size: usize,
+    target_input_size: usize,
+    fill: f32,
+) -> Vec<f32> {
+    let mut upgraded = Vec::with_capacity(row_count * target_input_size);
+    for row_idx in 0..row_count {
+        let row_start = row_idx * old_input_size;
+        upgraded.extend_from_slice(&values[row_start..row_start + old_input_size]);
+        upgraded.resize(upgraded.len() + (target_input_size - old_input_size), fill);
+    }
+    upgraded
 }
 
 fn fill_or_preserve(values: &mut Vec<f32>, expected: usize, fill: f32) {
@@ -676,10 +730,14 @@ impl ControllerFactory for LtcControllerFactory {
 
     fn build(&self, genome: &BrainGenome) -> Box<dyn NeuralController> {
         match genome {
-            BrainGenome::Ltc(ltc) => Box::new(
-                LtcController::new(ltc.clone())
-                    .expect("LTC factory received invalid LTC genome shape/parameter sizes"),
-            ),
+            BrainGenome::Ltc(ltc) => {
+                let mut upgraded = ltc.clone();
+                upgraded.upgrade_input_size(self.shape.input_size);
+                Box::new(
+                    LtcController::new(upgraded)
+                        .expect("LTC factory received invalid LTC genome shape/parameter sizes"),
+                )
+            }
             BrainGenome::Mlp(_) => {
                 panic!("LTC factory cannot build MLP genomes");
             }

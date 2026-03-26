@@ -106,6 +106,42 @@ pub fn validate_config(config: &SimulationConfig) -> Result<(), ConfigError> {
         });
     }
 
+    if config.obstacle_radius_min < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "obstacle_radius_min",
+            message: "must be >= 0".into(),
+        });
+    }
+
+    if config.obstacle_radius_max < 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "obstacle_radius_max",
+            message: "must be >= 0".into(),
+        });
+    }
+
+    if config.obstacle_radius_max < config.obstacle_radius_min {
+        return Err(ConfigError::Invalid {
+            field: "obstacle_radius_max",
+            message: "must be >= obstacle_radius_min".into(),
+        });
+    }
+
+    if config.obstacle_count > 0 && config.obstacle_radius_max <= 0.0 {
+        return Err(ConfigError::Invalid {
+            field: "obstacle_radius_max",
+            message: "must be > 0 when obstacle_count > 0".into(),
+        });
+    }
+
+    let min_world_extent = config.world_width.min(config.world_height);
+    if config.obstacle_radius_max * 2.0 >= min_world_extent {
+        return Err(ConfigError::Invalid {
+            field: "obstacle_radius_max",
+            message: "must fit within world bounds".into(),
+        });
+    }
+
     if config.food_cluster_enabled && config.food_cluster_count == 0 {
         return Err(ConfigError::Invalid {
             field: "food_cluster_count",
@@ -417,6 +453,9 @@ mod tests {
         assert_eq!(parsed.food_respawn_probability, 1.0);
         assert_eq!(parsed.food_spawn_rate_per_second, 0.0);
         assert_eq!(parsed.food_motion_speed, 1.0);
+        assert_eq!(parsed.obstacle_count, 0);
+        assert_eq!(parsed.obstacle_radius_min, 8.0);
+        assert_eq!(parsed.obstacle_radius_max, 20.0);
         assert!(!parsed.food_cluster_enabled);
         assert_eq!(parsed.food_cluster_count, 4);
         assert_eq!(parsed.food_cluster_radius, 28.0);
@@ -483,6 +522,24 @@ mod tests {
             err,
             ConfigError::Invalid {
                 field: "food_spawn_rate_per_second",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_obstacle_radius_range_is_rejected() {
+        let raw = r#"
+            obstacle_count = 2
+            obstacle_radius_min = 10.0
+            obstacle_radius_max = 5.0
+        "#;
+
+        let err = parse_config_toml(raw).expect_err("reversed obstacle radius range must fail");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                field: "obstacle_radius_max",
                 ..
             }
         ));

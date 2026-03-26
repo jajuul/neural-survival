@@ -12,6 +12,7 @@ The implementation is successful when three things are demonstrably true: headle
 
 ## Progress
 
+- [x] (2026-03-26 11:10Z) Added deterministic round obstacles with config + GUI controls, obstacle sensing, obstacle-aware movement/food placement, legacy snapshot brain-input upgrades, and verification via `cargo test --lib`, `cargo test --test cli_workflows`, `cargo test --test io_artifacts`, and `cargo check --features gui`.
 - [x] (2026-03-26 09:15Z) Added deterministic fixed-rate food spawning (`food_spawn_rate_per_second`) to config, simulation, GUI continuation controls, and docs; verified with `cargo test --lib`, `cargo test --test cli_workflows`, `cargo test --test io_artifacts`, and `cargo check --features gui`.
 - [x] (2026-03-04 08:00Z) Read `docs/SPECS.md`, `AGENTS.md`, and `.agent/PLANS.md`; established implementation scope and constraints.
 - [x] (2026-03-04 08:00Z) Authored a decision-complete ExecPlan in `PLAN.md`.
@@ -51,6 +52,9 @@ The implementation is successful when three things are demonstrably true: headle
 - [x] (2026-03-10 03:55Z) Expanded the GUI continuation panel from a small parameter subset to grouped editors for the full runtime config surface, including environment, GA, fitness, predator/prey, sensor, and rule-toggle controls, and added an explicit note explaining that default/architecture fields affect newly initialized agents rather than mutating existing genomes in place.
 
 ## Surprises & Discoveries
+
+- Observation: Endpoint-only obstacle collision resolution allowed fast agents to tunnel through small obstacles in one step.
+  Evidence: the new `sim::world::tests::obstacle_collision_stops_agent_at_wall_boundary` only passed after `apply_kinematics` was changed to subdivide long displacements into short deterministic obstacle checks.
 
 - Observation: A fixed food-spawn rate does not need mutable accumulator state in `WorldState`; per-step spawn count can be derived deterministically from the difference between consecutive cumulative `floor(rate * simulated_time)` values.
   Evidence: `sim::world::tests::fixed_rate_food_spawning_adds_food_without_consumption` now proves the expected spawn cadence using only `world.step_count`, `timestep_seconds`, and `food_spawn_rate_per_second`.
@@ -137,6 +141,14 @@ The implementation is successful when three things are demonstrably true: headle
   Evidence: `default_agent_*`, `default_perception_*`, `mlp_hidden_size`, `ltc_state_size`, and `controller_ltc_probability` are used by initialization/factory paths rather than by crossover/mutation of already-existing genomes.
 
 ## Decision Log
+
+- Decision: Model round obstacles as internal Euclidean objects inside the toroidal world instead of wrapping them across edges as toroidal clones.
+  Rationale: This keeps obstacle rendering intuitive, avoids duplicated edge visuals, and matches the user request for smaller walls placed inside the world rather than redefining global boundary topology.
+  Date/Author: 2026-03-26 / Codex
+
+- Decision: Expand controller input width with a dedicated obstacle eye channel and upgrade legacy serialized brains on snapshot load/build by appending zero-initialized obstacle weights.
+  Rationale: Reusing an unrelated channel would hide ecological causes from the controllers and GUI; explicit upgrade logic preserves old snapshots while letting future evolution mutate the new obstacle-sensing parameters normally.
+  Date/Author: 2026-03-26 / Codex
 
 - Decision: Model fixed-rate food spawning as `food_spawn_rate_per_second` and compute spawned items per step from cumulative simulated time instead of storing a fractional spawn accumulator in world state.
   Rationale: This keeps snapshots and runtime state simpler, preserves deterministic replay from `world.step_count`, and makes the parameter independent of the chosen simulation timestep.
@@ -317,6 +329,8 @@ Post-plan enhancement (v4): MLP and LTC species now evolve independently without
 Post-plan enhancement (v5): controllers now receive Shorelark-inspired eye inputs (food intensity binned by relative angle and perception range), with fixed-width sensor vectors, new FOV configuration, and trait-driven active eye channel counts.
 
 Post-plan enhancement (v6): the viewer now includes explicit `Pause`, `Step`, and `Continue` controls plus a selected-agent network inspector that visualizes MLP hidden/output activations or LTC recurrent-state/output activations live during simulation.
+
+Post-plan enhancement (v7): the simulation now supports deterministic internal round obstacles with GUI-editable count/radius settings, obstacle-aware movement and food placement, and a dedicated obstacle eye channel that is visible in both controllers and GUI observability panels.
 
 Post-plan enhancement (v7): headless evolution now runs faster by using fixed-width sensor arrays, a coarse toroidal spatial index for eye queries, reusable per-step action/sensor buffers in shared evaluation, and deterministic parallelism for `solo` scoring.
 
@@ -715,3 +729,4 @@ Dependencies to add in `Cargo.toml`:
 2026-03-10: Plan updated after the post-ecology performance pass to document spatialized food collisions, deferred `swap_remove` cleanup, and empty-role sensor/capture short-circuiting because later-generation slowdowns were being driven by longer-lived agents exercising those paths more often.
 2026-03-10: Plan updated after expanding the GUI control surface to document that the full runtime config is now editable from the viewer and to record the explicit caveat around initialization-only/default fields versus already-evolved genomes.
 2026-03-26: Plan updated after adding deterministic fixed-rate food spawning to document the new `food_spawn_rate_per_second` config/GUI control, the cumulative-floor scheduling rule, and the verification coverage across config, simulation, CLI, snapshot, and GUI compile paths.
+2026-03-26: Plan updated after adding deterministic round obstacles to document the new obstacle config/GUI controls, obstacle sensing/collision semantics, legacy snapshot brain-input upgrades, and the additional obstacle-specific verification coverage.

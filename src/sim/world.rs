@@ -6,7 +6,8 @@ use crate::config::SimulationConfig;
 use super::types::{
     ActionVector, AgentRole, AgentState, CONTROLLER_SENSOR_INPUT_SIZE, CORE_SENSOR_FEATURES,
     DayNightState, EnergyBreakdown, EpisodeSummary, FoodClusterState, FoodState, MAX_VISION_CELLS,
-    SensorObservation, SensorVector, StepAgentTelemetry, StepOutcome, Vec2, WorldState,
+    ObstacleState, SensorObservation, SensorVector, StepAgentTelemetry, StepOutcome, Vec2,
+    WorldState,
 };
 
 /// Coarse toroidal spatial index used to prune food/agent sensor queries.
@@ -149,13 +150,17 @@ impl SpatialIndex {
 /// Side effects: none.
 pub fn initialize_world(config: &SimulationConfig, seed: u64) -> WorldState {
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let obstacles = initialize_obstacles(config, &mut rng);
 
     let agents = (0..config.population_size)
         .map(|id| AgentState {
             id: id as u32,
-            position: Vec2::new(
-                rng.gen_range(0.0..config.world_width),
-                rng.gen_range(0.0..config.world_height),
+            position: sample_position_outside_obstacles(
+                config.world_width,
+                config.world_height,
+                0.0,
+                &obstacles,
+                &mut rng,
             ),
             heading_radians: rng.gen_range(0.0..std::f32::consts::TAU),
             velocity: Vec2::default(),
@@ -184,14 +189,65 @@ pub fn initialize_world(config: &SimulationConfig, seed: u64) -> WorldState {
         height: config.world_height,
         agents,
         food: (0..config.food_count)
-            .map(|id| initialize_food_item(id as u32, config, &food_clusters, &mut rng))
+            .map(|id| initialize_food_item(id as u32, config, &food_clusters, &obstacles, &mut rng))
             .collect(),
         food_clusters,
+        obstacles,
         world_seed: seed,
         step_count: 0,
     };
     apply_cluster_food_layout(&mut world, config);
     world
+}
+
+fn initialize_obstacles(config: &SimulationConfig, rng: &mut ChaCha8Rng) -> Vec<ObstacleState> {
+    let mut obstacles: Vec<ObstacleState> = Vec::with_capacity(config.obstacle_count);
+    for id in 0..config.obstacle_count {
+        let radius = sample_obstacle_radius(config, rng);
+        let mut position = Vec2::new(
+            rng.gen_range(radius..(config.world_width - radius)),
+            rng.gen_range(radius..(config.world_height - radius)),
+        );
+        for _ in 0..64 {
+            if !obstacles.iter().any(|existing| {
+                circles_overlap(position, radius, existing.position, existing.radius)
+            }) {
+                break;
+            }
+
+            position = Vec2::new(
+                rng.gen_range(radius..(config.world_width - radius)),
+                rng.gen_range(radius..(config.world_height - radius)),
+            );
+        }
+
+        obstacles.push(ObstacleState {
+            id: id as u32,
+            position,
+            radius,
+        });
+    }
+
+    obstacles
+}
+
+fn sample_obstacle_radius(config: &SimulationConfig, rng: &mut ChaCha8Rng) -> f32 {
+    if (config.obstacle_radius_max - config.obstacle_radius_min).abs() <= f32::EPSILON {
+        config.obstacle_radius_min
+    } else {
+        rng.gen_range(config.obstacle_radius_min..=config.obstacle_radius_max)
+    }
+}
+
+fn sample_position_outside_obstacles(
+    width: f32,
+    height: f32,
+    clearance_radius: f32,
+    obstacles: &[ObstacleState],
+    rng: &mut ChaCha8Rng,
+) -> Vec2 {
+    let sampled = Vec2::new(rng.gen_range(0.0..width), rng.gen_range(0.0..height));
+    resolve_obstacle_overlap(sampled, clearance_radius, obstacles, width, height).0
 }
 
 fn initialize_food_clusters(
@@ -219,12 +275,21 @@ fn initialize_food_item(
     id: u32,
     config: &SimulationConfig,
     clusters: &[FoodClusterState],
+    obstacles: &[ObstacleState],
     rng: &mut ChaCha8Rng,
 ) -> FoodState {
     if let Some(cluster) = clusters.get(id as usize % clusters.len().max(1)) {
+        let position = resolve_obstacle_overlap(
+            cluster.position,
+            config.food_collision_radius,
+            obstacles,
+            config.world_width,
+            config.world_height,
+        )
+        .0;
         FoodState {
             id,
-            position: cluster.position,
+            position,
             radius: config.food_collision_radius,
             energy_value: config.food_energy_gain,
             motion_angle_radians: rng.gen_range(0.0..std::f32::consts::TAU),
@@ -235,9 +300,12 @@ fn initialize_food_item(
     } else {
         FoodState {
             id,
-            position: Vec2::new(
-                rng.gen_range(0.0..config.world_width),
-                rng.gen_range(0.0..config.world_height),
+            position: sample_position_outside_obstacles(
+                config.world_width,
+                config.world_height,
+                config.food_collision_radius,
+                obstacles,
+                rng,
             ),
             radius: config.food_collision_radius,
             energy_value: config.food_energy_gain,
@@ -309,6 +377,7 @@ pub fn step_world_with_actions_and_telemetry(
             action,
             world.width,
             world.height,
+            &world.obstacles,
             config,
             dt,
         );
@@ -525,9 +594,11 @@ pub fn sensor_observation(
     let food_start = CORE_SENSOR_FEATURES;
     let prey_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
     let predator_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS * 2;
+    let obstacle_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS * 3;
     let food_eye_bins = values[food_start..prey_start].to_vec();
     let prey_eye_bins = values[prey_start..predator_start].to_vec();
-    let predator_eye_bins = values[predator_start..predator_start + MAX_VISION_CELLS].to_vec();
+    let predator_eye_bins = values[predator_start..obstacle_start].to_vec();
+    let obstacle_eye_bins = values[obstacle_start..obstacle_start + MAX_VISION_CELLS].to_vec();
     let vision_cells = values[CORE_SENSOR_FEATURES..].to_vec();
 
     SensorObservation {
@@ -535,6 +606,7 @@ pub fn sensor_observation(
         food_eye_bins,
         prey_eye_bins,
         predator_eye_bins,
+        obstacle_eye_bins,
         eye_bins: vision_cells,
         input: SensorVector { values },
     }
@@ -565,6 +637,7 @@ fn compute_sensor_values(
     let food_start = CORE_SENSOR_FEATURES;
     let prey_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
     let predator_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS * 2;
+    let obstacle_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS * 3;
     fill_food_eye_cells(
         agent,
         world,
@@ -592,6 +665,12 @@ fn compute_sensor_values(
             day_night.visibility_multiplier,
         );
     }
+    fill_obstacle_eye_cells(
+        agent,
+        world,
+        &mut values[obstacle_start..obstacle_start + MAX_VISION_CELLS],
+        day_night.visibility_multiplier,
+    );
     apply_sensor_corruption_in_place(agent.id, world.step_count, &mut values, config);
     values
 }
@@ -608,10 +687,20 @@ fn compute_sensor_values_single_agent(
 
     let food_start = CORE_SENSOR_FEATURES;
     let prey_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS;
+    let predator_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS * 2;
+    let obstacle_start = CORE_SENSOR_FEATURES + MAX_VISION_CELLS * 3;
     fill_food_eye_cells_direct(
         agent,
         world,
         &mut values[food_start..prey_start],
+        day_night.visibility_multiplier,
+    );
+    values[prey_start..predator_start].fill(0.0);
+    values[predator_start..obstacle_start].fill(0.0);
+    fill_obstacle_eye_cells(
+        agent,
+        world,
+        &mut values[obstacle_start..obstacle_start + MAX_VISION_CELLS],
         day_night.visibility_multiplier,
     );
     apply_sensor_corruption_in_place(agent.id, world.step_count, &mut values, config);
@@ -729,9 +818,12 @@ fn spawn_food_with_rng(
     let cluster_id = assign_food_cluster(world, config, *next_food_id, rng);
     let mut food = FoodState {
         id: *next_food_id,
-        position: Vec2::new(
-            rng.gen_range(0.0..world.width),
-            rng.gen_range(0.0..world.height),
+        position: sample_position_outside_obstacles(
+            world.width,
+            world.height,
+            config.food_collision_radius,
+            &world.obstacles,
+            rng,
         ),
         radius: config.food_collision_radius,
         energy_value: config.food_energy_gain,
@@ -743,6 +835,7 @@ fn spawn_food_with_rng(
     layout_food_position(
         &mut food,
         &world.food_clusters,
+        &world.obstacles,
         world.width,
         world.height,
         world.step_count,
@@ -763,11 +856,19 @@ fn move_food(world: &mut WorldState, config: &SimulationConfig, dt: f32) {
 
     for food in &mut world.food {
         let velocity = Vec2::from_angle(food.motion_angle_radians).scale(config.food_motion_speed);
-        food.position = wrap_position(
+        let wrapped = wrap_position(
             food.position.add(velocity.scale(dt)),
             world.width,
             world.height,
         );
+        food.position = resolve_obstacle_overlap(
+            wrapped,
+            food.radius,
+            &world.obstacles,
+            world.width,
+            world.height,
+        )
+        .0;
     }
 }
 
@@ -796,6 +897,7 @@ fn apply_cluster_food_layout(world: &mut WorldState, config: &SimulationConfig) 
         layout_food_position(
             food,
             &world.food_clusters,
+            &world.obstacles,
             world.width,
             world.height,
             world.step_count,
@@ -807,6 +909,7 @@ fn apply_cluster_food_layout(world: &mut WorldState, config: &SimulationConfig) 
 fn layout_food_position(
     food: &mut FoodState,
     clusters: &[FoodClusterState],
+    obstacles: &[ObstacleState],
     width: f32,
     height: f32,
     step_count: u64,
@@ -822,7 +925,8 @@ fn layout_food_position(
         * cluster_density_radius_scale(cluster, step_count, config)
         * food.cluster_distance_factor.sqrt();
     let local_offset = Vec2::from_angle(food.cluster_angle_radians).scale(local_radius);
-    food.position = wrap_position(cluster.position.add(local_offset), width, height);
+    let wrapped = wrap_position(cluster.position.add(local_offset), width, height);
+    food.position = resolve_obstacle_overlap(wrapped, food.radius, obstacles, width, height).0;
 }
 
 pub fn cluster_productivity(
@@ -946,6 +1050,18 @@ fn fill_role_eye_cells(
     });
 }
 
+fn fill_obstacle_eye_cells(
+    agent: &AgentState,
+    world: &WorldState,
+    cells: &mut [f32],
+    visibility_multiplier: f32,
+) {
+    cells.fill(0.0);
+    for obstacle in &world.obstacles {
+        accumulate_obstacle_eye_target(agent, cells, obstacle, visibility_multiplier);
+    }
+}
+
 fn accumulate_eye_target(
     agent: &AgentState,
     cells: &mut [f32],
@@ -977,6 +1093,40 @@ fn accumulate_eye_target(
     let normalized = (relative_angle + half_fov) / fov;
     let cell = ((normalized * active_cells as f32).floor() as usize).min(active_cells - 1);
     cells[cell] += visibility * (max_range - distance) / max_range;
+}
+
+fn accumulate_obstacle_eye_target(
+    agent: &AgentState,
+    cells: &mut [f32],
+    obstacle: &ObstacleState,
+    visibility_multiplier: f32,
+) {
+    let active_cells = agent.perception_channels.clamp(1, MAX_VISION_CELLS as u16) as usize;
+    let fov = (agent.eye_cell_angle_radians.max(0.001) * active_cells as f32)
+        .clamp(0.001, std::f32::consts::TAU);
+    let half_fov = fov * 0.5;
+    let visibility = visibility_multiplier.clamp(0.0, 1.0);
+    let max_range = (agent.perception_radius * visibility).max(0.001);
+
+    let offset = Vec2::new(
+        obstacle.position.x - agent.position.x,
+        obstacle.position.y - agent.position.y,
+    );
+    let center_distance = offset.length();
+    let surface_distance = (center_distance - obstacle.radius).max(0.0);
+    if surface_distance > max_range {
+        return;
+    }
+
+    let heading_to_target = offset.y.atan2(offset.x);
+    let relative_angle = wrap_signed_angle(heading_to_target - agent.heading_radians);
+    if relative_angle < -half_fov || relative_angle > half_fov {
+        return;
+    }
+
+    let normalized = (relative_angle + half_fov) / fov;
+    let cell = ((normalized * active_cells as f32).floor() as usize).min(active_cells - 1);
+    cells[cell] += visibility * (max_range - surface_distance) / max_range;
 }
 
 fn apply_sensor_corruption_in_place(
@@ -1057,11 +1207,72 @@ fn wrap_signed_angle(angle: f32) -> f32 {
     (angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
 }
 
+fn circles_overlap(a_position: Vec2, a_radius: f32, b_position: Vec2, b_radius: f32) -> bool {
+    let dx = a_position.x - b_position.x;
+    let dy = a_position.y - b_position.y;
+    let limit = a_radius + b_radius;
+    dx * dx + dy * dy < limit * limit
+}
+
+fn resolve_obstacle_overlap(
+    position: Vec2,
+    clearance_radius: f32,
+    obstacles: &[ObstacleState],
+    width: f32,
+    height: f32,
+) -> (Vec2, bool) {
+    if obstacles.is_empty() {
+        return (position, false);
+    }
+
+    let mut resolved = position;
+    let mut collided = false;
+    let min_x = clearance_radius.min(width * 0.5);
+    let max_x = (width - clearance_radius).max(min_x);
+    let min_y = clearance_radius.min(height * 0.5);
+    let max_y = (height - clearance_radius).max(min_y);
+
+    for _ in 0..(obstacles.len().max(1) * 2) {
+        let mut moved_this_pass = false;
+        for obstacle in obstacles {
+            let offset = Vec2::new(
+                resolved.x - obstacle.position.x,
+                resolved.y - obstacle.position.y,
+            );
+            let distance = offset.length();
+            let required_distance = obstacle.radius + clearance_radius;
+            if distance >= required_distance {
+                continue;
+            }
+
+            collided = true;
+            moved_this_pass = true;
+            let push_direction = if distance > 1e-6 {
+                offset.scale(1.0 / distance)
+            } else {
+                Vec2::new(1.0, 0.0)
+            };
+            resolved = obstacle
+                .position
+                .add(push_direction.scale(required_distance + 1e-3));
+            resolved.x = resolved.x.clamp(min_x, max_x);
+            resolved.y = resolved.y.clamp(min_y, max_y);
+        }
+
+        if !moved_this_pass {
+            break;
+        }
+    }
+
+    (resolved, collided)
+}
+
 fn apply_kinematics(
     agent: &mut AgentState,
     action: ActionVector,
     width: f32,
     height: f32,
+    obstacles: &[ObstacleState],
     config: &SimulationConfig,
     dt: f32,
 ) -> f32 {
@@ -1085,7 +1296,19 @@ fn apply_kinematics(
     }
 
     let speed = agent.velocity.length();
-    agent.position = wrap_position(agent.position.add(agent.velocity.scale(dt)), width, height);
+    let displacement = agent.velocity.scale(dt);
+    let substeps = displacement.length().ceil().clamp(1.0, 16.0) as u32;
+    let substep_displacement = displacement.scale(1.0 / substeps as f32);
+    for _ in 0..substeps {
+        let wrapped = wrap_position(agent.position.add(substep_displacement), width, height);
+        let (resolved_position, collided_with_obstacle) =
+            resolve_obstacle_overlap(wrapped, 0.0, obstacles, width, height);
+        agent.position = resolved_position;
+        if collided_with_obstacle {
+            agent.velocity = Vec2::default();
+            return 0.0;
+        }
+    }
 
     speed
 }
@@ -1264,7 +1487,7 @@ mod tests {
 
     use super::{
         ActionVector, AgentRole, AgentState, CORE_SENSOR_FEATURES, FoodClusterState, FoodState,
-        MAX_VISION_CELLS, SpatialIndex, Vec2, WorldState, apply_cluster_food_layout,
+        MAX_VISION_CELLS, ObstacleState, SpatialIndex, Vec2, WorldState, apply_cluster_food_layout,
         basic_sensor_vector, basic_sensor_vector_with_index, cluster_density_radius_scale,
         current_day_night_state, energy_breakdown_for_step, fill_population_sensor_vectors,
         find_collided_food_index, find_collided_food_index_direct, run_steps, sensor_observation,
@@ -1315,6 +1538,14 @@ mod tests {
         }
     }
 
+    fn test_obstacle(id: u32, position: Vec2, radius: f32) -> ObstacleState {
+        ObstacleState {
+            id,
+            position,
+            radius,
+        }
+    }
+
     #[test]
     fn toroidal_wrapping_wraps_coordinates() {
         let wrapped = wrap_position(Vec2::new(10.25, -0.75), 10.0, 10.0);
@@ -1350,6 +1581,7 @@ mod tests {
                 cluster_distance_factor: 0.0,
             }],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -1395,6 +1627,7 @@ mod tests {
                 cluster_distance_factor: 0.0,
             }],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -1448,6 +1681,7 @@ mod tests {
                 cluster_distance_factor: 0.0,
             }],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -1485,6 +1719,7 @@ mod tests {
             agents: vec![test_agent(100.0)],
             food: vec![],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -1596,6 +1831,7 @@ mod tests {
                 cluster_distance_factor: 0.0,
             }],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -1635,6 +1871,7 @@ mod tests {
                 cluster_distance_factor: 0.0,
             }],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -1667,6 +1904,7 @@ mod tests {
             agents: vec![],
             food: vec![],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 17,
             step_count: 0,
         };
@@ -1701,6 +1939,7 @@ mod tests {
             agents: vec![],
             food: vec![test_food(3, Vec2::new(2.0, 2.0))],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 91,
             step_count: 0,
         };
@@ -1739,6 +1978,7 @@ mod tests {
                 cluster_distance_factor: 0.0,
             }],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -1768,6 +2008,7 @@ mod tests {
             agents: vec![test_agent(10.0)],
             food: vec![],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -1807,6 +2048,7 @@ mod tests {
             agents: vec![test_agent(10.0)],
             food: vec![],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -1835,6 +2077,46 @@ mod tests {
     }
 
     #[test]
+    fn obstacle_collision_stops_agent_at_wall_boundary() {
+        let config = SimulationConfig {
+            timestep_seconds: 1.0,
+            max_acceleration: 8.0,
+            linear_drag: 0.0,
+            max_turn_rate_radians: 0.0,
+            base_energy_cost_per_second: 0.0,
+            speed_energy_cost_factor: 0.0,
+            network_energy_cost_factor: 0.0,
+            perception_energy_cost_factor: 0.0,
+            ..SimulationConfig::default()
+        };
+        let mut agent = test_agent(50.0);
+        agent.position = Vec2::new(10.0, 10.0);
+        agent.max_speed = 8.0;
+        let mut world = WorldState {
+            width: 50.0,
+            height: 50.0,
+            agents: vec![agent],
+            food: vec![],
+            food_clusters: vec![],
+            obstacles: vec![test_obstacle(0, Vec2::new(13.0, 10.0), 1.5)],
+            world_seed: 0,
+            step_count: 0,
+        };
+
+        step_world_with_actions(
+            &mut world,
+            &config,
+            &[ActionVector {
+                steering: 0.0,
+                throttle: 1.0,
+            }],
+        );
+
+        assert!(world.agents[0].position.x <= 11.51);
+        assert!(world.agents[0].velocity.length() <= 1e-6);
+    }
+
+    #[test]
     fn food_clusters_move_with_configured_speed() {
         let config = SimulationConfig {
             timestep_seconds: 0.5,
@@ -1860,6 +2142,7 @@ mod tests {
                 motion_angle_radians: 0.0,
                 phase_offset: 0.0,
             }],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -1907,6 +2190,7 @@ mod tests {
                 },
             ],
             food_clusters: vec![cluster.clone()],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -1972,6 +2256,7 @@ mod tests {
                 cluster_distance_factor: 0.0,
             }],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -2027,6 +2312,7 @@ mod tests {
                 cluster_distance_factor: 0.0,
             }],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -2037,6 +2323,39 @@ mod tests {
         let active = &food_vision[..agent.perception_channels as usize];
 
         assert!(active.iter().all(|value| value.abs() < 1e-6));
+    }
+
+    #[test]
+    fn obstacle_sensor_places_wall_in_forward_center_cell() {
+        let config = deterministic_sensor_config();
+        let mut agent = test_agent(50.0);
+        agent.position = Vec2::new(10.0, 10.0);
+        agent.heading_radians = 0.0;
+        agent.perception_radius = 20.0;
+        agent.perception_channels = 5;
+        agent.eye_cell_angle_radians = std::f32::consts::FRAC_PI_2 / 5.0;
+        let world = WorldState {
+            width: 40.0,
+            height: 40.0,
+            agents: vec![agent.clone()],
+            food: vec![],
+            food_clusters: vec![],
+            obstacles: vec![test_obstacle(0, Vec2::new(16.0, 10.0), 2.0)],
+            world_seed: 0,
+            step_count: 0,
+        };
+
+        let sensor = sensor_observation(&agent, &world, &config);
+
+        assert!(sensor.obstacle_eye_bins[2] > 0.0);
+        assert!(sensor.food_eye_bins.iter().all(|value| value.abs() < 1e-6));
+        assert!(sensor.prey_eye_bins.iter().all(|value| value.abs() < 1e-6));
+        assert!(
+            sensor
+                .predator_eye_bins
+                .iter()
+                .all(|value| value.abs() < 1e-6)
+        );
     }
 
     #[test]
@@ -2063,6 +2382,7 @@ mod tests {
                 cluster_distance_factor: 0.0,
             }],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -2108,6 +2428,7 @@ mod tests {
                 cluster_distance_factor: 0.0,
             }],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -2148,6 +2469,7 @@ mod tests {
             agents: vec![agent.clone(), other_agent],
             food: vec![],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -2181,6 +2503,7 @@ mod tests {
             agents: vec![agent.clone()],
             food: vec![],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -2221,6 +2544,7 @@ mod tests {
                 cluster_distance_factor: 0.0,
             }],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -2267,6 +2591,7 @@ mod tests {
                 },
             ],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 3,
         };
@@ -2308,6 +2633,7 @@ mod tests {
             agents: vec![test_agent(50.0)],
             food: food.clone(),
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 7,
             step_count: 0,
         };
@@ -2371,6 +2697,7 @@ mod tests {
                 },
             ],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -2430,6 +2757,7 @@ mod tests {
                 cluster_distance_factor: 0.0,
             }],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -2460,6 +2788,7 @@ mod tests {
             agents: vec![agent.clone()],
             food: vec![],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -2485,6 +2814,7 @@ mod tests {
             agents: vec![agent.clone()],
             food: vec![],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 11,
         };

@@ -127,6 +127,14 @@ pub struct MixedControllerFactory {
     pub ltc_probability: f32,
 }
 
+/// Upgrade a serialized brain genome to a newer controller input width in place.
+pub fn upgrade_brain_genome_input_size(brain: &mut BrainGenome, target_input_size: usize) {
+    match brain {
+        BrainGenome::Mlp(mlp) => mlp.upgrade_input_size(target_input_size),
+        BrainGenome::Ltc(ltc) => ltc.upgrade_input_size(target_input_size),
+    }
+}
+
 impl MixedControllerFactory {
     /// Construct a mixed-family factory with bounded LTC sampling probability.
     pub fn new(

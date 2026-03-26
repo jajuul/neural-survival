@@ -46,6 +46,10 @@ Version 1 focuses on:
 - World geometry: 2D continuous toroidal (wrap-around edges).
 - Time model: fixed-step simulation.
 - Initial food model: stationary food points spawned uniformly at random, optionally respawned on consumption according to configurable probability, and optionally spawned at a fixed configurable rate over simulated time.
+- Optional internal obstacle model:
+  - `obstacle_count` controls how many round static obstacles are generated
+  - `obstacle_radius_min` and `obstacle_radius_max` control the sampled obstacle size range
+  - obstacles block agent movement and are visible to controller sensors
 - Optional food-cluster model:
   - `food_cluster_enabled` switches food placement from uniform particles to moving resource regions
   - `food_cluster_count` controls the number of moving centers
@@ -111,7 +115,7 @@ Version 1 focuses on:
 3. User can pause/resume, adjust simulation speed, and toggle active world rules.
 4. User can continue evolution from the loaded population for a typed number of generations, with editable GUI controls for the full runtime config surface (world, timing, food, clustering, GA, fitness, sensor, predator/prey, and rule-toggle parameters) and a selectable evaluation schedule (`solo`, `shared`, or `solo -> shared @ N`).
 5. GUI should make clear that default/architecture fields are editable but apply to newly initialized agents rather than mutating already-evolved genomes in place.
-6. User can click an agent in the GUI to inspect its current food/prey/predator eye-bin activations, controller outputs, last-step energy-cost breakdown, and live neural-network topology/activations.
+6. User can click an agent in the GUI to inspect its current food/prey/predator/obstacle eye-bin activations, controller outputs, last-step energy-cost breakdown, and live neural-network topology/activations.
 7. If food clusters are enabled, the GUI shows faint moving region markers and cluster-colored food so resource-region motion is visible.
 
 ## Public Interfaces and Types

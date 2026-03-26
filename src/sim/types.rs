@@ -5,7 +5,7 @@ pub const CORE_SENSOR_FEATURES: usize = 2;
 /// Maximum number of bins in one vision channel.
 pub const MAX_VISION_CELLS: usize = crate::config::MAX_PERCEPTION_CHANNELS as usize;
 /// Number of distinct vision channels currently exposed to controllers.
-pub const VISION_CHANNEL_COUNT: usize = 3;
+pub const VISION_CHANNEL_COUNT: usize = 4;
 /// Fixed controller input width used by MLP/LTC genomes.
 pub const CONTROLLER_SENSOR_INPUT_SIZE: usize =
     CORE_SENSOR_FEATURES + MAX_VISION_CELLS * VISION_CHANNEL_COUNT;
@@ -54,9 +54,17 @@ impl Vec2 {
 }
 
 /// Neural input vector placeholder for the controller API.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SensorVector {
     pub values: [f32; CONTROLLER_SENSOR_INPUT_SIZE],
+}
+
+impl Default for SensorVector {
+    fn default() -> Self {
+        Self {
+            values: [0.0; CONTROLLER_SENSOR_INPUT_SIZE],
+        }
+    }
 }
 
 impl SensorVector {
@@ -72,12 +80,13 @@ impl SensorVector {
 }
 
 /// Decomposed sensor inputs used for controller observability.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct SensorObservation {
     pub core_values: [f32; 2],
     pub food_eye_bins: Vec<f32>,
     pub prey_eye_bins: Vec<f32>,
     pub predator_eye_bins: Vec<f32>,
+    pub obstacle_eye_bins: Vec<f32>,
     pub eye_bins: Vec<f32>,
     pub input: SensorVector,
 }
@@ -153,6 +162,14 @@ pub struct FoodClusterState {
     pub phase_offset: f32,
 }
 
+/// Static round obstacle that blocks movement and appears in sensor channels.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct ObstacleState {
+    pub id: u32,
+    pub position: Vec2,
+    pub radius: f32,
+}
+
 /// Entire mutable simulation world at a given step.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct WorldState {
@@ -162,6 +179,8 @@ pub struct WorldState {
     pub food: Vec<FoodState>,
     #[serde(default)]
     pub food_clusters: Vec<FoodClusterState>,
+    #[serde(default)]
+    pub obstacles: Vec<ObstacleState>,
     #[serde(default)]
     pub world_seed: u64,
     pub step_count: u64,

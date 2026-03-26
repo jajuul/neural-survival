@@ -704,6 +704,7 @@ mod tests {
                 cluster_distance_factor: 0.0,
             }],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };
@@ -775,6 +776,7 @@ mod tests {
             ],
             food: vec![],
             food_clusters: vec![],
+            obstacles: vec![],
             world_seed: 0,
             step_count: 0,
         };

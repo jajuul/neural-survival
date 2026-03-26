@@ -16,7 +16,7 @@ mod bevy_viewer {
 
     use crate::brain::{
         ControllerDiagnostics, ControllerFactory, ControllerKind, ControllerNetworkSnapshot,
-        ControllerStepOutput, NeuralController,
+        ControllerStepOutput, NeuralController, upgrade_brain_genome_input_size,
     };
     use crate::config::EvaluationMode;
     use crate::experiment::{
@@ -38,6 +38,8 @@ mod bevy_viewer {
     const FOOD_COUNT_MAX: usize = 10000;
     const FOOD_SPAWN_RATE_MAX: f32 = 1000.0;
     const FOOD_MOTION_SPEED_MAX: f32 = 50.0;
+    const OBSTACLE_COUNT_MAX: usize = 256;
+    const OBSTACLE_RADIUS_MAX: f32 = 250.0;
     const MAX_ACCELERATION_MAX: f32 = 100.0;
     const LINEAR_DRAG_MAX: f32 = 20.0;
     const EPISODE_STEPS_MIN: u32 = 10;
@@ -177,6 +179,9 @@ mod bevy_viewer {
         FoodCount,
         FoodSpawnRatePerSecond,
         FoodMotionSpeed,
+        ObstacleCount,
+        ObstacleRadiusMin,
+        ObstacleRadiusMax,
         FoodRespawnProbability,
         FoodClusterCount,
         FoodClusterRadius,
@@ -218,7 +223,7 @@ mod bevy_viewer {
         FitnessWeightEnergy,
     }
 
-    const NUMERIC_FIELDS: [NumericFieldKind; 48] = [
+    const NUMERIC_FIELDS: [NumericFieldKind; 51] = [
         NumericFieldKind::EvolveGenerations,
         NumericFieldKind::EvaluationSwitchAfterGeneration,
         NumericFieldKind::WorldWidth,
@@ -228,6 +233,9 @@ mod bevy_viewer {
         NumericFieldKind::FoodCount,
         NumericFieldKind::FoodSpawnRatePerSecond,
         NumericFieldKind::FoodMotionSpeed,
+        NumericFieldKind::ObstacleCount,
+        NumericFieldKind::ObstacleRadiusMin,
+        NumericFieldKind::ObstacleRadiusMax,
         NumericFieldKind::FoodRespawnProbability,
         NumericFieldKind::FoodClusterCount,
         NumericFieldKind::FoodClusterRadius,
@@ -269,7 +277,7 @@ mod bevy_viewer {
         NumericFieldKind::FitnessWeightEnergy,
     ];
 
-    const CONTROL_COLUMN_1_FIELDS: [NumericFieldKind; 16] = [
+    const CONTROL_COLUMN_1_FIELDS: [NumericFieldKind; 19] = [
         NumericFieldKind::EvolveGenerations,
         NumericFieldKind::EvaluationSwitchAfterGeneration,
         NumericFieldKind::WorldWidth,
@@ -280,6 +288,9 @@ mod bevy_viewer {
         NumericFieldKind::FoodCount,
         NumericFieldKind::FoodSpawnRatePerSecond,
         NumericFieldKind::FoodMotionSpeed,
+        NumericFieldKind::ObstacleCount,
+        NumericFieldKind::ObstacleRadiusMin,
+        NumericFieldKind::ObstacleRadiusMax,
         NumericFieldKind::FoodRespawnProbability,
         NumericFieldKind::FoodClusterCount,
         NumericFieldKind::FoodClusterRadius,
@@ -426,17 +437,25 @@ mod bevy_viewer {
     pub fn launch_snapshot_viewer(snapshot: &SnapshotFile) -> anyhow::Result<()> {
         let config = snapshot.resolved_config.clone();
         let field_buffers = NumericFieldBuffers::from_state(1, &config);
-        let controller_kinds = snapshot
-            .population
+        let mut initial_snapshot = snapshot.clone();
+        let mut population = snapshot.population.clone();
+        for genome in &mut population {
+            upgrade_brain_genome_input_size(
+                &mut genome.brain,
+                crate::sim::CONTROLLER_SENSOR_INPUT_SIZE,
+            );
+        }
+        initial_snapshot.population = population.clone();
+        let controller_kinds = population
             .iter()
             .map(|genome| genome.controller_kind)
             .collect::<Vec<_>>();
-        let controllers = build_runtime_controllers(&config, &snapshot.population);
+        let controllers = build_runtime_controllers(&config, &population);
 
         App::new()
             .insert_resource(ViewerRuntime {
-                initial_snapshot: snapshot.clone(),
-                population: snapshot.population.clone(),
+                initial_snapshot,
+                population,
                 controllers,
                 population_generation_index: snapshot.generation.saturating_sub(1),
                 world: snapshot.world_state.clone(),
@@ -529,6 +548,7 @@ mod bevy_viewer {
             .add_systems(
                 Update,
                 ((
+                    draw_obstacles,
                     draw_food_clusters,
                     draw_fitness_plot,
                     draw_selected_agent_eye_bins,
@@ -2014,6 +2034,19 @@ mod bevy_viewer {
         }
     }
 
+    fn draw_obstacles(runtime: Res<ViewerRuntime>, mut gizmos: Gizmos) {
+        for obstacle in &runtime.world.obstacles {
+            draw_world_circle(
+                &mut gizmos,
+                obstacle.position,
+                obstacle.radius,
+                runtime.world.width,
+                runtime.world.height,
+                Color::srgba(0.82, 0.18, 0.18, 0.90),
+            );
+        }
+    }
+
     fn draw_fitness_plot(
         runtime: Res<ViewerRuntime>,
         window_query: Query<&Window, With<PrimaryWindow>>,
@@ -2190,10 +2223,12 @@ mod bevy_viewer {
         let bins_len = active_bins
             .min(snapshot.sensor.food_eye_bins.len())
             .min(snapshot.sensor.prey_eye_bins.len())
-            .min(snapshot.sensor.predator_eye_bins.len());
+            .min(snapshot.sensor.predator_eye_bins.len())
+            .min(snapshot.sensor.obstacle_eye_bins.len());
         let food_bins = &snapshot.sensor.food_eye_bins[..bins_len];
         let prey_bins = &snapshot.sensor.prey_eye_bins[..bins_len];
         let predator_bins = &snapshot.sensor.predator_eye_bins[..bins_len];
+        let obstacle_bins = &snapshot.sensor.obstacle_eye_bins[..bins_len];
         if food_bins.is_empty() {
             return;
         }
@@ -2202,6 +2237,7 @@ mod bevy_viewer {
             .iter()
             .chain(prey_bins.iter())
             .chain(predator_bins.iter())
+            .chain(obstacle_bins.iter())
             .copied()
             .fold(0.0_f32, f32::max)
             .max(1.0);
@@ -2216,6 +2252,9 @@ mod bevy_viewer {
                 - ((prey_bins[idx] / max_activation).clamp(0.0, 1.0) * (plot_bottom - plot_top));
             let predator_top = plot_bottom
                 - ((predator_bins[idx] / max_activation).clamp(0.0, 1.0)
+                    * (plot_bottom - plot_top));
+            let obstacle_top = plot_bottom
+                - ((obstacle_bins[idx] / max_activation).clamp(0.0, 1.0)
                     * (plot_bottom - plot_top));
 
             let mut x = x0;
@@ -2247,7 +2286,16 @@ mod bevy_viewer {
                     predator_top,
                     Color::srgb(0.98, 0.62, 0.20),
                 );
-                x += 4.0;
+                draw_screen_line(
+                    &mut gizmos,
+                    window,
+                    x + 3.0,
+                    plot_bottom,
+                    x + 3.0,
+                    obstacle_top,
+                    Color::srgb(0.90, 0.14, 0.14),
+                );
+                x += 5.0;
             }
         }
     }
@@ -2553,9 +2601,16 @@ mod bevy_viewer {
             .take(snapshot.perception_channels as usize)
             .copied()
             .fold(0.0_f32, f32::max);
+        let obstacle_eye_max = snapshot
+            .sensor
+            .obstacle_eye_bins
+            .iter()
+            .take(snapshot.perception_channels as usize)
+            .copied()
+            .fold(0.0_f32, f32::max);
 
         format!(
-            "agent #{} ({:?}, {:?}) {}\nworld step: {}\nlight: {} phase={:.2} visibility={:.2}\nperception: radius={:.1} bins={} eye_angle={:.3} total_fov={:.3}\ncore sensors: energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eyes: food={:.3} prey={:.3} predator={:.3}\nchart below: green=food, blue=prey, orange=predator, controller input channels are [food bins | prey bins | predator bins]",
+            "agent #{} ({:?}, {:?}) {}\nworld step: {}\nlight: {} phase={:.2} visibility={:.2}\nperception: radius={:.1} bins={} eye_angle={:.3} total_fov={:.3}\ncore sensors: energy={:.3} speed={:.3}\n{}\n{}\nfood this step: {}\npeak eyes: food={:.3} prey={:.3} predator={:.3} obstacle={:.3}\nchart below: green=food, blue=prey, orange=predator, red=obstacle, controller input channels are [food bins | prey bins | predator bins | obstacle bins]",
             snapshot.agent_id,
             snapshot.controller_kind,
             snapshot.role,
@@ -2580,7 +2635,8 @@ mod bevy_viewer {
             snapshot.consumed_food,
             food_eye_max,
             prey_eye_max,
-            predator_eye_max
+            predator_eye_max,
+            obstacle_eye_max
         )
     }
 
@@ -2615,7 +2671,7 @@ mod bevy_viewer {
     }
 
     fn controller_input_legend() -> &'static str {
-        "energy speed food0..9 prey0..9 predator0..9"
+        "energy speed food0..9 prey0..9 predator0..9 obstacle0..9"
     }
 
     fn field_label(kind: NumericFieldKind) -> &'static str {
@@ -2629,6 +2685,9 @@ mod bevy_viewer {
             NumericFieldKind::FoodCount => "Food Count",
             NumericFieldKind::FoodSpawnRatePerSecond => "Food Spawn/s",
             NumericFieldKind::FoodMotionSpeed => "Food Motion",
+            NumericFieldKind::ObstacleCount => "Obstacle Count",
+            NumericFieldKind::ObstacleRadiusMin => "Obstacle Min",
+            NumericFieldKind::ObstacleRadiusMax => "Obstacle Max",
             NumericFieldKind::FoodRespawnProbability => "Food Respawn",
             NumericFieldKind::FoodClusterCount => "Cluster Count",
             NumericFieldKind::FoodClusterRadius => "Cluster Radius",
@@ -2716,6 +2775,9 @@ mod bevy_viewer {
                 format!("{:.3}", config.food_spawn_rate_per_second)
             }
             NumericFieldKind::FoodMotionSpeed => format!("{:.2}", config.food_motion_speed),
+            NumericFieldKind::ObstacleCount => config.obstacle_count.to_string(),
+            NumericFieldKind::ObstacleRadiusMin => format!("{:.2}", config.obstacle_radius_min),
+            NumericFieldKind::ObstacleRadiusMax => format!("{:.2}", config.obstacle_radius_max),
             NumericFieldKind::FoodRespawnProbability => {
                 format!("{:.3}", config.food_respawn_probability)
             }
@@ -2845,6 +2907,8 @@ mod bevy_viewer {
                 | NumericFieldKind::TimestepSeconds
                 | NumericFieldKind::FoodSpawnRatePerSecond
                 | NumericFieldKind::FoodMotionSpeed
+                | NumericFieldKind::ObstacleRadiusMin
+                | NumericFieldKind::ObstacleRadiusMax
                 | NumericFieldKind::FoodRespawnProbability
                 | NumericFieldKind::FoodClusterRadius
                 | NumericFieldKind::FoodClusterMotionSpeed
@@ -2938,6 +3002,26 @@ mod bevy_viewer {
             NumericFieldKind::FoodMotionSpeed => {
                 if let Ok(value) = raw.parse::<f32>() {
                     runtime.config.food_motion_speed = value.clamp(0.0, FOOD_MOTION_SPEED_MAX);
+                }
+            }
+            NumericFieldKind::ObstacleCount => {
+                if let Ok(value) = raw.parse::<usize>() {
+                    runtime.config.obstacle_count = value.clamp(0, OBSTACLE_COUNT_MAX);
+                }
+            }
+            NumericFieldKind::ObstacleRadiusMin => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.obstacle_radius_min = value.clamp(0.0, OBSTACLE_RADIUS_MAX);
+                    runtime.config.obstacle_radius_max = runtime
+                        .config
+                        .obstacle_radius_max
+                        .max(runtime.config.obstacle_radius_min);
+                }
+            }
+            NumericFieldKind::ObstacleRadiusMax => {
+                if let Ok(value) = raw.parse::<f32>() {
+                    runtime.config.obstacle_radius_max =
+                        value.clamp(runtime.config.obstacle_radius_min, OBSTACLE_RADIUS_MAX);
                 }
             }
             NumericFieldKind::FoodRespawnProbability => {

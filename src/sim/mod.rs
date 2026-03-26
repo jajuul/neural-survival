@@ -6,8 +6,8 @@ mod world;
 pub use types::{
     ActionVector, AgentRole, AgentState, CONTROLLER_SENSOR_INPUT_SIZE, CORE_SENSOR_FEATURES,
     DayNightState, EnergyBreakdown, EpisodeSummary, FoodClusterState, FoodState, MAX_VISION_CELLS,
-    SensorObservation, SensorVector, StepAgentTelemetry, StepOutcome, VISION_CHANNEL_COUNT, Vec2,
-    WorldState,
+    ObstacleState, SensorObservation, SensorVector, StepAgentTelemetry, StepOutcome,
+    VISION_CHANNEL_COUNT, Vec2, WorldState,
 };
 pub use world::{
     basic_sensor_vector, cluster_density_radius_scale, cluster_productivity,

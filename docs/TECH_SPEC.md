@@ -18,6 +18,8 @@ This document describes how `neural-survival` is expected to work internally. It
 - Food may remain stationary or drift according to `food_motion_speed`.
 - Food may respawn immediately on consumption according to `food_respawn_probability`.
 - Food may also spawn according to `food_spawn_rate_per_second`, a deterministic foods-per-simulated-second schedule.
+- The world may also contain static internal round obstacles configured by `obstacle_count`, `obstacle_radius_min`, and `obstacle_radius_max`.
+- Obstacles block agent motion, displace food placement/motion away from blocked interiors, and contribute a dedicated controller sensor channel.
 
 ### Agents
 - Agents carry position, heading, velocity, energy, controller state, and evolved trait values.
@@ -157,7 +159,9 @@ The config owns the world, timing, food, genetic algorithm, controller sizing, a
 The controller input is a fixed-width vector composed of:
 - normalized scalar cues for `energy` and `speed`
 - food eye-bin activations
-- agent eye-bin activations
+- prey eye-bin activations
+- predator eye-bin activations
+- obstacle eye-bin activations
 
 The current input width is `22`, organized as `2 + 10 food + 10 agent`. Inactive eye bins are zero-filled so all controllers receive the same input width regardless of the evolved active channel count.
 
