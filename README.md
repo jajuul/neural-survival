@@ -1,3 +1,6 @@
+# Disclaimer
+AI coding test. All code made with AI in this repo.
+
 # neural-survival
 
 `neural-survival` is a native Rust application for evolving neural-network-controlled agents in a deterministic 2D world, then inspecting the resulting populations in a GUI.
