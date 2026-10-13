@@ -4,6 +4,8 @@
 
 **Blocked by:** 04: Viewer: `view` plays a Showcase
 
+**Spec:** User Stories 13–15, 20–21, 67–68, 82; Implementation Decisions › Species, Controllers (LTC), Input vector layout; Testing Decisions › Seam 1 (Determinism, Evolution) (`../spec.md`)
+
 **Status:** ready-for-agent
 
 - [ ] LTC networks have a configured neuron count, published-default initial parameters, and map the shared input vector to steering and throttle in [-1, 1]

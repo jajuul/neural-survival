@@ -4,6 +4,8 @@
 
 **Blocked by:** 04: Viewer: `view` plays a Showcase
 
+**Spec:** User Stories 19, 22, 34–35, 45–46, 79, 93; Implementation Decisions › Genome contents, Energy Rules; Testing Decisions › Seam 1 (Evolution: Traits within ranges; World rules: Energy Rule toggles); Acceptance Scenarios › World-rule toggles (`../spec.md`)
+
 **Status:** ready-for-agent
 
 - [ ] Generation-0 Traits are drawn uniformly within configured ranges; mutation clamps Traits to their ranges

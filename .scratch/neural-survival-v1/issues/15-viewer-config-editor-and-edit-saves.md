@@ -4,6 +4,8 @@
 
 **Blocked by:** 14: Inspector
 
+**Spec:** User Stories 94–96, 103; Implementation Decisions › The library's public interface (Config), Viewer saves (`../spec.md`)
+
 **Status:** ready-for-agent
 
 - [ ] Editor covers world, food, Obstacles, Food Clusters, GA, Fitness, sensors, Predator/Prey settings, Arena Mode, Evaluation Schedule, and Energy Rules

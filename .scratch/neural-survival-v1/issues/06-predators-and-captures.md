@@ -4,6 +4,8 @@
 
 **Blocked by:** 03: `batch` and run files; 04: Viewer: `view` plays a Showcase
 
+**Spec:** User Stories 13, 25–26, 40, 44, 48–50, 60, 82, 106 (Captures); Implementation Decisions › Species, Input vector layout, Fitness, Capture; Testing Decisions › Seam 1 (World rules: Capture, Predators don't eat food) (`../spec.md`)
+
 **Status:** ready-for-agent
 
 - [ ] MLP-Predator Species with its own configured population size, bred only within itself; Role never mutates (ADR-0002)

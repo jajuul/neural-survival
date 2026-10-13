@@ -4,6 +4,8 @@
 
 **Blocked by:** 10: Day/night and sensor noise; 11: Food motion and replenishment
 
+**Spec:** User Stories 53–54, 83; Implementation Decisions › Food, Day/night; Testing Decisions › Seam 1 (`../spec.md`)
+
 **Status:** ready-for-agent
 
 - [ ] When enabled, food spawns around drifting Food Clusters

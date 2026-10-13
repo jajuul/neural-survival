@@ -4,6 +4,8 @@
 
 **Blocked by:** 03: `batch` and run files; 04: Viewer: `view` plays a Showcase
 
+**Spec:** User Stories 3–5, 7–9, 69; Implementation Decisions › The library's public interface (Evolution), CLI, Determinism; Testing Decisions › Seam 1 (Determinism: continued Snapshot), Seam 2; Acceptance Scenarios › Train then open the viewer (`../spec.md`)
+
 **Status:** ready-for-agent
 
 - [ ] Evolution constructed from a Snapshot and advanced M Generations matches an uninterrupted run of the same total length (ADR-0001)

@@ -4,6 +4,8 @@
 
 **Blocked by:** 02: Evolution library
 
+**Spec:** User Stories 1–2, 7–8, 12, 104–107; Implementation Decisions › Artifact writing, CLI; Testing Decisions › Seam 2; Acceptance Scenarios › Batch experiment outputs (`../spec.md`)
+
 **Status:** resolved
 
 - [x] `neural-survival batch --config <path> [--seed <u64>] --generations <u32> --out <dir>` runs headless evolution

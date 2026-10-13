@@ -4,6 +4,8 @@
 
 **Blocked by:** 03: `batch` and run files; 06: Predators and Captures; 07: LTC Controller Family
 
+**Spec:** User Stories 27–32, 70, 78, 81, 84, 106–107 (Arena Mode); Implementation Decisions › Arena Mode, Determinism, Episode; Testing Decisions › Seam 1 (Evolution: Arena Mode change; Separated mode) (`../spec.md`)
+
 **Status:** ready-for-agent
 
 - [ ] Separated mode gives each Controller Family its own Arena containing its Prey and Predator Species

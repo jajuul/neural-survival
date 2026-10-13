@@ -4,6 +4,8 @@
 
 **Blocked by:** 04: Viewer: `view` plays a Showcase
 
+**Spec:** User Stories 55–57, 60, 63, 83; Implementation Decisions › Obstacles, Input vector layout; Testing Decisions › Seam 1 (World rules: Obstacles, Eye Bins) (`../spec.md`)
+
 **Status:** ready-for-agent
 
 - [ ] Obstacle count and radius range come from config; placement is non-overlapping and drawn from the Episode seed

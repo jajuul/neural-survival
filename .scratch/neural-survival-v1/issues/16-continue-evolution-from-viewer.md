@@ -4,6 +4,8 @@
 
 **Blocked by:** 13: `run` command and continuing from a Snapshot; 15: Viewer config editor and edit saves
 
+**Spec:** User Stories 94, 97–102; Implementation Decisions › GUI continuation, Artifact writing, Determinism; Acceptance Scenarios › Snapshot inspection and continuation (The user continues evolution from the GUI) (`../spec.md`)
+
 **Status:** ready-for-agent
 
 - [ ] The user enters y and starts continuation; Evolution runs on a background thread over copies of the Genomes and edited config

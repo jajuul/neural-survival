@@ -4,6 +4,8 @@
 
 **Blocked by:** None (can start immediately)
 
+**Spec:** User Stories 9–12, 21, 33, 36–41, 43, 45, 47, 52 (respawn-on-eat), 60–62 (food bins), 66; Implementation Decisions › Workspace shape, The library's public interface (Config, Showcase), Determinism, Controllers (MLP), Input vector layout, Episode; Testing Decisions › Seam 1 (Config, Determinism, World rules) (`../spec.md`)
+
 **Status:** resolved
 
 - [x] Config parses from TOML; an empty file yields a fully defaulted resolved config; an unknown key is an error naming the key; the resolved config serialises back out

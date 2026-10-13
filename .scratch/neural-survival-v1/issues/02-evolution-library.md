@@ -4,6 +4,8 @@
 
 **Blocked by:** 01: World: Prey forage in a Showcase
 
+**Spec:** User Stories 9, 13–21, 23–26, 71, 108–110; Implementation Decisions › The library's public interface (Evolution, Snapshot), Determinism, Species, Genome contents, Fitness, Snapshot schema; Testing Decisions › Seam 1 (Determinism, Evolution, Snapshot) (`../spec.md`)
+
 **Status:** resolved
 
 - [x] Evolution can be constructed from (resolved config, seed) for Generation 0

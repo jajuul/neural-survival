@@ -4,6 +4,8 @@
 
 **Blocked by:** 04: Viewer: `view` plays a Showcase
 
+**Spec:** User Stories 58–59, 64–65, 80; Implementation Decisions › Day/night, Determinism; Testing Decisions › Seam 1 (World rules: night sensing) (`../spec.md`)
+
 **Status:** ready-for-agent
 
 - [ ] Visibility follows a sine over a configured period in steps, starting at a configured phase each Episode, ranging from a configured night minimum to 1.0
