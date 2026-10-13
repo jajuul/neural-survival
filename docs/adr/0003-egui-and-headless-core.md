@@ -1,0 +1,3 @@
+# eframe/egui for the GUI, over a headless simulation core
+
+The GUI uses `eframe`/`egui`, with a custom painter for the world view and `egui_plot` for the fitness charts. We chose it over Bevy (an ECS framework we don't need for a few hundred agents, and heavy to depend on) and `macroquad` (we'd have to hand-build the large config editor and inspector). The simulation, GA, and persistence live in a library that has no GUI dependency, and the GUI depends on it, never the reverse. This keeps headless runs and tests free of windowing code, and it is what lets a GUI continuation reproduce a headless run exactly (ADR-0001).
