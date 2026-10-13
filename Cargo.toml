@@ -1,6 +1,12 @@
+[workspace]
+members = [".", "crates/core"]
+default-members = [".", "crates/core"]
+resolver = "3"
+
 [package]
 name = "neural-survival"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+neural-survival-core = { path = "crates/core" }
