@@ -28,6 +28,11 @@ pub struct Agent {
     pub speed: f64,
     pub energy: f64,
     pub alive: bool,
+    /// Steps completed alive so far this Episode.
+    pub steps_alive: u32,
+    /// Energy gained so far this Episode: from food, for Prey.
+    pub energy_gained: f64,
+    pub food_eaten: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -72,6 +77,9 @@ impl Arena {
                     speed: 0.0,
                     energy: config.prey.starting_energy,
                     alive: true,
+                    steps_alive: 0,
+                    energy_gained: 0.0,
+                    food_eaten: 0,
                 };
                 (agent, genome.network)
             })
@@ -131,6 +139,10 @@ impl Arena {
             self.eat_touching_food(config, i);
             telemetry.energy_costs = self.apply_energy_rules(config, i);
             self.telemetry[i] = Some(telemetry);
+            let agent = &mut self.agents[i];
+            if agent.alive {
+                agent.steps_alive += 1;
+            }
         }
     }
 
@@ -194,6 +206,8 @@ impl Arena {
         for food in &mut self.food {
             if self.torus.distance(agent.position, food.position) <= reach {
                 agent.energy += config.food.energy;
+                agent.energy_gained += config.food.energy;
+                agent.food_eaten += 1;
                 food.position = self.torus.random_point(&mut self.rng);
             }
         }

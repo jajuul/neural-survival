@@ -1,4 +1,6 @@
-use neural_survival_core::{Config, Genome, Mlp, Network, Role, Showcase, ShowcaseError};
+use neural_survival_core::{
+    Config, Genome, Mlp, Network, NetworkShapeError, Role, Showcase, ShowcaseError,
+};
 
 fn small_config() -> Config {
     let mut config = Config::default();
@@ -71,7 +73,10 @@ fn builder_rejects_genomes_whose_network_does_not_fit_the_config() {
     let result = Showcase::builder(&config, 1).genomes(vec![genome]).build();
     assert!(matches!(
         result,
-        Err(ShowcaseError::NetworkShape { index: 0, .. })
+        Err(ShowcaseError::NetworkShape(NetworkShapeError {
+            index: 0,
+            ..
+        }))
     ));
 }
 

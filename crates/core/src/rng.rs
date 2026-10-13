@@ -12,6 +12,10 @@ pub(crate) type Rng = ChaCha8Rng;
 pub(crate) enum Stream {
     Genomes = 1,
     Arena = 2,
+    Generation = 3,
+    Episode = 4,
+    Breeding = 5,
+    Showcase = 6,
 }
 
 pub(crate) fn derive_seed(parent: u64, stream: Stream, index: u64) -> u64 {

@@ -5,6 +5,9 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::genome::Role;
+use crate::world::Agent;
+
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("invalid config: {0}")]
@@ -28,6 +31,8 @@ pub struct Config {
     pub sensors: SensorConfig,
     pub mlp: MlpConfig,
     pub evaluation: EvaluationConfig,
+    pub fitness: FitnessConfig,
+    pub ga: GaConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -166,16 +171,120 @@ impl Default for MlpConfig {
     }
 }
 
+/// The Evaluation Schedule: `episodes` Episodes of `episode_steps` steps per
+/// Generation, overridden from each stage's `from_generation` onwards.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct EvaluationConfig {
+    pub episodes: u32,
     pub episode_steps: u32,
+    /// In strictly increasing `from_generation` order.
+    pub stages: Vec<EvaluationStage>,
 }
 
 impl Default for EvaluationConfig {
     fn default() -> Self {
         Self {
+            episodes: 1,
             episode_steps: 1000,
+            stages: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvaluationStage {
+    pub from_generation: u32,
+    pub episodes: u32,
+    pub episode_steps: u32,
+}
+
+/// How one Generation is evaluated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EpisodePlan {
+    pub episodes: u32,
+    pub episode_steps: u32,
+}
+
+impl EvaluationConfig {
+    pub fn plan(&self, generation: u32) -> EpisodePlan {
+        self.stages
+            .iter()
+            .rev()
+            .find(|stage| stage.from_generation <= generation)
+            .map_or(
+                EpisodePlan {
+                    episodes: self.episodes,
+                    episode_steps: self.episode_steps,
+                },
+                |stage| EpisodePlan {
+                    episodes: stage.episodes,
+                    episode_steps: stage.episode_steps,
+                },
+            )
+    }
+}
+
+/// Fitness weights per Role.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FitnessConfig {
+    pub prey: FitnessWeights,
+}
+
+impl FitnessConfig {
+    pub fn weights(&self, role: Role) -> FitnessWeights {
+        match role {
+            Role::Prey => self.prey,
+        }
+    }
+}
+
+/// An Agent's Episode Fitness is `survival * steps_alive + energy * energy_gained`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FitnessWeights {
+    pub survival: f64,
+    pub energy: f64,
+}
+
+impl FitnessWeights {
+    pub fn score(&self, agent: &Agent) -> f64 {
+        self.survival * f64::from(agent.steps_alive) + self.energy * agent.energy_gained
+    }
+}
+
+impl Default for FitnessWeights {
+    fn default() -> Self {
+        Self {
+            survival: 1.0,
+            energy: 1.0,
+        }
+    }
+}
+
+/// Genetic algorithm settings, applied to each Species separately.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct GaConfig {
+    /// Genomes drawn per tournament, capped at the Species' population.
+    pub tournament_size: usize,
+    /// The top `elitism` Genomes of each Species are copied unchanged.
+    pub elitism: usize,
+    /// Chance that each parameter of an offspring is mutated.
+    pub mutation_rate: f64,
+    /// Standard deviation of the Gaussian noise added by a mutation.
+    pub mutation_sigma: f64,
+}
+
+impl Default for GaConfig {
+    fn default() -> Self {
+        Self {
+            tournament_size: 3,
+            elitism: 2,
+            mutation_rate: 0.1,
+            mutation_sigma: 0.2,
         }
     }
 }
@@ -198,7 +307,7 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<(), ConfigError> {
-        let checks: [(bool, &'static str, &'static str); 13] = [
+        let checks: [(bool, &'static str, &'static str); 19] = [
             (self.world.width > 0.0, "world.width", "must be positive"),
             (self.world.height > 0.0, "world.height", "must be positive"),
             (
@@ -255,6 +364,41 @@ impl Config {
                 self.mlp.hidden_layers.iter().all(|&n| n > 0),
                 "mlp.hidden_layers",
                 "sizes must be at least 1",
+            ),
+            (
+                self.evaluation.episodes > 0
+                    && self.evaluation.stages.iter().all(|s| s.episodes > 0),
+                "evaluation.episodes",
+                "must be at least 1",
+            ),
+            (
+                self.evaluation.episode_steps > 0
+                    && self.evaluation.stages.iter().all(|s| s.episode_steps > 0),
+                "evaluation.episode_steps",
+                "must be at least 1",
+            ),
+            (
+                self.evaluation
+                    .stages
+                    .windows(2)
+                    .all(|w| w[0].from_generation < w[1].from_generation),
+                "evaluation.stages",
+                "must be in strictly increasing `from_generation` order",
+            ),
+            (
+                self.ga.tournament_size > 0,
+                "ga.tournament_size",
+                "must be at least 1",
+            ),
+            (
+                (0.0..=1.0).contains(&self.ga.mutation_rate),
+                "ga.mutation_rate",
+                "must be in [0, 1]",
+            ),
+            (
+                self.ga.mutation_sigma >= 0.0,
+                "ga.mutation_sigma",
+                "must not be negative",
             ),
         ];
         match checks.into_iter().find(|(ok, _, _)| !ok) {

@@ -1,4 +1,4 @@
-use neural_survival_core::Config;
+use neural_survival_core::{Config, EpisodePlan};
 
 #[test]
 fn empty_file_yields_fully_defaulted_config() {
@@ -69,7 +69,16 @@ fn defaults_serialise_every_field() {
         "[mlp]",
         "hidden_layers",
         "[evaluation]",
+        "episodes",
         "episode_steps",
+        "stages",
+        "[fitness.prey]",
+        "survival",
+        "[ga]",
+        "tournament_size",
+        "elitism",
+        "mutation_rate",
+        "mutation_sigma",
     ] {
         assert!(text.contains(key), "missing {key} in:\n{text}");
     }
@@ -82,4 +91,46 @@ fn invalid_values_are_rejected_naming_the_field() {
 
     let err = Config::from_toml_str("[world]\nwidth = -1.0\n").unwrap_err();
     assert!(err.to_string().contains("world.width"), "{err}");
+}
+
+#[test]
+fn evaluation_schedule_stages_parse_and_override_from_their_generation() {
+    let config = Config::from_toml_str(
+        "[evaluation]\nepisodes = 2\nepisode_steps = 100\n\n\
+         [[evaluation.stages]]\nfrom_generation = 10\nepisodes = 3\nepisode_steps = 200\n\n\
+         [[evaluation.stages]]\nfrom_generation = 20\nepisodes = 4\nepisode_steps = 400\n",
+    )
+    .unwrap();
+    let plan = |generation| config.evaluation.plan(generation);
+    let expect = |episodes, episode_steps| EpisodePlan {
+        episodes,
+        episode_steps,
+    };
+    assert_eq!(plan(0), expect(2, 100));
+    assert_eq!(plan(9), expect(2, 100));
+    assert_eq!(plan(10), expect(3, 200));
+    assert_eq!(plan(19), expect(3, 200));
+    assert_eq!(plan(500), expect(4, 400));
+    assert_eq!(
+        Config::from_toml_str(&config.to_toml_string()).unwrap(),
+        config
+    );
+}
+
+#[test]
+fn evolution_settings_are_validated() {
+    for (toml, field) in [
+        (
+            "[[evaluation.stages]]\nfrom_generation = 5\nepisodes = 1\nepisode_steps = 9\n\n\
+             [[evaluation.stages]]\nfrom_generation = 5\nepisodes = 1\nepisode_steps = 9\n",
+            "evaluation.stages",
+        ),
+        ("[evaluation]\nepisodes = 0\n", "evaluation.episodes"),
+        ("[ga]\ntournament_size = 0\n", "ga.tournament_size"),
+        ("[ga]\nmutation_rate = 1.5\n", "ga.mutation_rate"),
+        ("[ga]\nmutation_sigma = -0.1\n", "ga.mutation_sigma"),
+    ] {
+        let err = Config::from_toml_str(toml).unwrap_err();
+        assert!(err.to_string().contains(field), "{toml}: {err}");
+    }
 }

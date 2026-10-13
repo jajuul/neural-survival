@@ -82,6 +82,31 @@ impl Mlp {
         self.layer_sizes[self.layer_sizes.len() - 1]
     }
 
+    /// Uniform crossover: each parameter comes from either parent with equal
+    /// chance. Both parents must have the same shape.
+    pub(crate) fn crossover(&self, other: &Mlp, rng: &mut Rng) -> Mlp {
+        debug_assert_eq!(self.layer_sizes, other.layer_sizes);
+        let params = self
+            .params
+            .iter()
+            .zip(&other.params)
+            .map(|(&a, &b)| if rng.r#gen::<bool>() { a } else { b })
+            .collect();
+        Mlp {
+            layer_sizes: self.layer_sizes.clone(),
+            params,
+        }
+    }
+
+    /// Adds `N(0, sigma)` noise to each parameter with probability `rate`.
+    pub(crate) fn mutate(&mut self, rate: f64, sigma: f64, rng: &mut Rng) {
+        for param in &mut self.params {
+            if rng.gen_bool(rate) {
+                *param += sigma * standard_normal(rng);
+            }
+        }
+    }
+
     pub(crate) fn forward(&self, input: &[f64]) -> Vec<f64> {
         debug_assert_eq!(input.len(), self.input_width());
         let mut activations = input.to_vec();
@@ -101,6 +126,14 @@ impl Mlp {
         }
         activations
     }
+}
+
+/// A standard normal draw by the Box–Muller transform.
+fn standard_normal(rng: &mut Rng) -> f64 {
+    // 1 - u lies in (0, 1], so the logarithm is finite.
+    let u1: f64 = 1.0 - rng.r#gen::<f64>();
+    let u2: f64 = rng.r#gen();
+    (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos()
 }
 
 fn param_count(layer_sizes: &[usize]) -> usize {

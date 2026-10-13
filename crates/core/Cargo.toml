@@ -10,3 +10,4 @@ rand_chacha = "0.3"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 toml = "0.8"
+serde_json = { version = "1", features = ["float_roundtrip"] }
