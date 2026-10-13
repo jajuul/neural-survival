@@ -17,8 +17,9 @@ fn small_config() -> Config {
 #[test]
 fn evolution_starts_at_generation_zero_with_configured_population() {
     let config = small_config();
-    let evolution = Evolution::new(config, 42).unwrap();
+    let evolution = Evolution::new(config.clone(), 42).unwrap();
 
+    assert_eq!(evolution.config(), &config);
     assert_eq!(evolution.generation(), 0);
     assert_eq!(evolution.seed(), 42);
     assert_eq!(evolution.genomes(MLP_PREY).len(), 6);

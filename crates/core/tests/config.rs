@@ -126,6 +126,18 @@ fn evolution_settings_are_validated() {
             "evaluation.stages",
         ),
         ("[evaluation]\nepisodes = 0\n", "evaluation.episodes"),
+        (
+            "[evaluation]\nepisode_steps = 0\n",
+            "evaluation.episode_steps",
+        ),
+        (
+            "[[evaluation.stages]]\nfrom_generation = 3\nepisodes = 0\nepisode_steps = 9\n",
+            "evaluation.episodes",
+        ),
+        (
+            "[[evaluation.stages]]\nfrom_generation = 3\nepisodes = 1\nepisode_steps = 0\n",
+            "evaluation.episode_steps",
+        ),
         ("[ga]\ntournament_size = 0\n", "ga.tournament_size"),
         ("[ga]\nmutation_rate = 1.5\n", "ga.mutation_rate"),
         ("[ga]\nmutation_sigma = -0.1\n", "ga.mutation_sigma"),

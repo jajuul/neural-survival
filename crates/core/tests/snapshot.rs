@@ -120,6 +120,8 @@ fn snapshot_with_wrong_population_size_is_rejected() {
     snapshot.genomes.pop();
 
     let error = Evolution::from_snapshot(snapshot).unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("MLP-Prey"), "{message}");
     assert!(matches!(
         error,
         EvolutionError::PopulationSize {
