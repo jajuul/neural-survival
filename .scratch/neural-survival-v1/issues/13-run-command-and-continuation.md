@@ -13,3 +13,11 @@
 - [ ] A hidden option skips opening the window so tests can run `run` as a process
 - [ ] CLI acceptance test covers the spec's train-then-view scenario (exact Generation count, full Fitness history in the final Snapshot) and stale-file clearing
 - [ ] Integration test covers continuation equivalence
+
+## Comments
+
+**From the 02 (Evolution library) implementation and review:**
+
+- **Continuation equivalence is already covered.** `Evolution::from_snapshot` exists, and `continuing_a_saved_snapshot_matches_an_uninterrupted_run` (`crates/core/tests/snapshot.rs`) checks it through save and load on disk. The first and last checkboxes here then only need wiring into `run`, plus a CLI-level check if you want one.
+- **Progress is counted from absolute Generation numbers.** `Evolution::advance` calls back whenever the current Generation is a multiple of `PROGRESS_INTERVAL` (10), and once on completion. A run continued from Generation 25 reports at 30, 40 and then 45. If you hang "write a Snapshot every 10 Generations" off this callback, the files come out as `snapshot_gen_30`, `snapshot_gen_40` and then the final `snapshot_gen_45`.
+- **`advance(0)` never calls the callback.** Decide what `--headless-generations 0` should do: reject it, or still write the run files and a Generation-0 Snapshot. Don't rely on the completion callback for the final files, because with 0 it never fires.

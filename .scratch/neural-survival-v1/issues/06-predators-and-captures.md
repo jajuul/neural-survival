@@ -15,3 +15,9 @@
 - [ ] `metrics.csv` and the metrics history record Captures for Predator Species
 - [ ] Viewer draws Predators in a distinct colour
 - [ ] Integration tests cover Capture, cooldown, no food for Predators, and the new Eye Bins
+
+## Comments
+
+**From the 02 (Evolution library) implementation and review:**
+
+- **Averaging over Episodes isn't fully tested.** `Evolution::run_generation` (`crates/core/src/evolution.rs`) divides each Genome's summed Fitness by the Episode count. But `fitness_is_weighted_steps_alive_plus_energy_gained` (`crates/core/tests/evolution.rs`) runs Episodes that all score the same, so the test catches a sum but not "last Episode" or "best Episode". This ticket changes Fitness (per-Role weights, energy gained from Captures), so add a test whose Episodes score differently and check that the reported Fitness is their mean. That probably needs a seam that isn't public yet, for example per-Genome or per-Episode Fitness exposed by Evolution, or a way to fix each Episode's layout. Agree the seam before adding it.
