@@ -4,7 +4,7 @@ Status: ready-for-agent
 
 ## Problem Statement
 
-I want to watch neural-network-controlled creatures evolve survival behaviour in a 2D world, and compare how two controller families (feed-forward MLP and liquid time-constant LTC) fare under the same world rules. An earlier build of this project exists only as a behaviour spec (`docs/SPECS.md`); I want a clean rebuild from that spec, with the ambiguities in it resolved. Concretely, I want to train headlessly for a while, look at how the current population actually behaves, tweak the world, train some more, and keep reproducible records of each run so I can compare them offline.
+I want to watch neural-network-controlled creatures evolve survival behaviour in a 2D world, and compare how two controller families (feed-forward MLP and liquid time-constant LTC) fare under the same world rules. An earlier build of this project exists only as a behaviour spec; I want a clean rebuild of that behaviour, with its ambiguities resolved. Concretely, I want to train headlessly for a while, look at how the current population actually behaves, tweak the world, train some more, and keep reproducible records of each run so I can compare them offline.
 
 ## Solution
 
@@ -211,13 +211,100 @@ The domain vocabulary is in `CONTEXT.md`, and decisions are recorded in `docs/ad
   - World rules, through the Showcase: an Agent with no energy dies and stays dead; toroidal wrap; Capture kills Prey, credits the Predator, and respects the cooldown; Predators don't eat food; Agents slide along and never enter Obstacles; Eye Bins activate for an object placed in a known sector; night reduces food, Prey, and Predator sensing but not Obstacle sensing; Energy Rule toggles change the reported energy breakdown on the next step; telemetry remains readable after the selected Agent dies.
   - Separated mode: both Arenas of an Episode have identical food and Obstacle layouts.
   - Snapshot: save/load round-trip preserves Genomes, config, seed, and history; an unsupported version is rejected.
-- **Seam 2, the CLI binary as a process (acceptance tests),** covering the spec's Gherkin scenarios:
+- **Seam 2, the CLI binary as a process (acceptance tests),** covering the Acceptance Scenarios below:
   - `batch` writes `metrics.csv`, `fitness.svg`, `run_summary.json`, and the last-Generation Snapshot.
   - `batch` fails with an explanatory error on a non-empty output directory.
   - `run` (with the window suppressed) completes exactly the requested Generations, clears stale run files but keeps unrelated ones, and its final Snapshot carries the full Fitness history.
   - The seed is printed when omitted; progress lines appear every 10 Generations.
 - **The GUI is not tested automatically.** It is a thin layer; everything it displays comes from Seam 1.
 - **Prior art:** none in this repo (fresh build). Use Rust's built-in test harness with integration tests per seam. Keep test configs tiny so the suite runs in seconds.
+
+## Acceptance Scenarios
+
+### Feature: Batch experiment outputs
+```gherkin
+Feature: Batch experiment outputs
+
+  Scenario: A headless batch run writes the required artifacts
+    Given a valid config file and seed 42
+    And an output directory that does not exist
+    When the user runs "neural-survival batch --config config.toml --seed 42 --generations 10 --out results"
+    Then the command completes successfully
+    And the directory "results" contains "metrics.csv"
+    And the directory "results" contains "fitness.svg"
+    And the directory "results" contains "run_summary.json"
+    And the directory "results" contains a snapshot file for the last generation
+
+  Scenario: A batch run rejects a non-empty output directory
+    Given a valid config file and seed 42
+    And the output directory "results" already contains files
+    When the user runs "neural-survival batch --config config.toml --seed 42 --generations 10 --out results"
+    Then the command fails
+    And the error explains that the output directory must be absent or empty
+```
+
+### Feature: Train then open the viewer
+```gherkin
+Feature: Train then open the viewer
+
+  Scenario: Headless generations are completed before the GUI starts
+    Given a valid config file and seed 7
+    And an empty output directory
+    When the user runs "neural-survival run --config config.toml --seed 7 --headless-generations 20 --out results"
+    Then the application evolves exactly 20 headless generations
+    And the GUI opens using the generation-20 snapshot
+    And the GUI shows the historical best and mean fitness carried in that snapshot
+```
+
+### Feature: Snapshot inspection and continuation
+```gherkin
+Feature: Snapshot inspection and continuation
+
+  Scenario: A saved snapshot can be opened for inspection
+    Given a previously exported snapshot file
+    When the user runs "neural-survival view --snapshot snapshot_gen_20.json"
+    Then the GUI opens using that snapshot
+    And the user can pause and resume the simulation
+    And the user can change the simulation speed
+    And the user can select an agent to inspect its telemetry
+
+  Scenario: The user continues evolution from the GUI
+    Given the GUI is open with a loaded snapshot
+    And the user has entered continuation parameters and a generation count
+    When the user starts continuation evolution
+    Then the GUI shows continuation progress every 10 generations
+    And the best and mean fitness history updates as continuation proceeds
+```
+
+### Feature: Selected-agent inspection
+```gherkin
+Feature: Selected-agent inspection
+
+  Scenario: Selecting an agent exposes its current telemetry
+    Given the GUI is rendering a running simulation
+    When the user clicks an agent
+    Then the inspector shows the agent's food, prey, predator, and obstacle eye-bin activations
+    And the inspector shows the agent's core sensor values
+    And the inspector shows raw controller outputs and applied throttle
+    And the inspector shows the last-step energy breakdown
+    And the inspector shows a live network visualization for that controller
+
+  Scenario: A selected agent remains inspectable after death
+    Given an agent is currently selected in the GUI
+    When that agent dies
+    Then the inspector continues showing the last captured telemetry for that agent
+```
+
+### Feature: World-rule toggles
+```gherkin
+Feature: World-rule toggles
+
+  Scenario: Energy rule toggles can be changed during GUI inspection
+    Given the GUI is open with a loaded simulation
+    When the user toggles an energy rule
+    Then the GUI reflects the new toggle state
+    And subsequent simulation steps use the updated rule state
+```
 
 ## Out of Scope
 
@@ -236,5 +323,4 @@ The domain vocabulary is in `CONTEXT.md`, and decisions are recorded in `docs/ad
 ## Further Notes
 
 - Build in stages: (1) library core with the Showcase stepping (world, sensing, controllers, Energy Rules); (2) Evolution, Config, Snapshot, and artifacts; (3) CLI; (4) GUI. Each stage is testable through Seam 1 before the next begins.
-- `docs/SPECS.md` is the original behaviour spec. This document supersedes it where they differ: snapshot contents, viewer save naming, `run` output directory handling, and the addition of Arena Mode.
 - Use the vocabulary in `CONTEXT.md` throughout code and docs: Genome, Agent, Species, Arena, Episode, Showcase, and so on.
