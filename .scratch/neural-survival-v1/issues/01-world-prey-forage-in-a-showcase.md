@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Config parses from TOML; an empty file yields a fully defaulted resolved config; an unknown key is an error naming the key; the resolved config serialises back out
 - [x] Agents and food wrap around the torus edges
