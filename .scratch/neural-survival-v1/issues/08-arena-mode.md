@@ -22,3 +22,7 @@
 - **Arena random streams are not split yet.** `Episode::new` draws spawn layout and food layout from `stream_rng(seed, Stream::Arena, 0)`, then hands that same rng to the Arena for food respawns. For "identical food and spawn layouts", every Separated Arena should draw its layout from the same Episode-seed stream. Decide whether respawn draws are also shared (the ecologies stay controlled until they diverge) or split per Arena (`Stream::Arena, arena_index`).
 - **Spawn layouts can differ in size.** Spawn placements are drawn per Genome, but each Controller Family's Arena may hold a different number of Agents, because population is configured per Species. Decide what "identical spawn layouts" means when the counts differ, for example drawing positions in the same order so the shorter list is a prefix of the longer one.
 - **Adding `arena_mode` to `MetricsRow` changes the Snapshot schema.** `MetricsRow` is serialised into Snapshots and Snapshot load uses `deny_unknown_fields`. Either bump `SNAPSHOT_FORMAT_VERSION` (`crates/core/src/snapshot.rs`) or give the field a serde default, and say which in the commit.
+
+**From the 03 (`batch` and run files) implementation and review:**
+
+- **The run files don't record Arena Mode yet.** Add an Arena Mode column to `metrics_csv` and mode-change markers to `fitness_svg` (both in `crates/core/src/run_files.rs`), with tests in `crates/core/tests/run_files.rs`. The chart's coordinates come from the private `Scale::point`. A marker at a Generation boundary can use the same x mapping.

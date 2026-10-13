@@ -18,3 +18,7 @@
 **From the 02 (Evolution library) implementation and review:**
 
 - Progress timing and the `advance(0)` edge case are described in 13's Comments. The same rules apply here for a y of 0 and for the per-10-Generation Snapshots.
+
+**From the 03 (`batch` and run files) implementation and review:**
+
+- **`record_evolution` covers the output requirement** (`crates/core/src/run_files.rs`). Call it on the background thread with the loaded Snapshot's directory. It doesn't require the directory to be empty, and it rewrites the run files with the full history. A failed write stops further writes but not the evolution, and the first error comes back at the end, so surface it in the viewer. The progress callback receives `Progress { evolution, latest, .. }`, which can feed the chart.
