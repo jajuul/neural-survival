@@ -7,10 +7,10 @@ use thiserror::Error;
 
 use crate::config::{Config, ConfigError};
 use crate::genome::{CONTROLLER_OUTPUTS, ControllerFamily, Genome, Role};
-use crate::geometry::Vec2;
+use crate::geometry::{Torus, Vec2};
 use crate::rng::{Stream, stream_rng};
 use crate::telemetry::AgentTelemetry;
-use crate::world::{AgentId, Arena, Food, Placement, random_position, torus};
+use crate::world::{AgentId, Arena, Food, Placement};
 
 #[derive(Debug, Error)]
 pub enum ShowcaseError {
@@ -92,7 +92,7 @@ impl<'a> ShowcaseBuilder<'a> {
             }
         }
 
-        let world = torus(config);
+        let world = Torus::new(&config.world);
         let mut rng = stream_rng(self.seed, Stream::Arena, 0);
         let placements = match self.placements {
             Some(placements) if placements.len() != genomes.len() => {
@@ -110,7 +110,7 @@ impl<'a> ShowcaseBuilder<'a> {
                 .collect(),
             None => (0..genomes.len())
                 .map(|_| Placement {
-                    position: random_position(world, &mut rng),
+                    position: world.random_point(&mut rng),
                     heading: rng.gen_range(0.0..TAU),
                 })
                 .collect::<Vec<_>>(),
@@ -118,7 +118,7 @@ impl<'a> ShowcaseBuilder<'a> {
         let food = match self.food {
             Some(positions) => positions.into_iter().map(|p| world.wrap(p)).collect(),
             None => (0..config.food.count)
-                .map(|_| random_position(world, &mut rng))
+                .map(|_| world.random_point(&mut rng))
                 .collect::<Vec<_>>(),
         };
         let food = food.into_iter().map(|position| Food { position }).collect();

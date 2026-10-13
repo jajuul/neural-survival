@@ -6,13 +6,13 @@
 
 **Status:** ready-for-agent
 
-- [ ] Config parses from TOML; an empty file yields a fully defaulted resolved config; an unknown key is an error naming the key; the resolved config serialises back out
-- [ ] Agents and food wrap around the torus edges
-- [ ] Agents move by steering and forward thrust: steering in [-1, 1] changes heading, throttle in [-1, 1] maps to thrust in [0, 1], with linear drag from config and a speed cap
-- [ ] Prey eat food on contact and gain its energy; eaten food respawns immediately
-- [ ] Idle drain reduces energy each step; an Agent at zero energy dies and stays dead
-- [ ] Controller input is normalised energy, normalised speed, then N food Eye Bins (N from config); bin activation is `1 - distance/range` for the nearest food in that sector, else 0
-- [ ] MLP controllers have hidden layer sizes from config, Xavier-scaled initial weights, and two tanh outputs
-- [ ] Showcase exposes: step, has-ended (step limit or all dead), world state (Agents, food), and telemetry by Agent id (Eye Bins, core sensors, raw and applied outputs, energy costs per Energy Rule)
-- [ ] Two Showcases with the same seed and config produce identical state after N steps, whether stepped one at a time or in batches
-- [ ] Integration tests cover each of the above through the library's public interface only
+- [x] Config parses from TOML; an empty file yields a fully defaulted resolved config; an unknown key is an error naming the key; the resolved config serialises back out
+- [x] Agents and food wrap around the torus edges
+- [x] Agents move by steering and forward thrust: steering in [-1, 1] changes heading, throttle in [-1, 1] maps to thrust in [0, 1], with linear drag from config and a speed cap
+- [x] Prey eat food on contact and gain its energy; eaten food respawns immediately
+- [x] Idle drain reduces energy each step; an Agent at zero energy dies and stays dead
+- [x] Controller input is normalised energy, normalised speed, then N food Eye Bins (N from config); bin activation is `1 - distance/range` for the nearest food in that sector, else 0
+- [x] MLP controllers have hidden layer sizes from config, Xavier-scaled initial weights, and two tanh outputs
+- [x] Showcase exposes: step, has-ended (step limit or all dead), world state (Agents, food), and telemetry by Agent id (Eye Bins, core sensors, raw and applied outputs, energy costs per Energy Rule)
+- [x] Two Showcases with the same seed and config produce identical state after N steps, whether stepped one at a time or in batches
+- [x] Integration tests cover each of the above through the library's public interface only

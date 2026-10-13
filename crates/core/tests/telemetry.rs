@@ -247,3 +247,18 @@ fn dead_agents_telemetry_is_not_overwritten_while_others_live() {
     assert!(!showcase.has_ended());
     assert_eq!(showcase.telemetry(AgentId(0)), Some(&last));
 }
+
+#[test]
+fn food_exactly_on_the_agent_reads_as_full_activation_dead_ahead() {
+    let config = eye_config(3);
+    let me = Vec2::new(20.0, 20.0);
+    let at = Placement {
+        position: me,
+        heading: 1.0,
+    };
+    let mut showcase = showcase(&config, constant_prey(&config, 0.0, STILL), at, vec![me]);
+    showcase.step();
+
+    let bins = &showcase.telemetry(AgentId(0)).unwrap().eyes[0].bins;
+    assert_eq!(bins, &vec![0.0, 1.0, 0.0]);
+}

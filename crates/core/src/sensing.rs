@@ -21,10 +21,15 @@ impl Eye {
         for target in targets {
             let offset = torus.displacement(self.position, target);
             let distance = offset.length();
-            if distance > self.range || distance == 0.0 {
+            if distance > self.range {
                 continue;
             }
-            let relative = normalize_angle(offset.angle() - self.heading);
+            // A target exactly on the eye has no direction; read it as dead ahead.
+            let relative = if distance == 0.0 {
+                0.0
+            } else {
+                normalize_angle(offset.angle() - self.heading)
+            };
             if relative.abs() > half {
                 continue;
             }

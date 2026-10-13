@@ -1,6 +1,10 @@
 //! 2D vectors and torus arithmetic.
 
+use rand::Rng as _;
 use serde::{Deserialize, Serialize};
+
+use crate::config::WorldConfig;
+use crate::rng::Rng;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct Vec2 {
@@ -48,6 +52,21 @@ pub(crate) struct Torus {
 }
 
 impl Torus {
+    pub fn new(world: &WorldConfig) -> Self {
+        Self {
+            width: world.width,
+            height: world.height,
+        }
+    }
+
+    /// A uniformly random point in the world.
+    pub fn random_point(self, rng: &mut Rng) -> Vec2 {
+        Vec2::new(
+            rng.gen_range(0.0..self.width),
+            rng.gen_range(0.0..self.height),
+        )
+    }
+
     pub fn wrap(self, p: Vec2) -> Vec2 {
         Vec2::new(wrap_coord(p.x, self.width), wrap_coord(p.y, self.height))
     }

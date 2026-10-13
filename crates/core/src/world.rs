@@ -1,6 +1,5 @@
 //! One Arena of the world: Agents and food on a torus.
 
-use rand::Rng as _;
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
@@ -79,7 +78,7 @@ impl Arena {
             .unzip();
         let telemetry = vec![None; controllers.len()];
         Self {
-            torus: torus(config),
+            torus: Torus::new(&config.world),
             agents,
             controllers,
             telemetry,
@@ -195,7 +194,7 @@ impl Arena {
         for food in &mut self.food {
             if self.torus.distance(agent.position, food.position) <= reach {
                 agent.energy += config.food.energy;
-                food.position = random_position(self.torus, &mut self.rng);
+                food.position = self.torus.random_point(&mut self.rng);
             }
         }
     }
@@ -213,18 +212,4 @@ impl Arena {
         }
         costs
     }
-}
-
-pub(crate) fn torus(config: &Config) -> Torus {
-    Torus {
-        width: config.world.width,
-        height: config.world.height,
-    }
-}
-
-pub(crate) fn random_position(torus: Torus, rng: &mut Rng) -> Vec2 {
-    Vec2::new(
-        rng.gen_range(0.0..torus.width),
-        rng.gen_range(0.0..torus.height),
-    )
 }
