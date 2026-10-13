@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Format, lint, and test before every commit. Enable once per clone with:
+#   git config core.hooksPath scripts/git-hooks
+# Checks run on the working tree, which includes any unstaged changes.
+# Silent on success; on failure, prints the failing check's output.
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+log="$(mktemp)"
+trap 'rm -f "$log"' EXIT
+
+check() {
+    if ! "$@" > "$log" 2>&1; then
+        echo "pre-commit: '$*' failed:" >&2
+        cat "$log" >&2
+        exit 1
+    fi
+}
+
+check cargo fmt --all --check
+check cargo clippy --locked --workspace --all-targets -- -D warnings
+check cargo test --locked --workspace

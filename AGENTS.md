@@ -8,8 +8,8 @@
 
 ## Reviewing a ticket
 
-- Run mutation testing on the ticket's changes: `git diff <base> -- crates/*/src > <diff>`, then `cargo mutants --workspace --in-diff <diff>` (install with `cargo install --locked cargo-mutants`). Done when every missed mutant is either caught by a new test or recorded as untestable for now on the ticket that will make it testable.
-
+- Ticket work stacks on the current branch; `master` is stale. Diff a ticket against the commit before its first commit.
+- Run mutation testing on the ticket's changes with `scripts/mutants-ticket.sh [<base>]`. The base defaults to HEAD, which covers uncommitted work. Done when every missed mutant is either caught by a new test or recorded as untestable for now on the ticket that will make it testable.
 
 ## Agent skills
 
