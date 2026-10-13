@@ -10,6 +10,7 @@ mod geometry;
 mod metrics;
 mod mlp;
 mod rng;
+mod run_files;
 mod sensing;
 mod showcase;
 mod snapshot;
@@ -23,6 +24,9 @@ pub use genome::{CONTROLLER_OUTPUTS, ControllerFamily, Genome, Network, NetworkS
 pub use geometry::Vec2;
 pub use metrics::MetricsRow;
 pub use mlp::{Mlp, NetworkError};
+pub use run_files::{
+    RunFilesError, prepare_output_dir, record_evolution, snapshot_file_name, write_run_files,
+};
 pub use showcase::{Showcase, ShowcaseBuilder, ShowcaseError};
 pub use snapshot::{SNAPSHOT_FORMAT_VERSION, Snapshot, SnapshotError};
 pub use species::{MLP_PREY, Species};

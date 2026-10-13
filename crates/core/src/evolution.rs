@@ -41,6 +41,8 @@ pub struct Progress<'a> {
     pub generation: u32,
     /// The latest metrics rows, one per Species.
     pub latest: &'a [MetricsRow],
+    /// The Evolution as of now, for example to save a Snapshot.
+    pub evolution: &'a Evolution,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -157,6 +159,7 @@ impl Evolution {
                     total: generations,
                     generation: self.generation,
                     latest,
+                    evolution: self,
                 });
             }
         }
