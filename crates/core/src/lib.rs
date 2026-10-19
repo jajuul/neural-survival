@@ -1,6 +1,8 @@
 //! Headless Neural Survival library: config, simulation, and evolution, with no GUI
 //! dependency (ADR-0003).
 
+#![forbid(unsafe_code)]
+
 mod config;
 mod episode;
 mod evolution;

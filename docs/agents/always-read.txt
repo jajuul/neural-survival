@@ -1,0 +1,17 @@
+# Always-read paths: code a human reads in full whenever a change touches it.
+#
+# One glob per line, matched against repo-relative paths; `*` also matches `/`.
+# A change touching any of these is Full tier (scripts/review-gate.sh enforces
+# it), and the architecture walkthrough lists every touched one for reading in
+# full instead of choosing it as one of its three inspection points.
+#
+# The human maintains this list. Agents may suggest entries but never edit it.
+#
+# Suggestions, all commented out until you decide. They protect ADR-0001
+# (same seed, config and binary give identical results, including after
+# resuming from a Snapshot):
+# crates/core/src/rng.rs
+# crates/core/src/snapshot.rs
+docs/adr/*
+# scripts/review-gate.sh
+# scripts/check-*.sh

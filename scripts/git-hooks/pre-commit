@@ -3,6 +3,10 @@
 #   git config core.hooksPath scripts/git-hooks
 # Checks run on the working tree, which includes any unstaged changes.
 # Silent on success; on failure, prints the failing check's output.
+#
+# A commit that stages only OpenSpec files and acceptance tests
+# (tests/acceptance_*.rs) is only format-checked: acceptance tests are
+# approved before the code they test exists, so they need not compile yet.
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -18,5 +22,10 @@ check() {
 }
 
 check cargo fmt --all --check
+
+if ! git diff --cached --name-only | grep -Evq '^openspec/|(^|/)tests/acceptance_[^/]*\.rs$'; then
+    exit 0
+fi
+
 check cargo clippy --locked --workspace --all-targets -- -D warnings
 check cargo test --locked --workspace

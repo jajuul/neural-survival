@@ -1,5 +1,28 @@
 schema: spec-driven
 
+context: |
+  Changes follow docs/agents/review-workflow.md. Claude Code implements;
+  Codex writes the acceptance tests and reviews.
+
+rules:
+  proposal:
+    - "Start with a 'Tier: light|standard|full' line and a one-line reason (light changes need no OpenSpec change)."
+    - "Add a 'Base: <commit>' line naming the commit the change starts from."
+  specs:
+    - Make every scenario concrete enough to become one automated test.
+    - "Each scenario gets one or more '<!-- verified-by: <path>::<test_fn> -->' lines once its test exists."
+  design:
+    - Reference the ADRs in docs/adr/ the change relies on, and propose a new ADR for any significant decision.
+  tasks:
+    - The first task is acceptance tests, written by Codex in tests/acceptance_<NN>_<slug>.rs or crates/core/tests/acceptance_<NN>_<slug>.rs, then approved by the human before implementation starts.
+    - The last task is running scripts/review-gate.sh on the committed change.
+
+operations:
+  apply:
+    guidance:
+      - Never edit approved acceptance tests or acceptance-approved; if one looks wrong, stop and ask.
+      - Commit the implementation, then run scripts/review-gate.sh <base> <change> and report its recorded results.
+
 # Project context (optional)
 # Add only constraints that should guide OpenSpec artifacts and workflows.
 # Include constraints an agent cannot infer by reading the code.
