@@ -12,6 +12,15 @@ Issues and specs for this repo live as markdown files in `.scratch/`.
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
 - When finishing a ticket, append any open finding that affects a later ticket (a known gap, an assumption the later work must keep, a decision it must make) to that ticket's `## Comments`, with file pointers. Do this before reporting the ticket done.
 
+## Tickets and OpenSpec changes
+
+`spec.md` is the frozen roadmap; `openspec/specs/` describes current behaviour. Tickets stay the backlog: dependencies (`Blocked by:`), triage state, and findings carried between tickets live only in the ticket files.
+
+- **Picking up a ticket:** follow `docs/agents/review-workflow.md`. For a Standard or Full ticket, create one OpenSpec change with `/opsx:propose`, named `<NN>-<slug>` after the ticket file. Give it the ticket's "What to build" and checklist, the `spec.md` sections its `**Spec:**` line cites, its `## Comments`, and the relevant ADRs. Write spec deltas against `openspec/specs/`, not against `spec.md`. A Light ticket gets no OpenSpec change.
+- **Linking:** add a `**Change:** <NN>-<slug>` line under the ticket's `**Spec:**` line when the change is created.
+- **Finishing:** only after the human approves in step 8, archive the change with `/opsx:archive`, then set the ticket's `Status: resolved` and append findings for later tickets as above.
+- One change per ticket. If a ticket turns out too large, split the ticket first, then make one change per part.
+
 ## When a skill says "publish to the issue tracker"
 
 Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
