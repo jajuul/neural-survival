@@ -10,7 +10,11 @@
 # Runs on committed work only: the working tree must be clean apart from
 # review output. Every check runs even when an earlier one fails, except
 # mutation testing, which needs passing tests. A check whose tool is missing
-# is reported SKIPPED, never passed. The report goes to stdout and, for a
+# is reported SKIPPED, never passed. Surviving mutants pass only when listed
+# in openspec/changes/<change-name>/accepted-mutants, one per line as
+# "<file>: <mutation>  # <ticket that will make it testable>", the format of
+# mutants.out/missed.txt (a :line:col after the file is ignored).
+# The report goes to stdout and, for a
 # change, to openspec/changes/<change-name>/review/gate.md.
 # Exits non-zero when any check fails.
 set -uo pipefail
@@ -179,10 +183,45 @@ else
 fi
 
 # Mutation testing last: it is slow and meaningless while tests fail.
+# A surviving (missed or timed-out) mutant fails the gate unless the human
+# accepted it in <change>/accepted-mutants. Entries match on file and
+# mutation, ignoring line and column, so unrelated edits don't break them.
+normalize_mutants() {
+    sed -E 's/[[:space:]]*#.*$//; s/^([^:]+):[0-9]+:[0-9]+: /\1: /; s/[[:space:]]+$//' \
+        | grep -v '^$' | sort -u
+}
+accepted_survivors=""
 if [[ $tests_status -ne 0 ]]; then
     record "Mutation testing" SKIPPED - "tests failed"
 else
-    run "Mutation testing" scripts/mutants-ticket.sh "$merge_base"
+    mutants_log="$log_dir/mutation-testing.log"
+    scripts/mutants-ticket.sh "$merge_base" > "$mutants_log" 2>&1
+    mutants_status=$?
+    survivors=""
+    if [[ $mutants_status -eq 2 || $mutants_status -eq 3 ]]; then
+        survivors="$(cat mutants.out/missed.txt mutants.out/timeout.txt 2>/dev/null | normalize_mutants)"
+    fi
+    if [[ $mutants_status -eq 0 ]]; then
+        record "Mutation testing" PASS 0 "no surviving mutants"
+    elif [[ -z "$survivors" ]]; then
+        record "Mutation testing" FAIL "$mutants_status" "cargo mutants did not complete" "$mutants_log"
+    else
+        accepted=""
+        if [[ -n "$change_dir" && -f "$change_dir/accepted-mutants" ]]; then
+            accepted="$(normalize_mutants < "$change_dir/accepted-mutants")"
+        fi
+        unaccepted="$(comm -23 <(echo "$survivors") <(echo "$accepted"))"
+        accepted_survivors="$(comm -12 <(echo "$survivors") <(echo "$accepted"))"
+        total=$(grep -c . <<< "$survivors")
+        if [[ -z "$unaccepted" ]]; then
+            record "Mutation testing" PASS "$mutants_status" "$total surviving mutant(s), all accepted"
+        else
+            echo "$unaccepted" > "$mutants_log"
+            record "Mutation testing" FAIL "$mutants_status" \
+                "$(grep -c . <<< "$unaccepted") of $total surviving mutant(s) not in accepted-mutants" \
+                "$mutants_log"
+        fi
+    fi
 fi
 
 report="$(
@@ -196,6 +235,14 @@ report="$(
     echo "| Check | Result | Exit code | Detail |"
     echo "|---|---|---|---|"
     printf '%s\n' "${rows[@]}"
+    if [[ -n "$accepted_survivors" ]]; then
+        echo
+        echo "## Accepted surviving mutants"
+        echo
+        echo "Untested for now, accepted in accepted-mutants:"
+        echo
+        sed 's/^/- /' <<< "$accepted_survivors"
+    fi
     if [[ ${#details[@]} -gt 0 ]]; then
         echo
         echo "## Failures"

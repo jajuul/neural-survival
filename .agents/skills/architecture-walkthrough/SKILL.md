@@ -17,12 +17,21 @@ Ask for the change name and base commit if you weren't given them. Then read:
 4. `review/gate.md`, `review/code-review.md`, and `review/verification.md`. Build on them; do not redo their work.
 5. `docs/agents/always-read.txt`.
 
+Before writing anything, check that the review files describe the current code. Take `git rev-parse --short HEAD`, then:
+
+- `gate.md`'s `Commits:` line must end at that commit.
+- `verification.md`'s `Gate:` line must name the same range as `gate.md`.
+- `code-review.md`'s `Reviewed:` line must name that commit.
+
+If any file is missing or stale, stop and say which steps must be rerun. Never walk through code the reviews didn't cover.
+
 Read the surrounding code the diff calls and is called by, not only the changed lines. Ground every technical claim in a file and symbol (`crates/core/src/world.rs::World::step`). If you cannot ground a claim, say it is an inference.
 
 ## Report
 
-Write `openspec/changes/<change>/review/walkthrough.md`, short enough to read in five minutes:
+Write `openspec/changes/<change>/review/walkthrough.md`, short enough to read in five minutes. It is the file the human opens first, so it starts with the whole review in brief:
 
+0. **Review summary**: the commit range; the gate result (PASS, FAIL, or SKIPPED per check, and any accepted surviving mutants); code-review findings per axis; the verification status counts; and the single most significant open risk. Link [gate](gate.md), [code review](code-review.md), and [verification](verification.md). End with a one-line verdict: ready for the human's targeted reading, or blocked and by what.
 1. **What changed**: a few sentences in domain language (`CONTEXT.md` terms).
 2. **How it is structured**: the components changed or added, what each is responsible for, who owns which state, and the interfaces between them. List new dependencies between modules or crates explicitly.
 3. **Runtime paths**: trace one representative path and one failure path through the new code, step by step, with file and symbol references.

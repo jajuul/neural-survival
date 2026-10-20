@@ -54,6 +54,6 @@ Gate: <commit range from gate.md>, <n> PASS, <n> FAIL, <n> SKIPPED
 <For each: what could not be established, why, the impact if it is wrong, and what evidence would settle it.>
 ```
 
-Cover at least: behaviour the tests cannot reach, scenarios tested only by implementer-written tests, surviving mutants from the gate, and anything in `design.md` the spec scenarios don't express.
+Cover at least: behaviour the tests cannot reach, scenarios tested only by implementer-written tests, surviving mutants from the gate (accepted ones included: each is behaviour no test checks yet, so name the requirement it weakens and the ticket expected to close it), and anything in `design.md` the spec scenarios don't express.
 
 End by telling the user the counts per status and the single most significant unverified risk.

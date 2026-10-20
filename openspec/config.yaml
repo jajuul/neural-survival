@@ -8,8 +8,10 @@ rules:
   proposal:
     - "Start with a 'Tier: light|standard|full' line and a one-line reason (light changes need no OpenSpec change)."
     - "Add a 'Base: <commit>' line naming the commit the change starts from."
+    - State what is out of scope.
   specs:
-    - Make every scenario concrete enough to become one automated test.
+    - Make every scenario concrete enough to become one automated test, then check the specs against the step 1 checklist in docs/agents/review-workflow.md and report each failure before asking for approval.
+    - "For a bug fix, write three kinds of scenario: one that reproduces the bug, one that shows the fix holds, and one for nearby behaviour that must not change."
     - "Each scenario gets one or more '<!-- verified-by: <path>::<test_fn> -->' lines once its test exists."
   design:
     - Reference the ADRs in docs/adr/ the change relies on, and propose a new ADR for any significant decision.

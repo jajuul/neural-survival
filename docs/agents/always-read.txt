@@ -10,8 +10,8 @@
 # Suggestions, all commented out until you decide. They protect ADR-0001
 # (same seed, config and binary give identical results, including after
 # resuming from a Snapshot):
-# crates/core/src/rng.rs
-# crates/core/src/snapshot.rs
+crates/core/src/rng.rs
+crates/core/src/snapshot.rs
 docs/adr/*
 # scripts/review-gate.sh
 # scripts/check-*.sh
