@@ -46,7 +46,7 @@ The binary calls `neural_survival_viewer::run(snapshot)` to open the window.
 
 ### 4. The scene is world-space shapes, with edge copies
 
-`Scene` lists `AgentShape { position, radius, heading, colour, shape }` and `FoodDot { position, radius, colour }` in world units. The painter only scales world units to the panel. Edge copies are computed in the model: for each item, add offsets of ±width when it overlaps the left or right edge and ±height for the top or bottom, plus the diagonal copy when it overlaps both. Colours are model constants (`ROLE_COLOURS`, `FOOD_COLOUR`), stored as RGB triples so the model stays free of `egui`. MLP is a circle; the shape enum reserves a triangle for LTC (ticket 07).
+`Scene` lists `AgentShape { position, radius, heading, colour, shape }` and `FoodDot { position, radius, colour }` in world units. The painter only scales world units to the panel. `Scene::of(&Showcase)` is public, and `Viewer::scene()` returns `Scene::of(self.showcase())`. This lets tests build exact layouts with the core's existing `Showcase::builder(...).placements(...).food(...)`, because a Snapshot carries no world layout. Edge copies are computed in the model: for each item, add offsets of ±width when it overlaps the left or right edge and ±height for the top or bottom, plus the diagonal copy when it overlaps both. Colours are model constants (`ROLE_COLOURS`, `FOOD_COLOUR`), stored as RGB triples so the model stays free of `egui`. MLP is a circle; the shape enum reserves a triangle for LTC (ticket 07).
 
 ### 5. Stats and Fitness series are derived on demand
 

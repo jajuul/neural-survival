@@ -153,9 +153,19 @@ The viewer SHALL report the Snapshot's Generation, the current step, the number 
 - **WHEN** the Snapshot is of Generation 2 and its schedule is 1 Episode of 4 steps with a stage from Generation 2 of 3 Episodes of 7 steps
 - **THEN** its stats report 3 Episodes of 7 steps
 
+### Requirement: The viewer draws its current Showcase
+
+The world view SHALL draw the scene of the viewer's current Showcase, as the scene requirement below defines for any Showcase.
+
+#### Scenario: The viewer's scene follows its Showcase
+
+- **WHEN** a viewer is opened on a Snapshot and plays 5 steps
+- **THEN** its scene equals the scene of its current Showcase
+- **AND** that scene differs from the scene at step 0
+
 ### Requirement: The drawn scene
 
-The world view SHALL draw each living Agent as its Controller Family's shape (MLP: circle) in its Role's colour, at its position with its body radius and a heading marker, and each food item as a dot of the food radius in a colour distinct from every Role. Dead Agents SHALL not be drawn. Anything overlapping a torus edge SHALL also be drawn shifted by the world's width, height, or both, so it shows on both sides.
+The scene of a Showcase SHALL draw each living Agent as its Controller Family's shape (MLP: circle) in its Role's colour, at its position with its body radius and a heading marker, and each food item as a dot of the food radius in a colour distinct from every Role. Dead Agents SHALL not be drawn. Anything overlapping a torus edge SHALL also be drawn shifted by the world's width, height, or both, so it shows on both sides. Scenarios build the Showcase with explicit placements and food.
 
 #### Scenario: Living Prey and food
 

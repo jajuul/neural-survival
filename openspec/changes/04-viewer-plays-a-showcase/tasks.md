@@ -19,7 +19,7 @@
 ## 4. Stats, scene and chart data
 
 - [ ] 4.1 Implement `stats()`: Generation, step, alive, food, per-Species and per-family alive and total, and the Evaluation Schedule plan for the Generation. Verify: the stats acceptance tests pass.
-- [ ] 4.2 Implement `scene()`: living Agents as family shape and role colour with heading, food dots, and edge copies for left, right, top, bottom and corners. Verify: the scene acceptance tests pass.
+- [ ] 4.2 Implement the public `Scene::of(&Showcase)` and `Viewer::scene()`, which delegates to it: living Agents as family shape and role colour with heading, food dots, and edge copies for left, right, top, bottom and corners. Verify: the scene acceptance tests pass.
 - [ ] 4.3 Implement `fitness_series()`: best and mean points per Species from the metrics history. Verify: the chart acceptance tests pass.
 
 ## 5. GUI and CLI
