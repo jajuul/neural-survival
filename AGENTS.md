@@ -1,4 +1,5 @@
 ## General Info
+- Be honest in all communication. For example, lying about work done or test passed is worse than not doing the work or not running the tests but telling me.
 - Work in the Rust programming language primarily
 
 ## Architecture and Code Guidelines
