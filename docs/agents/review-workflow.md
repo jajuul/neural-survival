@@ -53,7 +53,7 @@ crates/core/tests/acceptance_<NN>_<slug>.rs
 
 **3. Implement** (Claude). `/opsx:apply`, using Matt Pocock's `tdd` skill at the seams `design.md` lists: red → green one slice at a time, until the acceptance tests pass. The seams are already approved, so don't ask for them again; a new seam the design missed is a question for the human. Use `tdd`, not Matt's `implement`: `/opsx:apply` tracks the tasks, and the review comes in step 5. Never edit an approved acceptance test or `acceptance-approved`; if one is wrong, or implementing shows the Test interface is wrong, stop and tell the human, who approves a revised interface and tests. Add further tests freely in other files, linked the same way. End with a commit: review covers committed work only.
 
-**4. Gate** (Claude runs it; the human can rerun it). `scripts/review-gate.sh <base> <change>` (Light: `scripts/review-gate.sh <base>`). It runs formatting, Clippy, tests, architecture checks, OpenSpec validation, the dependency audit, traceability, the acceptance-test lock, and the tier check, and writes `review/gate.md`. Fix failures and rerun until it passes.
+**4. Gate** (Claude runs it; the human can rerun it). `scripts/review-gate.sh <base> <change>` (Light: `scripts/review-gate.sh <base>`). It runs formatting, Clippy, tests, architecture checks, OpenSpec validation, the dependency audit, traceability, the acceptance-test lock, and the tier check, and writes `review/gate.md`. Fix failures and rerun until it passes. Leave `review/gate.md` uncommitted: step 5 commits it together with `code-review.md`. A commit outside `review/` after the gate runs, even a ticked task, makes the gate stale for steps 6 and 7.
 
 Mutation testing is off by default and recorded SKIPPED; run the gate with `--mutants` only when the human asks. The reviews count the SKIPPED check as missing evidence.
 
@@ -66,7 +66,7 @@ crates/core/src/world.rs: replace Torus::wrap -> f32 with 0.0  # 06-predators-an
 
 Entries match on file and mutation, not line number. Accepted survivors stay listed in `gate.md`.
 
-**5. Review** (Codex, fresh session). Both reviews against `<base>`, saved together as `openspec/changes/<change>/review/code-review.md`, which starts with `Reviewed: <short HEAD commit>` so later steps can tell whether it is current:
+**5. Review** (Codex, fresh session). Both reviews against `<base>`, saved together as `openspec/changes/<change>/review/code-review.md`, which starts with `Reviewed: <short HEAD commit>` so later steps can tell whether it is current. Commit it together with the uncommitted `review/gate.md`:
 - `code-review`, Matt Pocock's skill, with fixed point `<base>` and the change folder as the spec: coding standards and spec compliance, including scope creep.
 - Codex's built-in review, for bugs, edge cases, and error handling. `--base` takes a branch, so point one at the base commit first:
 

@@ -18,14 +18,14 @@ rules:
     - "Include a 'Test interface' section: the public functions, types, or CLI commands the acceptance tests will call, with signatures, and the seams to test-drive with the tdd skill during apply."
   tasks:
     - The first task is acceptance tests, written by Codex in tests/acceptance_<NN>_<slug>.rs or crates/core/tests/acceptance_<NN>_<slug>.rs, then approved by the human before implementation starts.
-    - The last task is running scripts/review-gate.sh on the committed change.
+    - The last task is committing the implementation. The review gate is workflow step 4, not a task: a task ticked after the gate runs would commit after the gate's range and make it stale.
 
 operations:
   apply:
     guidance:
       - Use the tdd skill at the seams in design.md's Test interface section; they are already approved, so don't ask for them again.
       - Never edit approved acceptance tests or acceptance-approved; if one, or the Test interface itself, looks wrong, stop and ask.
-      - Commit the implementation, then run scripts/review-gate.sh <base> <change> and report its recorded results.
+      - Commit the implementation, then run scripts/review-gate.sh <base> <change> and report its recorded results. Leave review/gate.md uncommitted.
 
 # Project context (optional)
 # Add only constraints that should guide OpenSpec artifacts and workflows.
