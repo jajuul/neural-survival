@@ -1,9 +1,9 @@
 # Review gate
 
 - Change: 04-viewer-plays-a-showcase
-- Commits: 2a2a8fe..c048991
+- Commits: 2a2a8fe..47e1f2a
 - Tier: full (required by the diff: full)
-- Run: 2026-10-21T12:01:45+02:00
+- Run: 2026-10-21T14:05:48+02:00
 
 | Check | Result | Exit code | Detail |
 |---|---|---|---|

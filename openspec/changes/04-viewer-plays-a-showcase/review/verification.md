@@ -1,0 +1,91 @@
+# Verification: 04-viewer-plays-a-showcase
+
+Gate: `2a2a8fe..47e1f2a`, 9 PASS, 0 FAIL, 1 SKIPPED.
+
+Verified source revision: `47e1f2af6c37eb9975aa5be0c0a6608968b3f9a6`. Full tier, as declared in proposal.md and confirmed by the gate. The freshly regenerated gate was uncommitted when read; this report and gate.md are committed together at the human's request. That documentation commit does not extend the gate's tested source range.
+
+Evidence comes from the recorded gate, the linked test bodies, implementation mapping, proposal/design/tasks, acceptance-approved, accepted-mutants, and step 5's code-review.md. No checks were rerun as a substitute for the gate. No code, tests, specs, or protected approval/exception files were modified.
+
+Step 5 says `Reviewed: b317232`; `git diff b317232..47e1f2a` changes only review/code-review.md. Its implementation findings therefore still apply to the verified source. Its historical gate and incomplete built-in mutation-run statements are superseded for execution evidence by the current gate; its spec finding is not superseded.
+
+## Requirements
+
+`A::` below means `tests/acceptance_04_viewer_plays_a_showcase.rs::`, the sole file listed in acceptance-approved at commit `2b92f447c061dc8335b1510b104563aac472eabe`. Every named A test is an approved acceptance test and passed under the gate's workspace Tests check. The gate also reports the acceptance file unchanged. `P::` means `crates/viewer/tests/playback.rs::` and `S::` means `crates/viewer/tests/scene.rs::`; these are implementer-written, passed supplemental tests, not approved acceptance tests. All linked bodies were read, including their fixture helpers. Every one of the 27 scenarios has an acceptance link matching its concrete WHEN/THEN, and Traceability and Tests both PASS.
+
+Verified refers to the specified headless scenarios. It does not establish the GUI obligations explicitly assigned to manual checking in the proposal. Those limits remain below even where the model requirement is Verified. No requirement relies solely on implementer-written tests.
+
+| Requirement | Implementation | Evidence | Status | Missing evidence |
+|---|---|---|---|---|
+| The view command loads a Snapshot | `src/main.rs::view`, `main`; `crates/viewer/src/app.rs::run` | `A::a_saved_snapshot_opens` runs batch seed 42 to Generation 10 and checks the exact ready line for 4 Agents/20 steps; `A::a_missing_snapshot_fails_with_its_path` checks nonzero exit and path; `A::an_unsupported_snapshot_version_fails_naming_the_version` checks nonzero exit and version 999. | Verified | Actual window creation and its failure paths are outside these `--no-window` tests. |
+| The viewer opens paused on the Snapshot's Showcase | `crates/viewer/src/model.rs::Viewer::open` | `A::opening_state` opens Generation 3 and asserts paused, step 0, not ended, and full Showcase equality with direct construction. | Verified | Window's displayed opening state requires manual evidence. |
+| Pause and continue | `model.rs::Viewer::{frame,play,pause}` | `A::frames_advance_nothing_while_paused` checks four 0.125 s frames at speed 32 leave step/state unchanged; `A::continuing_plays_pausing_stops` checks 8 → 8 → 12 steps and equality while paused. `P::pausing_drops_the_carried_fraction`, `playing_again_while_playing_keeps_the_carried_fraction`, `playing_unpauses_and_pausing_pauses` add reset/idempotence/state coverage. | Verified | Fraction reset and repeated-play edges have weaker, implementer-only evidence; button/repaint behavior is untested. |
+| Single-step while paused | `model.rs::Viewer::single_step` | `A::single_steps` asserts steps 1, 2, 3 while remaining paused; `A::single_step_is_ignored_while_playing` asserts step 4 and unchanged Showcase. | Verified | GUI Step button dispatch/enabling is untested. |
+| Simulation speed | `model.rs::Viewer::{open,set_speed,frame}` | `A::default_speed` asserts 30; `A::fractional_steps_carry_over` asserts steps 1, 2, 10 after the specified frames; `A::speed_is_clamped` checks 0 → 1 and 5000 → 1000; `A::a_slow_frame_is_capped` checks 2 s at speed 100 produces 25 steps. `P::changing_speed_keeps_the_carried_fraction`, `a_negative_frame_counts_as_no_time`, `speed_bounds_are_kept`, `a_capped_frame_still_carries_its_fraction` cover extra edges. | Verified | Supplemental edges rely on implementer tests; actual slider and frame-clock integration are untested. |
+| Speed never changes what happens | `model.rs::Viewer::{frame,single_step,pause,play}` delegates simulation to Showcase | `A::played_and_stepped_showcases_match` compares all three Showcases at step 15; `A::different_speeds_reach_the_same_episode_end` compares Episode ends at speeds 7/1000. Additional approved `A::speed_never_changes_what_happens` runs 64 proptest cases over speeds 1..=1000 and positive frame lengths up to 0.3 s, comparing against direct and single-step simulation, including pause/resume. | Verified | Finite randomized evidence, not exhaustive proof across all seeds/configurations/timings. |
+| The Showcase stops at Episode end | `model.rs::Viewer::{frame,has_ended,single_step}`; Showcase termination | `A::playing_past_the_end` confirms all Agents alive at the 20-step limit and equality after another frame and a paused single-step. | Verified | GUI ended indicator/repaint behavior is untested. |
+| Restart replays the Showcase exactly | `model.rs::Viewer::restart` rebuilds from retained Snapshot and pauses | `A::restart_after_the_end` checks step 0/paused/not ended, initial equality and identical second ending; `A::restart_mid_episode` checks restart from step 7. `P::restart_drops_the_carried_fraction` checks fractional-clock reset. | Verified | Fraction reset has implementer-only supplemental evidence; Restart widget is untested. |
+| Stats | `model.rs::Viewer::stats`, `tally` | `A::stats_of_a_fresh_showcase` checks all specified fields at Generation 10, including Species/family counts; `A::stats_follow_deaths` checks step 2, zero alive and unchanged totals after specified energy drain; `A::stats_show_the_generations_evaluation_schedule_stage` checks Generation 2 selects 3 Episodes of 7 steps. | Verified | Mixed Species/families cannot be exercised yet; accepted stats mutant below. Panel rendering is untested. |
+| The viewer draws its current Showcase | `model.rs::Viewer::scene`; `app.rs::App::world` consumes it | `A::the_viewers_scene_follows_its_showcase` asserts step 5, equality to the current Showcase scene, and inequality to step 0. | Verified | Actual painting of the returned scene is untested. |
+| The drawn scene | `model.rs::Scene::of`, `edge_copies`, `role_colour`, `family_shape`; `app.rs::App::world` | `A::living_prey_and_food` checks shape, role/food colours, positions, radii and heading; `A::dead_agents_are_not_drawn` checks only the living Agent remains; `A::shapes_overlapping_an_edge_are_drawn_on_both_sides` checks left edge, corner and interior with exact copies and shape metadata; `A::food_overlapping_an_edge_is_drawn_on_both_sides` checks right-edge food copies. `S::right_edge_is_copied_to_the_left`, `bottom_edge_is_copied_to_the_top`, `top_edge_is_copied_to_the_bottom`, `a_corner_is_copied_to_the_other_three`, `touching_an_edge_is_not_overlapping_it`, `food_in_a_corner_is_copied_to_the_other_three` extend boundary coverage. | Failed | Step 5's P3 finding: heading marker extends to 1.6 × radius while copies use body radius. At (1.2, 20), radius 1, heading π in a 50 × 40 world, the marker crosses left without a right-edge copy. No linked test exercises this case or demonstrates the finding wrong. Passing body-copy scenarios do not settle it. |
+| Fitness chart data | `model.rs::Viewer::fitness_series`; `app.rs::App::chart` | `A::one_line_pair_per_species` checks exactly one MLP-Prey pair with all six specified Generation/value points; `A::no_history` checks empty lines for Generation 0. | Verified | Multiple Species are unavailable; actual chart lines, legend and styling are untested. |
+
+Totals: **11 Verified, 0 Partially verified, 1 Failed, 0 Unverified**. Failed reflects the existing step 5 finding, not a newly failing test.
+
+## Skipped and failed checks
+
+- **Dependency audit: SKIPPED**, detail `no deny.toml`. The gate establishes no dependency-audit result for the added GUI dependency tree. A configured audit with a recorded passing run would settle that gap.
+- **No gate checks failed.** Mutation testing is recorded **PASS with exit code 2**, because all 20 survivor signatures are accepted. This means the exception policy passed, not that every mutation was detected. The surviving behaviors remain unproven as listed below.
+
+## Unverified assumptions and residual risks
+
+### GUI and accepted mutation survivors
+
+The largest missing evidence is end-to-end GUI operation. Tests construct model data and use `--no-window`; they cannot establish that a window opens, repaints, forwards controls, or displays the tested data. A checked task box is not an observed manual run. The accepted `run → Ok(())` survivor demonstrates that the automated suite can pass even if window creation is removed entirely. Impact: the primary user-facing viewer may fail despite passing model tests. Settle with a recorded manual run of normal `view --snapshot`, covering initial paused state, every control, Episode end/restart, stats, chart and edge painting on supported Linux/WSL environments. No GUI run was performed in this verification.
+
+Each accepted survivor from gate.md is mapped below. GUI entries explicitly name **no follow-up ticket** in accepted-mutants (`none: the GUI is not tested automatically`); manual approval in step 8 is the stated evidence route, not a promised later automated fix. All signatures are in `crates/viewer/src/app.rs` except the final row.
+
+| Accepted mutation signature | Requirement weakened / unchecked behavior | Expected closure |
+|---|---|---|
+| `delete ! in <impl eframe::App for App>::ui` | Pause and continue; repaint scheduling while playing | Manual GUI check; no ticket |
+| `delete ! in App::controls` | Single-step while paused; Step enabling | Manual GUI check; no ticket |
+| `delete - in App::world` | The drawn scene; heading/screen coordinate conversion | Manual painting check; no ticket |
+| `replace && with || in <impl eframe::App for App>::ui` | Pause and continue / Episode end; repaint condition | Manual GUI check; no ticket |
+| `replace && with || in App::controls` | Single-step while paused / Episode end; Step enabling | Manual GUI check; no ticket |
+| `replace * with + in App::world` | The drawn scene; scaling, radius or heading geometry | Manual painting check; no ticket |
+| `replace * with / in App::world` | The drawn scene; scaling, radius or heading geometry | Manual painting check; no ticket |
+| `replace + with * in App::world` | The drawn scene; positions or heading geometry | Manual painting check; no ticket |
+| `replace + with - in App::world` | The drawn scene; positions or heading geometry | Manual painting check; no ticket |
+| `replace - with + in App::world` | The drawn scene; coordinate/heading orientation | Manual painting check; no ticket |
+| `replace - with / in App::world` | The drawn scene; coordinate/heading geometry | Manual painting check; no ticket |
+| `replace / with % in App::world` | The drawn scene; scale-to-panel calculation | Manual painting check; no ticket |
+| `replace / with * in App::world` | The drawn scene; scale-to-panel calculation | Manual painting check; no ticket |
+| `replace <impl eframe::App for App>::ui with ()` | All displayed viewer behavior and frame dispatch | Manual GUI check; no ticket |
+| `replace App::chart with ()` | Fitness chart data; visible chart rendering | Manual chart check; no ticket |
+| `replace App::controls with ()` | Playback and Stats; controls/panel absent | Manual GUI check; no ticket |
+| `replace App::world with ()` | Current Showcase / drawn scene; world absent | Manual painting check; no ticket |
+| `replace colour -> Color32 with Default::default()` | The drawn scene; conversion of role/food colours | Manual colour check; no ticket |
+| `replace run -> Result<(), Box<dyn std::error::Error>> with Ok(())` | The view command loads a Snapshot; no window opens | Manual normal-command check; no ticket |
+| `crates/viewer/src/model.rs: replace && with || in Viewer::stats` | Stats; distinct Species counts when family matches but Role differs | Ticket `06-predators-and-captures` explicitly requires mixed-Role alive/total tests once Predators exist |
+
+These are file-and-mutation signatures, not one-to-one source locations. The current gate lists 20 signatures; it does not give a fresh total of individual generated/caught mutants. The step 5 report's separate run recorded 37 missed cases normalizing to these 20 signatures; those historical counts are not attributed to the current gate.
+
+### Other limits and design evidence
+
+- **Known heading-wrap contradiction:** carried from step 5 unchanged. Body/food copy tests and model heading values do not check the marker's painted extent. Impact is a clipped/missing heading segment across the Torus. Evidence needed: a regression test for marker-only edge overlap and a subsequent review of the correction; visual confirmation of the copied segment. This session neither fixes nor re-judges the finding.
+- **Future Species/families:** MLP-Prey is the only current Species. Separate groups, chart pairs and Role colours for Predators/LTC are unreachable in this source revision. Ticket 06 records stats/colour/chart follow-ups; ticket 07 introduces LTC. This does not invalidate the present single-Species scenarios; generalization requires multi-Species fixtures and tests when supported.
+- **Implementer-only supplemental evidence:** fractional resets on pause/restart, repeated play, speed changes with a carried fraction, negative elapsed time, exact speed endpoints, capped-frame remainder, additional body edges/tangency and food corners are covered by P/S tests. They strengthen the acceptance contract but may share implementation assumptions. Independent acceptance coverage would strengthen those additional edges. Every stated spec scenario already has approved acceptance evidence.
+- **Design beyond scenarios:** source inspection maps decision 1 to the new viewer crate, GUI-free model types and `run(Viewer)`; decision 2 to restart from the immutable retained Snapshot; decision 4 to world-space shapes, RGB constants and the read-only `Showcase::config()` getter; decision 5 to on-demand stats/chart derivation; decision 6 to the hidden CLI flag; decision 7 to viewer-local eframe/egui_plot dependencies and Cargo.lock. Architecture PASS corroborates crate separation. These mappings establish structure, not executed GUI behavior.
+- **Design decision 3 representation:** design describes a fractional remainder; source retains a running step total and consumed-step count. Step 5 explicitly evaluated this alternative, and acceptance/property plus supplemental playback tests supply finite-frame evidence. No long-duration precision or non-finite-time test evidence was established. Impact if that untested assumption fails is incorrect playback scheduling; a bounded lifetime/timing contract and tests at its boundaries would settle it.
+- **Untested design claims:** responsive performance for a few hundred Agents, visual layout/colours, build instructions on a clean Linux/WSL machine and platform window failure behavior have no executed evidence here. Performance measurements, a clean-environment build and the manual GUI checklist would settle them. The crate split supports future extensions by inspection; that extensibility is not a test result. Vision cones, Inspector, Predators/LTC and Arena Mode are explicitly outside this change's current scope.
+
+## Supplemental OpenSpec verification
+
+Applied the installed openspec-verify-change workflow using `openspec list --json`, `openspec status --change 04-viewer-plays-a-showcase --json` and `openspec instructions apply --change 04-viewer-plays-a-showcase --json`. The root is this repository, schema is `spec-driven`, all four planning artifacts exist, task tracking is configured, and all context files were read. No unavailable tracking files were reported.
+
+| Dimension | Result |
+|---|---|
+| Completeness | 15/15 tasks marked complete; implementation mappings found for all 12 ADDED requirements; no REMOVED/RENAMED requirements. Task 6.2's claim that every check passes is qualified by the audit SKIPPED result. Manual task claims are not independently established. |
+| Correctness | All 27 scenarios have matching acceptance bodies and recorded executed evidence. 11 requirements Verified; drawn scene Failed by step 5. GUI execution remains not verified under the explicit manual-testing scope. |
+| Coherence | Design/structure mapped above; finite-frame playback representation differs as already assessed in step 5. No additional code-pattern issue identified in the mapped source; gate formatting/Clippy/architecture PASS. Performance, deployment prerequisites and GUI behavior not verified. |
+
+No missing implementation or incomplete tracked-task critical issue was found. One existing correctness warning is carried forward: the P3 heading-marker wrap finding (model.rs::Scene::of and app.rs::App::world); use its concrete edge fixture for a regression test and correction in the implementation workflow. No new pattern suggestions. This is an evidence report, not a replacement step 5 review or an approval/archive verdict. GUI execution, dependency audit, multi-Species behavior and the design assumptions listed above remain unverified.
