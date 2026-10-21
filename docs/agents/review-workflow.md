@@ -32,8 +32,9 @@ Before asking for approval, Claude checks the delta specs against this list and 
 - Terms match `CONTEXT.md`, and nothing contradicts an accepted ADR.
 - The proposal says what is out of scope.
 - A bug fix has the three scenarios step 2 needs.
+- `design.md` has a **Test interface** section naming (a) the public functions, types, or CLI commands the acceptance tests will call, with their signatures, and (b) the seams Claude will test-drive in step 3. Approving the design approves both, so step 2 tests against an agreed interface and step 3 needs no second round of seam questions.
 
-**2. Acceptance tests** (Codex, fresh session; the human skims and approves). First run the step 1 checklist again and report any scenario that can't become a test; it goes back to step 1 rather than being guessed at. Then, from the delta specs only, not from any implementation, write tests in `tests/acceptance_<NN>_<slug>.rs` or `crates/core/tests/acceptance_<NN>_<slug>.rs`. They may call functions that don't exist yet. Where a requirement states an invariant or a rule over many inputs (energy never negative, positions stay on the Torus, same seed gives the same result), write it as a `proptest` property rather than a few examples; add `proptest` as a dev-dependency the first time, which makes that change Full.
+**2. Acceptance tests** (Codex, fresh session; the human skims and approves). First run the step 1 checklist again and report any scenario that can't become a test; it goes back to step 1 rather than being guessed at. Then, from the delta specs only, not from any implementation, write tests in `tests/acceptance_<NN>_<slug>.rs` or `crates/core/tests/acceptance_<NN>_<slug>.rs`. They call only the interface named in `design.md`'s Test interface section, never internals, with a few tests per scenario; that interface may not exist yet. If a scenario can't be tested through it, report that rather than reaching past it. Where a requirement states an invariant or a rule over many inputs (energy never negative, positions stay on the Torus, same seed gives the same result), write it as a `proptest` property rather than a few examples; add `proptest` as a dev-dependency the first time, which makes that change Full.
 
 A bug fix gets three groups of tests:
 
@@ -50,7 +51,7 @@ commit <sha of the acceptance-test commit>
 crates/core/tests/acceptance_<NN>_<slug>.rs
 ```
 
-**3. Implement** (Claude). `/opsx:apply`. Never edit an approved acceptance test or `acceptance-approved`; if one is wrong, stop and tell the human. Add further tests freely in other files, linked the same way. End with a commit: review covers committed work only.
+**3. Implement** (Claude). `/opsx:apply`, using Matt Pocock's `tdd` skill at the seams `design.md` lists: red → green one slice at a time, until the acceptance tests pass. The seams are already approved, so don't ask for them again; a new seam the design missed is a question for the human. Use `tdd`, not Matt's `implement`: `/opsx:apply` tracks the tasks, and the review comes in step 5. Never edit an approved acceptance test or `acceptance-approved`; if one is wrong, or implementing shows the Test interface is wrong, stop and tell the human, who approves a revised interface and tests. Add further tests freely in other files, linked the same way. End with a commit: review covers committed work only.
 
 **4. Gate** (Claude runs it; the human can rerun it). `scripts/review-gate.sh <base> <change>` (Light: `scripts/review-gate.sh <base>`). It runs formatting, Clippy, tests, architecture checks, OpenSpec validation, the dependency audit, traceability, the acceptance-test lock, and the tier check, and writes `review/gate.md`. Fix failures and rerun until it passes.
 

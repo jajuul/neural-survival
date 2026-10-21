@@ -38,9 +38,9 @@ Every change follows [`docs/agents/review-workflow.md`](docs/agents/review-workf
 | Step | Who | What | Produces |
 |---|---|---|---|
 | 0. Classify | Claude, you confirm | Light, Standard, or Full, by risk | `Tier:` line |
-| 1. Specify | Claude, you approve | OpenSpec change for the ticket, checked against the requirements checklist | `openspec/changes/<change>/` |
-| 2. Acceptance tests | Codex, you approve | Tests from the spec alone, before any code | `acceptance_*.rs`, `acceptance-approved` |
-| 3. Implement | Claude | `/opsx:apply`, then commit | the code |
+| 1. Specify | Claude, you approve | OpenSpec change for the ticket, checked against the requirements checklist; the design names the test interface and seams | `openspec/changes/<change>/` |
+| 2. Acceptance tests | Codex, you approve | Tests from the spec alone, through the agreed interface, before any code | `acceptance_*.rs`, `acceptance-approved` |
+| 3. Implement | Claude | `/opsx:apply` with `tdd` at the agreed seams, then commit | the code |
 | 4. Gate | Claude | `scripts/review-gate.sh [--mutants] <base> <change>` (`--mutants` once on the final code) | `review/gate.md` |
 | 5. Review | Codex | `code-review` (standards, spec) and `codex review` (bugs) | `review/code-review.md` |
 | 6. Verify | Codex | `verify-evidence` skill | `review/verification.md` |
@@ -48,6 +48,16 @@ Every change follows [`docs/agents/review-workflow.md`](docs/agents/review-workf
 | 8. Approve | You | Read what the walkthrough lists, then `/opsx:archive` | resolved ticket |
 
 Light changes (no behaviour change) skip to steps 3, 4, and 8. Any correction reruns from step 4. Start your review at `review/walkthrough.md`; it summarises the rest.
+
+### Worked example
+
+Ticket 04, the Showcase viewer, went through every step as a Full change: [`openspec/changes/archive/2026-10-21-04-viewer-plays-a-showcase/`](openspec/changes/archive/2026-10-21-04-viewer-plays-a-showcase/). Read it in this order:
+
+1. `proposal.md`: the `Tier:` and `Base:` lines, and why it is Full.
+2. `acceptance-approved` and `accepted-mutants`: what the human signed off.
+3. [`review/walkthrough.md`](openspec/changes/archive/2026-10-21-04-viewer-plays-a-showcase/review/walkthrough.md): the summary a reviewer starts from, linking `gate.md`, `code-review.md`, and `verification.md`.
+
+It also shows the workflow's limits honestly: every requirement was verified headlessly, but 20 surviving mutants, 19 of them in GUI code, were accepted rather than caught, and the walkthrough names the remaining risk that no automated test opens the window.
 
 ## What only you decide
 

@@ -15,6 +15,7 @@ rules:
     - "Each scenario gets one or more '<!-- verified-by: <path>::<test_fn> -->' lines once its test exists."
   design:
     - Reference the ADRs in docs/adr/ the change relies on, and propose a new ADR for any significant decision.
+    - "Include a 'Test interface' section: the public functions, types, or CLI commands the acceptance tests will call, with signatures, and the seams to test-drive with the tdd skill during apply."
   tasks:
     - The first task is acceptance tests, written by Codex in tests/acceptance_<NN>_<slug>.rs or crates/core/tests/acceptance_<NN>_<slug>.rs, then approved by the human before implementation starts.
     - The last task is running scripts/review-gate.sh on the committed change.
@@ -22,7 +23,8 @@ rules:
 operations:
   apply:
     guidance:
-      - Never edit approved acceptance tests or acceptance-approved; if one looks wrong, stop and ask.
+      - Use the tdd skill at the seams in design.md's Test interface section; they are already approved, so don't ask for them again.
+      - Never edit approved acceptance tests or acceptance-approved; if one, or the Test interface itself, looks wrong, stop and ask.
       - Commit the implementation, then run scripts/review-gate.sh <base> <change> and report its recorded results.
 
 # Project context (optional)
