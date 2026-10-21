@@ -30,8 +30,8 @@
 
 ## 6. Gate
 
-- [ ] 6.1 Commit, run `scripts/mutants-ticket.sh 2a2a8fe`, and add tests for any missed mutants in the model. For survivors in `app.rs`, which no test exercises, propose `accepted-mutants` entries to the human. Verify: every survivor is caught or proposed.
-- [ ] 6.2 Run `scripts/review-gate.sh 2a2a8fe 04-viewer-plays-a-showcase` on the committed change and report its recorded results. Verify: `review/gate.md` shows every check passing.
+- [x] 6.1 Commit, run `scripts/mutants-ticket.sh 2a2a8fe`, and add tests for any missed mutants in the model. For survivors in `app.rs`, which no test exercises, propose `accepted-mutants` entries to the human. Verify: every survivor is caught or proposed.
+- [x] 6.2 Run `scripts/review-gate.sh 2a2a8fe 04-viewer-plays-a-showcase` on the committed change and report its recorded results. Verify: `review/gate.md` shows every check passing.
 
 ## Workflow follow-up
 
