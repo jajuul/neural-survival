@@ -2,7 +2,9 @@
 # Step 4 of the review workflow (docs/agents/review-workflow.md): run every
 # automated check on the committed change and record what actually happened.
 #
-# Usage: scripts/review-gate.sh <base> [<change-name>]
+# Usage: scripts/review-gate.sh [--mutants] <base> [<change-name>]
+#   --mutants      also run mutation testing, which is slow; without it the
+#                  check is recorded SKIPPED
 #   <base>         the commit the change started from; diffs use <base>...HEAD
 #   <change-name>  the OpenSpec change under openspec/changes/; its proposal's
 #                  "Tier:" line sets the tier. Without it the tier is light.
@@ -21,12 +23,21 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 usage() {
-    echo "usage: scripts/review-gate.sh <base> [<change-name>]" >&2
+    echo "usage: scripts/review-gate.sh [--mutants] <base> [<change-name>]" >&2
     exit 2
 }
-[[ $# -ge 1 && $# -le 2 ]] || usage
-base="$1"
-change="${2:-}"
+mutants=0
+args=()
+for arg in "$@"; do
+    case "$arg" in
+        --mutants) mutants=1 ;;
+        -*) usage ;;
+        *) args+=("$arg") ;;
+    esac
+done
+[[ ${#args[@]} -ge 1 && ${#args[@]} -le 2 ]] || usage
+base="${args[0]}"
+change="${args[1]:-}"
 
 git rev-parse --verify --quiet "$base^{commit}" >/dev/null || {
     echo "error: unknown base '$base'" >&2
@@ -191,7 +202,9 @@ normalize_mutants() {
         | grep -v '^$' | sort -u
 }
 accepted_survivors=""
-if [[ $tests_status -ne 0 ]]; then
+if [[ $mutants -eq 0 ]]; then
+    record "Mutation testing" SKIPPED - "not requested; rerun with --mutants"
+elif [[ $tests_status -ne 0 ]]; then
     record "Mutation testing" SKIPPED - "tests failed"
 else
     mutants_log="$log_dir/mutation-testing.log"

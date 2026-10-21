@@ -41,7 +41,7 @@ Every change follows [`docs/agents/review-workflow.md`](docs/agents/review-workf
 | 1. Specify | Claude, you approve | OpenSpec change for the ticket, checked against the requirements checklist | `openspec/changes/<change>/` |
 | 2. Acceptance tests | Codex, you approve | Tests from the spec alone, before any code | `acceptance_*.rs`, `acceptance-approved` |
 | 3. Implement | Claude | `/opsx:apply`, then commit | the code |
-| 4. Gate | Claude | `scripts/review-gate.sh <base> <change>` | `review/gate.md` |
+| 4. Gate | Claude | `scripts/review-gate.sh [--mutants] <base> <change>` (`--mutants` once on the final code) | `review/gate.md` |
 | 5. Review | Codex | `code-review` (standards, spec) and `codex review` (bugs) | `review/code-review.md` |
 | 6. Verify | Codex | `verify-evidence` skill | `review/verification.md` |
 | 7. Walkthrough | Codex | `architecture-walkthrough` skill | `review/walkthrough.md` |
