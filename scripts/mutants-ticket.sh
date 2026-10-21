@@ -37,6 +37,8 @@ echo "Files under test:"
 grep '^+++ b/' "$diff_file" | sed 's|^+++ b/|  |'
 
 status=0
-cargo mutants --workspace --in-diff "$diff_file" > "$log_file" 2>&1 || status=$?
+# --test-workspace: a mutant counts as caught by any test in the workspace,
+# not only by tests in the package that contains it.
+cargo mutants --workspace --test-workspace=true --in-diff "$diff_file" > "$log_file" 2>&1 || status=$?
 grep -E '^(MISSED|TIMEOUT)|mutants tested|^error' "$log_file" || tail -20 "$log_file"
 exit "$status"

@@ -24,7 +24,7 @@
 
 ## 5. GUI and CLI
 
-- [ ] 5.1 Implement `app`: an `eframe::App` that calls `frame(dt)`, paints the scene scaled to the panel, and shows a side panel with stats, pause/continue/step/restart buttons and a speed slider, plus an `egui_plot` chart of `fitness_series()`. Add `run(viewer)` to open the window (design decision 1). Verify: `cargo clippy --workspace --all-targets -- -D warnings` is clean, and `cargo run -- view --snapshot <file>` opens the window paused on that Generation (checked by hand).
+- [x] 5.1 Implement `app`: an `eframe::App` that calls `frame(dt)`, paints the scene scaled to the panel, and shows a side panel with stats, pause/continue/step/restart buttons and a speed slider, plus an `egui_plot` chart of `fitness_series()`. Add `run(viewer)` to open the window (design decision 1). Verify: `cargo clippy --workspace --all-targets -- -D warnings` is clean, and `cargo run -- view --snapshot <file>` opens the window paused on that Generation (checked by hand).
 - [x] 5.2 Add `view --snapshot <path>` and the hidden `--no-window` flag to `src/main.rs`. A load failure prints `error: …` and exits non-zero before any window opens. Verify: the CLI acceptance tests pass and `neural-survival --help` doesn't show `--no-window`.
 - [x] 5.3 Document `view` and the Linux/WSL GUI build prerequisites in `README.md`. Verify: the documented commands run as written.
 
