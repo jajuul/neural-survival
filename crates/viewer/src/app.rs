@@ -4,7 +4,7 @@
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Shape as EguiShape, Slider, Stroke, Ui};
 use egui_plot::{Legend, Line, LineStyle, Plot};
 
-use crate::model::{MAX_SPEED, MIN_SPEED, Rgb, Scene, Shape, Viewer};
+use crate::model::{HEADING_MARKER_LENGTH, MAX_SPEED, MIN_SPEED, Rgb, Scene, Shape, Viewer};
 
 /// Opens the viewer window and blocks until it closes.
 pub fn run(viewer: Viewer) -> Result<(), Box<dyn std::error::Error>> {
@@ -164,7 +164,10 @@ impl App {
                 }
             }
             painter.line_segment(
-                [centre, centre + facing * radius * 1.6],
+                [
+                    centre,
+                    centre + facing * radius * HEADING_MARKER_LENGTH as f32,
+                ],
                 Stroke::new(1.5, Color32::WHITE),
             );
         }

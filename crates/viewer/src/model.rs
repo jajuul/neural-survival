@@ -243,6 +243,10 @@ pub type Rgb = [u8; 3];
 pub const ROLE_COLOURS: [Rgb; 1] = [[80, 160, 255]];
 pub const FOOD_COLOUR: Rgb = [110, 200, 90];
 
+/// How far an Agent's heading marker reaches from its centre, in body radii.
+/// It reaches past the body, so it decides which edges an Agent overlaps.
+pub const HEADING_MARKER_LENGTH: f64 = 1.5;
+
 /// The shape an Agent is drawn as, one per Controller Family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shape {
@@ -291,13 +295,15 @@ impl Scene {
                 let radius = config.agent.body_radius;
                 scene
                     .agents
-                    .extend(copies(agent.position, radius).map(|position| AgentShape {
-                        position,
-                        radius,
-                        heading: agent.heading,
-                        colour: role_colour(agent.role),
-                        shape: family_shape(agent.family),
-                    }));
+                    .extend(copies(agent.position, radius * HEADING_MARKER_LENGTH).map(
+                        |position| AgentShape {
+                            position,
+                            radius,
+                            heading: agent.heading,
+                            colour: role_colour(agent.role),
+                            shape: family_shape(agent.family),
+                        },
+                    ));
             }
             for food in arena.food() {
                 let radius = config.food.radius;

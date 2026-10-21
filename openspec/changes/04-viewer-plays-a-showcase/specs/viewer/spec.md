@@ -240,6 +240,7 @@ The scene of a Showcase SHALL draw each living Agent as its Controller Family's 
 <!-- verified-by: crates/viewer/tests/scene.rs::top_edge_is_copied_to_the_bottom -->
 <!-- verified-by: crates/viewer/tests/scene.rs::a_corner_is_copied_to_the_other_three -->
 <!-- verified-by: crates/viewer/tests/scene.rs::touching_an_edge_is_not_overlapping_it -->
+<!-- verified-by: crates/viewer/tests/scene.rs::a_heading_marker_crossing_an_edge_is_copied -->
 
 - **WHEN** a living Prey of body radius 1 is at (0.5, 20) in a 50 × 40 world
 - **THEN** the scene draws it at (0.5, 20) and at (50.5, 20)
