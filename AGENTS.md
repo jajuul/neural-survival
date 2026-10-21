@@ -11,7 +11,7 @@
 ## Reviewing a ticket
 
 - Ticket work stacks on the current branch; `master` is stale. Diff a ticket against the commit before its first commit.
-- Mutation testing runs in the gate: `scripts/review-gate.sh --mutants <base> <change>`, once on the final code before step 5. The implementer catches each missed or timed-out mutant with a new test, or records it as untestable for now on the ticket that will make it testable. For an OpenSpec change, propose each untestable mutant to the human for `openspec/changes/<change>/accepted-mutants`; the gate fails on any survivor not listed there. Reviewers read the gate's recorded result and don't rerun it. Run `scripts/mutants-ticket.sh [<base>]` directly only to check a fix for a specific mutant.
+- Mutation testing runs only when the human asks, through `scripts/review-gate.sh --mutants <base> <change>`. Then catch each surviving mutant with a new test, or propose it to the human for `openspec/changes/<change>/accepted-mutants` and record it on the ticket that will make it testable.
 
 ## Review workflow
 

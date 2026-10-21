@@ -7,7 +7,7 @@ Neural Survival evolves neural-network creatures in a 2D world; `CONTEXT.md` def
 Once per machine:
 
 - **Rust** via rustup. The version is pinned in `rust-toolchain.toml`, and rustup installs it, with rustfmt and Clippy, on the first `cargo` command. Bump it deliberately, as its own Light change, so new Clippy lints show up there.
-- **cargo-mutants**, for mutation testing:
+- **cargo-mutants**, optional, for mutation testing when you ask for it:
   ```bash
   cargo install --locked cargo-mutants
   ```
@@ -41,7 +41,7 @@ Every change follows [`docs/agents/review-workflow.md`](docs/agents/review-workf
 | 1. Specify | Claude, you approve | OpenSpec change for the ticket, checked against the requirements checklist; the design names the test interface and seams | `openspec/changes/<change>/` |
 | 2. Acceptance tests | Codex, you approve | Tests from the spec alone, through the agreed interface, before any code | `acceptance_*.rs`, `acceptance-approved` |
 | 3. Implement | Claude | `/opsx:apply` with `tdd` at the agreed seams, then commit | the code |
-| 4. Gate | Claude | `scripts/review-gate.sh [--mutants] <base> <change>` (`--mutants` once on the final code) | `review/gate.md` |
+| 4. Gate | Claude | `scripts/review-gate.sh <base> <change>` (`--mutants` when the human asks) | `review/gate.md` |
 | 5. Review | Codex | `code-review` (standards, spec) and `codex review` (bugs) | `review/code-review.md` |
 | 6. Verify | Codex | `verify-evidence` skill | `review/verification.md` |
 | 7. Walkthrough | Codex | `architecture-walkthrough` skill | `review/walkthrough.md` |

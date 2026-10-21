@@ -55,7 +55,7 @@ crates/core/tests/acceptance_<NN>_<slug>.rs
 
 **4. Gate** (Claude runs it; the human can rerun it). `scripts/review-gate.sh <base> <change>` (Light: `scripts/review-gate.sh <base>`). It runs formatting, Clippy, tests, architecture checks, OpenSpec validation, the dependency audit, traceability, the acceptance-test lock, and the tier check, and writes `review/gate.md`. Fix failures and rerun until it passes.
 
-Mutation testing is slow, so it runs only with `--mutants` (`scripts/review-gate.sh --mutants <base> <change>`); without it the check is recorded SKIPPED. Iterate without the flag. Run the gate once with `--mutants` on the final code before step 5: that is the `gate.md` the reviews read, and they treat a SKIPPED check as missing evidence.
+Mutation testing is off by default and recorded SKIPPED; run the gate with `--mutants` only when the human asks. The reviews count the SKIPPED check as missing evidence.
 
 A surviving mutant fails the gate unless the human has accepted it. When one genuinely can't be tested yet, Claude records it on the ticket that will make it testable (see `AGENTS.md`) and proposes it; the human adds it to `openspec/changes/<change>/accepted-mutants` and commits:
 
