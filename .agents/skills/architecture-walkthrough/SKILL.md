@@ -17,11 +17,11 @@ Ask for the change name and base commit if you weren't given them. Then read:
 4. `review/gate.md`, `review/code-review.md`, and `review/verification.md`. Build on them; do not redo their work.
 5. `docs/agents/always-read.txt`.
 
-Before writing anything, check that the review files describe the current code. Take `git rev-parse --short HEAD`, then:
+Before writing anything, check that the review files describe the current code. Each review step commits its own file, so they name earlier commits than `HEAD`. A file is current when no commit after the one it names changes anything outside `openspec/changes/<change>/review/`: `git diff --name-only <named commit> HEAD -- . ':!openspec/changes/<change>/review/'` prints nothing. Check:
 
-- `gate.md`'s `Commits:` line must end at that commit.
-- `verification.md`'s `Gate:` line must name the same range as `gate.md`.
-- `code-review.md`'s `Reviewed:` line must name that commit.
+- the commit that `gate.md`'s `Commits:` range ends at is current;
+- `verification.md`'s `Gate:` line names the same range as `gate.md`;
+- the commit in `code-review.md`'s `Reviewed:` line is current.
 
 If any file is missing or stale, stop and say which steps must be rerun. Never walk through code the reviews didn't cover.
 

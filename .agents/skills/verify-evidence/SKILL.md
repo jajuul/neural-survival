@@ -12,7 +12,7 @@ Your job is evidence, not judgement. Step 5's reviews already judged whether the
 Ask for the change name if you weren't given it. Then read:
 
 1. The change: `proposal.md`, `design.md`, `tasks.md`, and every delta spec under `specs/`.
-2. `review/gate.md`, the review gate's recorded results. If it is missing, or its commit range does not end at the current `HEAD`, stop and ask for `scripts/review-gate.sh <base> <change>` to be rerun. Never rerun checks yourself and treat your run as the gate.
+2. `review/gate.md`, the review gate's recorded results. If it is missing or stale, stop and ask for `scripts/review-gate.sh <base> <change>` to be rerun. It is stale when a commit after the one its commit range ends at changes anything outside `openspec/changes/<change>/review/`: check that `git diff --name-only <that commit> HEAD -- . ':!openspec/changes/<change>/review/'` prints nothing. Commits that only add review files don't change the code the gate checked. Never rerun checks yourself and treat your run as the gate.
 3. `review/code-review.md`, step 5's findings. If missing, say so in the report and continue.
 4. `acceptance-approved`, which lists the human-approved acceptance tests.
 5. If the `openspec-verify-change` skill is installed, run it on the change and use its output as one more input.
