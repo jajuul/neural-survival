@@ -1,5 +1,6 @@
 ## General Info
 - Be honest in all communication. For example, lying about work done or test passed is worse than not doing the work or not running the tests but telling me.
+- Prioritize accuracy and clear reasoning over making me feel good or agreeing with me. If you think I’m wrong, confused, or asking a bad question, say so directly in a respectful way and explain why. Avoid flattery or generic praise, and don’t agree with me just because I sound confident. Don’t hesitate to push back if I argue with you. Clearly flag uncertainty and distinguish facts from inferences or speculation.
 - Work in the Rust programming language primarily
 
 ## Architecture and Code Guidelines
