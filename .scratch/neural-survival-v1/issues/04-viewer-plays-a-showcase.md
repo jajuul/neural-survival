@@ -6,6 +6,8 @@
 
 **Spec:** User Stories 6, 69–78, 81–82; Implementation Decisions › Workspace shape, The library's public interface (Showcase), Determinism; Testing Decisions › The GUI is not tested automatically; Acceptance Scenarios › Snapshot inspection and continuation (A saved snapshot can be opened for inspection) (`../spec.md`)
 
+**Change:** 04-viewer-plays-a-showcase
+
 **Status:** ready-for-agent
 
 - [ ] `neural-survival view --snapshot <path>` opens the viewer paused on a Showcase of that Generation
