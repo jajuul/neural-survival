@@ -110,6 +110,10 @@ impl Episode {
         self.step_count
     }
 
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
     pub fn arenas(&self) -> &[Arena] {
         &self.arenas
     }

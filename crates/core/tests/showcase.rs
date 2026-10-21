@@ -89,3 +89,13 @@ fn showcase_rejects_an_invalid_config() {
         Err(ShowcaseError::Config(_))
     ));
 }
+
+#[test]
+fn showcase_exposes_the_config_it_was_built_with() {
+    let mut config = small_config();
+    config.agent.body_radius = 1.25;
+    config.food.radius = 0.75;
+    let showcase = Showcase::new(&config, 1).unwrap();
+
+    assert_eq!(showcase.config(), &config);
+}

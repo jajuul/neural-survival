@@ -136,6 +136,11 @@ impl Showcase {
         self.episode.arenas()
     }
 
+    /// The config this Showcase was built with.
+    pub fn config(&self) -> &Config {
+        self.episode.config()
+    }
+
     pub fn genome(&self, id: AgentId) -> Option<&Genome> {
         self.episode.genome(id)
     }

@@ -27,7 +27,7 @@ Evolution runs headlessly and leaves Snapshots, but there is no way to watch how
 - Predator colour and LTC shape beyond reserving them: only MLP Prey exist.
 - Arena Mode change markers on the chart (08).
 - The `run` command (13), config editing and edit saves (15), continuing evolution from the viewer (16).
-- Any change to the core library's behaviour or public interface.
+- Any change to the core library's behaviour. Its public interface gains only the read-only `Showcase::config()` (see Impact).
 
 ## Capabilities
 
@@ -44,4 +44,4 @@ None. The viewer reads the existing Showcase and Snapshot interfaces unchanged.
 - **New crate** `crates/viewer` (`neural-survival-viewer`), depending on `neural-survival-core`, `eframe` and `egui_plot`. The core crate keeps no GUI dependency, which `scripts/check-architecture.sh` already enforces.
 - **Binary** `src/main.rs`: a new `view` subcommand. The root `Cargo.toml` and the workspace members change, and `Cargo.lock` grows considerably with the windowing stack.
 - **Build time and system libraries:** `eframe` pulls in `winit` and a graphics backend. Building on Linux and WSL needs the usual X11/Wayland development packages, and opening the window under WSL needs WSLg.
-- **No change** to `crates/core`, including the always-read paths `rng.rs` and `snapshot.rs`.
+- **Core:** one read-only getter, `Showcase::config()`, so the scene can read the body and food radii, which a Showcase doesn't otherwise expose. No behaviour changes, and the always-read paths `rng.rs` and `snapshot.rs` are untouched.

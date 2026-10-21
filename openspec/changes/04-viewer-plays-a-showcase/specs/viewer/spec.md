@@ -58,6 +58,8 @@ While playing, each frame SHALL advance the Showcase by the steps its elapsed ti
 #### Scenario: Continuing plays, pausing stops
 
 <!-- verified-by: tests/acceptance_04_viewer_plays_a_showcase.rs::continuing_plays_pausing_stops -->
+<!-- verified-by: crates/viewer/tests/playback.rs::pausing_drops_the_carried_fraction -->
+<!-- verified-by: crates/viewer/tests/playback.rs::playing_again_while_playing_keeps_the_carried_fraction -->
 
 - **WHEN** a paused viewer at speed 32 continues and receives 2 frames of 0.125 s
 - **THEN** it is at step 8
@@ -98,6 +100,8 @@ Speed SHALL be set in steps per second, defaulting to 30 and clamped to [1, 1000
 #### Scenario: Fractional steps carry over
 
 <!-- verified-by: tests/acceptance_04_viewer_plays_a_showcase.rs::fractional_steps_carry_over -->
+<!-- verified-by: crates/viewer/tests/playback.rs::changing_speed_keeps_the_carried_fraction -->
+<!-- verified-by: crates/viewer/tests/playback.rs::a_negative_frame_counts_as_no_time -->
 
 - **WHEN** a playing viewer at speed 10 receives 8 frames of 0.125 s
 - **THEN** after the first frame it is at step 1, after the second at step 2, and after all 8 at step 10
@@ -105,6 +109,7 @@ Speed SHALL be set in steps per second, defaulting to 30 and clamped to [1, 1000
 #### Scenario: Speed is clamped
 
 <!-- verified-by: tests/acceptance_04_viewer_plays_a_showcase.rs::speed_is_clamped -->
+<!-- verified-by: crates/viewer/tests/playback.rs::speed_bounds_are_kept -->
 
 - **WHEN** the speed is set to 0
 - **THEN** the speed is 1
@@ -114,6 +119,7 @@ Speed SHALL be set in steps per second, defaulting to 30 and clamped to [1, 1000
 #### Scenario: A slow frame is capped
 
 <!-- verified-by: tests/acceptance_04_viewer_plays_a_showcase.rs::a_slow_frame_is_capped -->
+<!-- verified-by: crates/viewer/tests/playback.rs::a_capped_frame_still_carries_its_fraction -->
 
 - **WHEN** a playing viewer at speed 100 receives one frame of 2 s
 - **THEN** it is at step 25
@@ -164,6 +170,7 @@ Restart SHALL return the viewer to step 0, paused, with a Showcase equal to the 
 #### Scenario: Restart mid-Episode
 
 <!-- verified-by: tests/acceptance_04_viewer_plays_a_showcase.rs::restart_mid_episode -->
+<!-- verified-by: crates/viewer/tests/playback.rs::restart_drops_the_carried_fraction -->
 
 - **WHEN** a viewer at step 7 is restarted
 - **THEN** it is at step 0, paused, with the Showcase it opened with
@@ -227,6 +234,11 @@ The scene of a Showcase SHALL draw each living Agent as its Controller Family's 
 #### Scenario: Shapes overlapping an edge are drawn on both sides
 
 <!-- verified-by: tests/acceptance_04_viewer_plays_a_showcase.rs::shapes_overlapping_an_edge_are_drawn_on_both_sides -->
+<!-- verified-by: crates/viewer/tests/scene.rs::right_edge_is_copied_to_the_left -->
+<!-- verified-by: crates/viewer/tests/scene.rs::bottom_edge_is_copied_to_the_top -->
+<!-- verified-by: crates/viewer/tests/scene.rs::top_edge_is_copied_to_the_bottom -->
+<!-- verified-by: crates/viewer/tests/scene.rs::a_corner_is_copied_to_the_other_three -->
+<!-- verified-by: crates/viewer/tests/scene.rs::touching_an_edge_is_not_overlapping_it -->
 
 - **WHEN** a living Prey of body radius 1 is at (0.5, 20) in a 50 × 40 world
 - **THEN** the scene draws it at (0.5, 20) and at (50.5, 20)
@@ -238,6 +250,7 @@ The scene of a Showcase SHALL draw each living Agent as its Controller Family's 
 #### Scenario: Food overlapping an edge is drawn on both sides
 
 <!-- verified-by: tests/acceptance_04_viewer_plays_a_showcase.rs::food_overlapping_an_edge_is_drawn_on_both_sides -->
+<!-- verified-by: crates/viewer/tests/scene.rs::food_in_a_corner_is_copied_to_the_other_three -->
 
 - **WHEN** food of radius 0.5 is at (49.8, 10) in a 50 × 40 world
 - **THEN** the scene draws it at (49.8, 10) and at (−0.2, 10)

@@ -1,6 +1,6 @@
 [workspace]
-members = [".", "crates/core"]
-default-members = [".", "crates/core"]
+members = [".", "crates/core", "crates/viewer"]
+default-members = [".", "crates/core", "crates/viewer"]
 resolver = "3"
 
 [package]
@@ -10,6 +10,7 @@ edition = "2024"
 
 [dependencies]
 neural-survival-core = { path = "crates/core" }
+neural-survival-viewer = { path = "crates/viewer" }
 clap = { version = "4.5", features = ["derive"] }
 rand = "0.8"
 

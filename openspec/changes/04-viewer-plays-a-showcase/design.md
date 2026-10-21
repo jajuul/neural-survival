@@ -2,7 +2,7 @@
 
 ## Context
 
-See proposal.md for why. The core library already exposes everything the viewer needs: `Showcase::from_snapshot`, `step`, `has_ended`, `step_count`, `arenas()` (Agents with role, family, position, heading, alive; food), `Snapshot::load`, the metrics history, and `config.evaluation.plan(generation)`. The binary has one subcommand, `batch`. `scripts/check-architecture.sh` fails if the core crate gains a GUI dependency and requires `#![forbid(unsafe_code)]` in every crate root.
+See proposal.md for why. The core library already exposes everything the viewer needs: `Showcase::from_snapshot`, `step`, `has_ended`, `step_count`, `arenas()` (Agents with role, family, position, heading, alive; food), `Snapshot::load`, the metrics history, and `config.evaluation.plan(generation)`. It doesn't expose the body and food radii a Showcase was built with, so this change adds `Showcase::config()` (decision 4). The binary has one subcommand, `batch`. `scripts/check-architecture.sh` fails if the core crate gains a GUI dependency and requires `#![forbid(unsafe_code)]` in every crate root.
 
 Relies on ADR-0001 (playback speed must never change what a step computes) and ADR-0003 (`eframe`/`egui` with `egui_plot`, over a headless core that never depends on the GUI).
 
@@ -15,7 +15,7 @@ Relies on ADR-0001 (playback speed must never change what a step computes) and A
 
 **Non-Goals:**
 - Automated tests of the window, painting or widgets.
-- Any change to `crates/core`.
+- Any change to `crates/core` beyond the read-only `Showcase::config()` getter.
 
 ## Decisions
 
@@ -25,7 +25,7 @@ Relies on ADR-0001 (playback speed must never change what a step computes) and A
 - `model`, with no `egui` types: `Viewer` (Snapshot, Showcase, playback state, speed, step budget), `Stats`, `Scene`, and `FitnessSeries`. All the spec's scenarios run against this through the crate's public interface.
 - `app`: the `eframe::App` that, each frame, passes the elapsed time to `Viewer::frame(dt)`, paints `Scene` with `egui::Painter`, shows `Stats` in a side panel, draws `FitnessSeries` with `egui_plot`, and maps buttons and the speed slider to `Viewer` methods.
 
-The binary calls `neural_survival_viewer::run(snapshot)` to open the window.
+The binary builds the `Viewer` itself, so load errors surface before any window opens, then calls `neural_survival_viewer::run(viewer)` to open the window.
 
 *Alternatives:*
 - **Model in core.** Rejected. Playback timing and draw shapes are presentation concerns, and putting them in core blurs ADR-0003's line.
@@ -46,7 +46,7 @@ The binary calls `neural_survival_viewer::run(snapshot)` to open the window.
 
 ### 4. The scene is world-space shapes, with edge copies
 
-`Scene` lists `AgentShape { position, radius, heading, colour, shape }` and `FoodDot { position, radius, colour }` in world units. The painter only scales world units to the panel. `Scene::of(&Showcase)` is public, and `Viewer::scene()` returns `Scene::of(self.showcase())`. This lets tests build exact layouts with the core's existing `Showcase::builder(...).placements(...).food(...)`, because a Snapshot carries no world layout. Edge copies are computed in the model: for each item, add offsets of ±width when it overlaps the left or right edge and ±height for the top or bottom, plus the diagonal copy when it overlaps both. Colours are model constants (`ROLE_COLOURS`, `FOOD_COLOUR`), stored as RGB triples so the model stays free of `egui`. MLP is a circle; the shape enum reserves a triangle for LTC (ticket 07).
+`Scene` lists `AgentShape { position, radius, heading, colour, shape }` and `FoodDot { position, radius, colour }` in world units. The painter only scales world units to the panel. `Scene::of(&Showcase)` is public, and `Viewer::scene()` returns `Scene::of(self.showcase())`. This lets tests build exact layouts with the core's existing `Showcase::builder(...).placements(...).food(...)`, because a Snapshot carries no world layout. Edge copies are computed in the model: for each item, add offsets of ±width when it overlaps the left or right edge and ±height for the top or bottom, plus the diagonal copy when it overlaps both. Colours are model constants (`ROLE_COLOURS`, `FOOD_COLOUR`), stored as RGB triples so the model stays free of `egui`. MLP is a circle; the shape enum reserves a triangle for LTC (ticket 07). Radii come from the Showcase's own config through a new read-only `Showcase::config()`, because `Scene::of` takes only the Showcase and the radii aren't otherwise public. Found during implementation; the human approved the getter.
 
 ### 5. Stats and Fitness series are derived on demand
 

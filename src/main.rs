@@ -7,7 +7,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use neural_survival_core::{Config, Evolution, Progress, prepare_output_dir, record_evolution};
+use neural_survival_core::{
+    Config, Evolution, Progress, Snapshot, prepare_output_dir, record_evolution,
+};
+use neural_survival_viewer::Viewer;
 
 #[derive(Parser)]
 #[command(version, about = "Evolve neural-network creatures in a 2D world")]
@@ -33,6 +36,15 @@ enum Command {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Watch a Showcase of a saved Generation.
+    View {
+        /// Snapshot file to open.
+        #[arg(long)]
+        snapshot: PathBuf,
+        /// Build the viewer without opening its window (for tests).
+        #[arg(long, hide = true)]
+        no_window: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -43,6 +55,10 @@ fn main() -> ExitCode {
             generations,
             out,
         } => batch(&config, seed, generations, &out),
+        Command::View {
+            snapshot,
+            no_window,
+        } => view(&snapshot, no_window),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -72,6 +88,21 @@ fn batch(
     record_evolution(&mut evolution, generations, out, print_progress)?;
     println!("Wrote run files to {}", out.display());
     Ok(())
+}
+
+fn view(snapshot_path: &Path, no_window: bool) -> Result<(), Box<dyn Error>> {
+    let viewer = Viewer::open(Snapshot::load(snapshot_path)?)?;
+    let stats = viewer.stats();
+    println!(
+        "Viewer ready: Generation {}, {} Agents, step limit {}",
+        stats.generation,
+        stats.species.iter().map(|s| s.total).sum::<usize>(),
+        stats.episode_steps
+    );
+    if no_window {
+        return Ok(());
+    }
+    neural_survival_viewer::run(viewer)
 }
 
 fn print_progress(progress: &Progress) {
