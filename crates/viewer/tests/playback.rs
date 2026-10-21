@@ -89,3 +89,12 @@ fn speed_bounds_are_kept() {
     viewer.set_speed(1000);
     assert_eq!(viewer.speed(), 1000);
 }
+
+#[test]
+fn playing_unpauses_and_pausing_pauses() {
+    let mut viewer = viewer();
+    viewer.play();
+    assert!(!viewer.is_paused());
+    viewer.pause();
+    assert!(viewer.is_paused());
+}

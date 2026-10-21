@@ -60,6 +60,7 @@ While playing, each frame SHALL advance the Showcase by the steps its elapsed ti
 <!-- verified-by: tests/acceptance_04_viewer_plays_a_showcase.rs::continuing_plays_pausing_stops -->
 <!-- verified-by: crates/viewer/tests/playback.rs::pausing_drops_the_carried_fraction -->
 <!-- verified-by: crates/viewer/tests/playback.rs::playing_again_while_playing_keeps_the_carried_fraction -->
+<!-- verified-by: crates/viewer/tests/playback.rs::playing_unpauses_and_pausing_pauses -->
 
 - **WHEN** a paused viewer at speed 32 continues and receives 2 frames of 0.125 s
 - **THEN** it is at step 8

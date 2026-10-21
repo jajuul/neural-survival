@@ -29,3 +29,7 @@
 
 - **`metrics.csv` has no Captures column yet.** `metrics_csv` in `crates/core/src/run_files.rs` writes the `MetricsRow` fields. When Captures go into `MetricsRow`, add the column there and extend `metrics_csv_has_one_row_per_generation_per_species` (`crates/core/tests/run_files.rs`). Adding the field also changes the Snapshot schema; see 08's note on `arena_mode`.
 - **Chart colours are paired with Species by `zip`.** `fitness_svg` zips `Species::ALL` with `SERIES_COLOURS`, which has 4 entries. A new Species gets the next colour automatically. With more than one Species, add a test that each Species' lines have different strokes.
+
+**From the 04 (viewer plays a Showcase) implementation:**
+
+- **Per-Species stats can't tell Species of one family apart yet.** `Viewer::stats` (`crates/viewer/src/model.rs`) counts an Agent for a Species when its family *and* Role match. `cargo mutants` survives `&&` → `||` there because MLP-Prey is the only Species. Once MLP-Predator exists, add a test to `crates/viewer/tests/` that a Showcase with both Roles reports separate alive and total counts per Species. Also check that Predators get their own `ROLE_COLOURS` entry in the scene, and that `fitness_series` gives one line pair per Species.
