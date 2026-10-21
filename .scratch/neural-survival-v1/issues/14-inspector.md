@@ -15,3 +15,10 @@
 - [ ] Inspector shows last step's energy cost per Energy Rule
 - [ ] Inspector shows a live network visualisation for MLP and, when present, LTC controllers
 - [ ] After the selected Agent dies, the inspector keeps showing its last captured telemetry
+
+## Comments
+
+**From the 04 (Showcase viewer) implementation and review:**
+
+- `crates/viewer/src/app.rs::App::world` currently requests only `Sense::hover`; `model.rs::AgentShape` carries no AgentId, and edge copies duplicate positions. Selection needs identity preserved through the scene, screen-to-world conversion, and hit testing that maps wrapped copies to the same Agent. Read telemetry through `Showcase::telemetry`; keep selection decisions testable in the model.
+- Scene edge reach currently covers bodies and heading markers only (`model.rs::HEADING_MARKER_LENGTH`, `Scene::of`, `edge_copies`). Inspector vision overlays need their own extents and wrap coverage.

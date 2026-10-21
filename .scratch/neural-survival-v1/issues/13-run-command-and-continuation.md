@@ -29,3 +29,7 @@
 - **Reuse `record_evolution`** (`crates/core/src/run_files.rs`). It already does "a Snapshot every 10 Generations and at the end", then writes `metrics.csv`, `fitness.svg`, and `run_summary.json`. It handles 0 Generations by writing a Generation-0 Snapshot and the run files. `batch` in `src/main.rs` shows the wiring, including seed printing and `print_progress`.
 - **Clearing stale files needs the file names.** The run-file names are private constants in `run_files.rs` (`METRICS_FILE`, `FITNESS_CHART_FILE`, `RUN_SUMMARY_FILE`), and `snapshot_file_name` is public. Add a library function such as `clear_run_files(dir)` next to `prepare_output_dir` instead of hard-coding the names in the CLI. It must leave `snapshot_gen_<n>_edit_<k>.json` (ticket 15) alone, or decide explicitly that `snapshot_gen_*` covers edits too.
 - **CLI tests:** `tests/cli.rs` has a `Workspace` helper (tempdir plus a tiny config) to reuse for `run`.
+
+**From the 04 (Showcase viewer) implementation and review:**
+
+- Reuse the ownership boundary in `src/main.rs::view`: construct `Viewer::open(snapshot)` before calling `neural_survival_viewer::run(viewer)`. Load/model errors then surface before window creation. Keep a hidden no-window route for CLI tests; existing `view --no-window` prints readiness and exits without exercising GUI startup.

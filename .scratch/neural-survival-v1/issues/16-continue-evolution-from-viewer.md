@@ -24,3 +24,8 @@
 **From the 03 (`batch` and run files) implementation and review:**
 
 - **`record_evolution` covers the output requirement** (`crates/core/src/run_files.rs`). Call it on the background thread with the loaded Snapshot's directory. It doesn't require the directory to be empty, and it rewrites the run files with the full history. A failed write stops further writes but not the evolution, and the first error comes back at the end, so surface it in the viewer. The progress callback receives `Progress { evolution, latest, .. }`, which can feed the chart.
+
+**From the 04 (Showcase viewer) implementation and review:**
+
+- `crates/viewer/src/app.rs::App` owns a single `model.rs::Viewer`; model state has no background worker or progress channel. Keep training off the UI thread, pass owned copies to it, and define how progress/results return to the model and request repaints. `App::ui` currently requests continuous repaint only while the Showcase plays and has not ended; a paused/ended Showcase must still receive training updates.
+- Replacing the Generation must replace the retained Snapshot as well as the Showcase: `Viewer::restart`, `stats` and `fitness_series` all depend on Snapshot state. Preserve full metrics history so restart and chart remain consistent after continuation.

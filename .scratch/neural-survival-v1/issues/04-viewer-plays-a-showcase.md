@@ -8,11 +8,15 @@
 
 **Change:** 04-viewer-plays-a-showcase
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `neural-survival view --snapshot <path>` opens the viewer paused on a Showcase of that Generation
-- [ ] World view draws Agents (Prey colour, MLP shape) and food, with wrap-around handled
-- [ ] Pause, continue, single-step while paused, and simulation speed control work
-- [ ] The Showcase stops when its Episode ends; restart replays it identically
-- [ ] Stats panel shows Generation, world step, alive count, food remaining, per-Species and per-family counts, and the active Evaluation Schedule
-- [ ] A best/mean Fitness chart (`egui_plot`) shows one line pair per Species from the Snapshot's history
+- [x] `neural-survival view --snapshot <path>` opens the viewer paused on a Showcase of that Generation
+- [x] World view draws Agents (Prey colour, MLP shape) and food, with wrap-around handled
+- [x] Pause, continue, single-step while paused, and simulation speed control work
+- [x] The Showcase stops when its Episode ends; restart replays it identically
+- [x] Stats panel shows Generation, world step, alive count, food remaining, per-Species and per-family counts, and the active Evaluation Schedule
+- [x] A best/mean Fitness chart (`egui_plot`) shows one line pair per Species from the Snapshot's history
+
+## Comments
+
+**2026-10-21 — Step 8 approval and archive:** The human reported “Looks good” after the GUI run instructions and requested archive, then confirmed spec sync. Archived at `openspec/changes/archive/2026-10-21-04-viewer-plays-a-showcase/`; current behavior is in `openspec/specs/viewer/spec.md`. This records human approval, not an agent-observed GUI run. Review evidence and its dependency-audit, GUI automation and future multi-Species limitations remain in the archived review reports.
