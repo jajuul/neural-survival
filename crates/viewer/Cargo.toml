@@ -2,6 +2,7 @@
 name = "neural-survival-viewer"
 version = "0.1.0"
 edition = "2024"
+publish = false
 description = "The viewer: a headless playback model and the eframe window that renders it (ADR-0003)."
 
 [dependencies]
