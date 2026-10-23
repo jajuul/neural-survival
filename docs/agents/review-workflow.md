@@ -72,7 +72,7 @@ Entries match on file and mutation, not line number. Accepted survivors stay lis
 
   ```bash
   git branch -f review-base <base>
-  codex review --base review-base "Find bugs, edge cases, and error-handling gaps. Ignore style; another review covers it."
+  codex review --base review-base
   ```
 
   It prints to stdout; append its output to `code-review.md` under `## Bugs`.
